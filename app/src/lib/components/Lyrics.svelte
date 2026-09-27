@@ -9,12 +9,20 @@
   const now = $derived(itemAt(items, t));
   const none = $derived(player.lyrics?.source === "none");
   let list: HTMLDivElement | undefined = $state();
-  let width = $state(0);
+  let size = $state(0);
   let placed = $state(false);
+
+  /** Re-centers when the lyrics change size (window resize, a late-loading font). */
+  $effect(() => {
+    if (!list) return;
+    const ro = new ResizeObserver(() => size++);
+    ro.observe(list);
+    return () => ro.disconnect();
+  });
 
   /** Centers the current line; the first placement jumps there without animating. */
   $effect(() => {
-    void width;
+    void size;
     const el = list?.children[now] as HTMLElement | undefined;
     if (!list || !el) return;
     list.style.transform = `translateY(${-(el.offsetTop + el.offsetHeight / 2)}px)`;
@@ -24,8 +32,6 @@
     }
   });
 </script>
-
-<svelte:window bind:innerWidth={width} />
 
 <div class="lyr">
   {#if none}
