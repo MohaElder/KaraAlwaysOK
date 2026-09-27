@@ -1,7 +1,9 @@
 //! kara-core: the karaoke engine. No Tauri here; the app and the CLI both call it.
 
+pub mod assets;
 pub mod audio;
 pub mod separate;
+pub mod store;
 
 #[cfg(test)]
 pub(crate) mod test_util;

@@ -12,6 +12,12 @@ sha2 = "0.10"
 hex = "0.4"
 realfft = "3"
 ndarray = "0.17"
+dirs = "5"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24", "coreml"] }
 
 [dev-dependencies]
 hound = "3"

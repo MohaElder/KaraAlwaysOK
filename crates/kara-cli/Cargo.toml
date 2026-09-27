@@ -10,3 +10,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 kara-core = { path = "../kara-core" }
+clap = { version = "4", features = ["derive"] }
+hound = "3"
+libc = "0.2"
