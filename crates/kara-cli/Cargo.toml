@@ -1,0 +1,12 @@
+[package]
+name = "kara-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kara"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+kara-core = { path = "../kara-core" }

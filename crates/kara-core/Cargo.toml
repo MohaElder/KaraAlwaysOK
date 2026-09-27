@@ -1,0 +1,16 @@
+[package]
+name = "kara-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+symphonia = { version = "0.5", features = ["all"] }
+rubato = "0.15"
+flacenc = "0.4"
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+hound = "3"
+tempfile = "3"
