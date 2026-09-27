@@ -27,7 +27,7 @@ class Manage {
     });
   }
 
-  /** Takes a song out of the queue now and out of the library when its Undo toast runs out. */
+  /** Takes a song out of Up next now and out of the library (and the queue) when its Undo toast runs out. */
   async deleteSong(track: Track) {
     this.undoable(`track:${track.id}`, t("toast.deleted", { name: track.title }), TrashIcon, () => deleteTrack(track.id));
     for (const e of player.snapshot.entries.filter((e) => e.track.id === track.id)) await player.removeQueued(e.key);
