@@ -1,6 +1,7 @@
 //! Adding songs (one file or one link) and getting their audio onto disk.
 
 pub mod link;
+pub mod preview;
 pub mod ytdlp;
 
 use crate::audio;

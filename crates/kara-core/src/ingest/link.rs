@@ -17,7 +17,7 @@ const EXTRACTABLE: &[&str] = &["youtube.com", "youtu.be", "soundcloud.com", "ban
 const STREAMING: &[&str] = &["spotify.com", "music.apple.com", "tidal.com", "deezer.com"];
 const AUDIO_EXT: &[&str] = &["mp3", "wav", "flac", "m4a", "aac", "ogg", "aif", "aiff"];
 
-fn host_is(host: &str, domain: &str) -> bool {
+pub(crate) fn host_is(host: &str, domain: &str) -> bool {
     host == domain || host.ends_with(&format!(".{domain}"))
 }
 
