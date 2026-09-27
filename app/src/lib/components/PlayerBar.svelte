@@ -14,6 +14,8 @@
   import DotsThreeIcon from "phosphor-svelte/lib/DotsThreeIcon";
 
   let prog: HTMLDivElement | undefined = $state();
+  let bar: HTMLDivElement | undefined = $state();
+  let moreButton: HTMLButtonElement | undefined = $state();
   const pct = (seconds: number) => (player.duration > 0 ? Math.min(100, (seconds / player.duration) * 100) : 0);
 
   function seekAt(clientX: number) {
@@ -25,10 +27,14 @@
   function toggleKaraoke() {
     ui.karaoke = !ui.karaoke;
   }
+
+  $effect(() => {
+    if (!player.track) ui.moreOpen = false;
+  });
 </script>
 
 {#if player.track}
-  <div class="bar glass" class:dk={ui.karaoke} class:wide={ui.karaoke} role="region" aria-label={t("player.label")} transition:slide={{ y: 16 }}>
+  <div class="bar glass" bind:this={bar} class:dk={ui.karaoke} class:wide={ui.karaoke} role="region" aria-label={t("player.label")} transition:slide={{ y: 16 }}>
     <div class="transport">
       <button use:tip={t("player.previous")} onclick={() => player.previous()}><SkipBackIcon weight="fill" /></button>
       <button use:tip={t(player.active ? "player.pause" : "player.play")} onclick={() => player.toggle()}>
@@ -38,7 +44,11 @@
       </button>
       <button use:tip={t("player.next")} onclick={() => player.next()}><SkipForwardIcon weight="fill" /></button>
     </div>
-    <div class="np" role="button" tabindex="0" use:tip={t(ui.karaoke ? "player.backToLibrary" : "player.openKaraoke")} onclick={toggleKaraoke} onkeydown={(e) => e.key === "Enter" && toggleKaraoke()}>
+    <div class="np" role="button" tabindex="0" use:tip={t(ui.karaoke ? "player.backToLibrary" : "player.openKaraoke")} onclick={toggleKaraoke} onkeydown={(e) => {
+      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      toggleKaraoke();
+    }}>
       <Artwork track={player.track} size={40} />
       <div class="t ell">{player.track.title}</div>
       <div class="a ell">{[player.track.artist, player.track.album].filter(Boolean).join(" – ")}</div>
@@ -66,11 +76,9 @@
       </div>
     </div>
     <SingerSlider />
-    <div class="more">
-      <button class="ib" use:tip={t("common.more")} aria-expanded={ui.moreOpen} onclick={() => (ui.moreOpen = !ui.moreOpen)}><DotsThreeIcon size={15} /></button>
-      {#if ui.moreOpen}<MoreMenu />{/if}
-    </div>
+    <button class="ib more" bind:this={moreButton} use:tip={t("common.more")} aria-expanded={ui.moreOpen} onclick={() => (ui.moreOpen = !ui.moreOpen)}><DotsThreeIcon size={15} /></button>
   </div>
+  {#if ui.moreOpen && bar && moreButton}<MoreMenu {bar} anchor={moreButton} />{/if}
 {/if}
 
 <style>
@@ -91,7 +99,5 @@
   .buf { background: color-mix(in srgb, var(--text) 26%, transparent); transition: width var(--t) var(--ease); }
   .played { background: var(--text); }
   .bar :global(.ib) { border-radius: 50%; background: var(--glass-btn); box-shadow: inset 0 0 0 1px var(--glass-edge); }
-  .bar :global(.ib:hover), .bar :global(.ib[aria-pressed="true"]) { background: var(--glass-hi); }
-  .bar :global(.ib[aria-pressed="true"]) { color: var(--accent); }
-  .more { position: relative; }
+  .bar :global(.ib:hover) { background: var(--glass-hi); }
 </style>

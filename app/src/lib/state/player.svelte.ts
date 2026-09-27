@@ -14,7 +14,49 @@ import HourglassMediumIcon from "phosphor-svelte/lib/HourglassMediumIcon";
 import ListPlusIcon from "phosphor-svelte/lib/ListPlusIcon";
 import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
+/** A setting changed in the UI: shown at once, saved one request at a time with only the latest value. */
+class Draft {
+  value = $state<number | null>(null);
+  private saving = false;
+  private pending: number | null = null;
+
+  constructor(
+    private save: (value: number) => Promise<PlayerSnapshot>,
+    private refused: (e: unknown) => void,
+  ) {}
+
+  set(value: number) {
+    this.value = value;
+    this.pending = value;
+    if (!this.saving) void this.flush();
+  }
+
+  /** Lets the saved value show again once no save is running. */
+  settle() {
+    if (!this.saving) this.value = null;
+  }
+
+  private async flush() {
+    this.saving = true;
+    while (this.pending != null) {
+      const value = this.pending;
+      this.pending = null;
+      await this.save(value).catch((e) => {
+        this.pending = null;
+        this.value = null;
+        this.refused(e);
+      });
+    }
+    this.saving = false;
+  }
+}
+
 class PlayerState {
+  private drafts = {
+    singer: new Draft(setSinger, (e) => this.undo(e)),
+    key: new Draft(setKey, (e) => this.undo(e)),
+    offset: new Draft(setLyricOffset, (e) => this.undo(e)),
+  };
   snapshot = $state<PlayerSnapshot>({ entries: [], current: null, ended: false, lyricOffsetMs: 0 });
   phase = $state<Phase>("idle");
   position = $state(0);
@@ -23,19 +65,18 @@ class PlayerState {
   waitLabel = $state<Label>({ key: "wait.soon" });
   lyrics = $state<Lyrics | null>(null);
   keyWorks = $state(true);
-  private singerDraft = $state<number | null>(null);
 
   current = $derived(this.snapshot.current == null ? null : (this.snapshot.entries[this.snapshot.current] ?? null));
   track = $derived(this.current?.track ?? null);
-  singer = $derived(this.singerDraft ?? this.track?.vocalRemoval ?? 100);
+  singer = $derived(this.drafts.singer.value ?? this.track?.vocalRemoval ?? 100);
+  key = $derived(this.drafts.key.value ?? this.track?.keySemitones ?? 0);
+  lyricOffset = $derived(this.drafts.offset.value ?? this.snapshot.lyricOffsetMs);
   idle = $derived(this.snapshot.current == null || this.snapshot.ended);
   active = $derived(this.phase === "playing" || this.phase === "waiting" || this.phase === "stalled");
 
   private streamer!: Streamer;
   private loadedKey: number | null = null;
   private wantPlay = false;
-  private savingSinger = false;
-  private pendingSinger: number | null = null;
 
   /** Starts the streamer and follows the queue and the engine. */
   async init() {
@@ -58,20 +99,16 @@ class PlayerState {
   apply(s: PlayerSnapshot) {
     this.snapshot = s;
     const cur = s.current == null ? null : s.entries[s.current];
-    if ((cur?.key ?? null) === this.loadedKey) {
-      if (cur && !this.savingSinger) {
-        this.singerDraft = null;
-        this.streamer.setSinger(cur.track.vocalRemoval);
-      }
-      if (cur) this.streamer.setKey(cur.track.keySemitones);
-      return;
+    const same = (cur?.key ?? null) === this.loadedKey;
+    for (const d of Object.values(this.drafts)) {
+      if (same) d.settle();
+      else d.value = null;
     }
+    if (cur) this.hearSettings();
+    if (same) return;
     this.loadedKey = cur?.key ?? null;
-    this.singerDraft = null;
     this.lyrics = null;
     if (!cur) return this.streamer.unload();
-    this.streamer.setSinger(cur.track.vocalRemoval);
-    this.streamer.setKey(cur.track.keySemitones);
     void this.streamer.load(cur.track.id, this.wantPlay && !s.ended);
     void this.loadLyrics(cur.track.id);
   }
@@ -120,35 +157,29 @@ class PlayerState {
     if (!this.streamer.seek(target)) toasts.show(t("toast.notReady"), { icon: HourglassMediumIcon });
   }
 
-  /** The singer slider: heard at once, saved without flooding the backend. */
   setSinger(value: number) {
-    this.singerDraft = value;
-    this.streamer.setSinger(value);
-    this.pendingSinger = value;
-    if (!this.savingSinger) void this.saveSinger();
+    this.drafts.singer.set(value);
+    this.hearSettings();
   }
 
-  async setKey(semitones: number) {
-    await setKey(semitones).catch(this.refused);
+  setKey(semitones: number) {
+    this.drafts.key.set(semitones);
+    this.hearSettings();
   }
 
-  async setLyricOffset(ms: number) {
-    await setLyricOffset(ms).catch(this.refused);
+  setLyricOffset(ms: number) {
+    this.drafts.offset.set(ms);
   }
 
-  /** Saves the slider's latest value; a refused save puts the slider back to the saved one. */
-  private async saveSinger() {
-    this.savingSinger = true;
-    while (this.pendingSinger != null) {
-      const value = this.pendingSinger;
-      this.pendingSinger = null;
-      if (!(await setSinger(value).catch(this.refused))) {
-        this.pendingSinger = null;
-        this.singerDraft = null;
-        this.streamer.setSinger(this.singer);
-      }
-    }
-    this.savingSinger = false;
+  private hearSettings() {
+    this.streamer.setSinger(this.singer);
+    this.streamer.setKey(this.key);
+  }
+
+  /** Tells the user a setting wasn't saved and goes back to the saved one. */
+  private undo(e: unknown) {
+    this.refused(e);
+    this.hearSettings();
   }
 
   private async loadLyrics(trackId: number) {

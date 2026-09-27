@@ -12,14 +12,22 @@
 
   const SOURCES: Record<"lrclib" | "embedded" | "none", Key> = { lrclib: "lyricsSource.lrclib", embedded: "lyricsSource.embedded", none: "lyricsSource.none" };
   const signed = (n: number, digits = 0) => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n).toFixed(digits);
-  const key = $derived(player.track?.keySemitones ?? 0);
-  const offset = $derived(player.snapshot.lyricOffsetMs);
+  let { bar, anchor }: { bar: HTMLElement; anchor: HTMLElement } = $props();
+  const key = $derived(player.key);
+  const offset = $derived(player.lyricOffset);
+  let pos = $state(place());
+
+  /** Sits above the bar, right-aligned with the button that opened it. */
+  function place() {
+    const b = anchor.getBoundingClientRect();
+    return { right: Math.max(16, innerWidth - b.right), bottom: innerHeight - bar.getBoundingClientRect().top + 10 };
+  }
   const source = $derived(t(player.lyrics?.source ? SOURCES[player.lyrics.source] : "lyricsSource.looking"));
 </script>
 
-<svelte:window onpointerdown={(e) => { if (!(e.target as Element).closest(".more")) ui.moreOpen = false; }} />
+<svelte:window onresize={() => (pos = place())} onpointerdown={(e) => { if (!(e.target as Element).closest(".more, .menu")) ui.moreOpen = false; }} />
 
-<div class="menu glass" class:dk={ui.karaoke} role="menu" transition:slide={{ y: 8 }}>
+<div class="menu glass" class:dk={ui.karaoke} role="menu" style:right="{pos.right}px" style:bottom="{pos.bottom}px" transition:slide={{ y: 8 }}>
   {#if player.keyWorks}
   <div class="mrow">
     <PianoKeysIcon size={18} /><span class="grow">{t("menu.key")}</span>
@@ -43,5 +51,5 @@
 </div>
 
 <style>
-  .menu { position: absolute; right: 0; bottom: calc(100% + 18px); }
+  .menu { position: fixed; }
 </style>
