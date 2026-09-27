@@ -132,14 +132,43 @@ pub fn read_tags(path: &Path) -> Result<(Tags, Option<i64>)> {
 
 /// Decode any supported file to 44.1 kHz stereo. Mono is duplicated; channels past two are dropped.
 pub fn decode_file(path: &Path) -> Result<Decoded> {
+    let mut audio = Stereo::default();
+    let tags = decode_stream(path, &mut |l, r| {
+        audio.left.extend_from_slice(l);
+        audio.right.extend_from_slice(r);
+        true
+    })?;
+    Ok(Decoded { audio, tags })
+}
+
+/// Frames `start..start + len` of `decode_file`'s output (fewer at the end of
+/// the song), decoding only as far as needed.
+pub fn decode_range(path: &Path, start: usize, len: usize) -> Result<Stereo> {
+    let (mut out, mut pos) = (Stereo::default(), 0);
+    decode_stream(path, &mut |l, r| {
+        let lo = start.saturating_sub(pos).min(l.len());
+        let hi = (start + len).saturating_sub(pos).min(l.len());
+        out.left.extend_from_slice(&l[lo..hi]);
+        out.right.extend_from_slice(&r[lo..hi]);
+        pos += l.len();
+        pos < start + len
+    })?;
+    Ok(out)
+}
+
+type Sink<'a> = &'a mut dyn FnMut(&[f32], &[f32]) -> bool;
+
+/// Decodes to 44.1 kHz stereo, handing `sink` consecutive blocks until it returns false.
+fn decode_stream(path: &Path, sink: Sink) -> Result<Tags> {
     let (mut format, tags) = open(path)?;
     let track = audio_track(format.as_ref())?;
     let track_id = track.id;
-    let rate = track.codec_params.sample_rate.unwrap_or(SAMPLE_RATE);
+    let mut out = Output::new(track.codec_params.sample_rate.unwrap_or(SAMPLE_RATE))?;
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .context("unsupported audio codec")?;
-    let (mut left, mut right) = (Vec::new(), Vec::new());
+    let (mut skip, mut keep) = tags.gapless.unwrap_or((0, usize::MAX));
+    let mut src = [Vec::new(), Vec::new()];
     loop {
         let packet = match format.next_packet() {
             Ok(p) => p,
@@ -158,50 +187,94 @@ pub fn decode_file(path: &Path) -> Result<Decoded> {
         let ch = spec.channels.count();
         let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
         buf.copy_interleaved_ref(decoded);
-        for frame in buf.samples().chunks(ch) {
-            left.push(frame[0]);
-            right.push(if ch > 1 { frame[1] } else { frame[0] });
+        let frames = buf.samples().chunks(ch).skip(skip).take(keep);
+        let taken = frames.len();
+        for frame in frames {
+            src[0].push(frame[0]);
+            src[1].push(if ch > 1 { frame[1] } else { frame[0] });
+        }
+        skip = skip.saturating_sub(buf.samples().len() / ch);
+        keep -= taken;
+        if !out.push(&mut src, sink)? {
+            return Ok(tags);
         }
     }
-    if let Some((delay, len)) = tags.gapless {
-        for ch in [&mut left, &mut right] {
-            ch.drain(..delay.min(ch.len()));
-            ch.truncate(len);
-        }
-    }
-    let audio = resample(Stereo { left, right }, rate)?;
-    Ok(Decoded { audio, tags })
+    out.finish(&src, sink)?;
+    Ok(tags)
 }
 
-fn resample(a: Stereo, from: u32) -> Result<Stereo> {
-    if from == SAMPLE_RATE || a.is_empty() {
-        return Ok(a);
+const RESAMPLE_BLOCK: usize = 1024;
+
+/// Turns source-rate audio into 44.1 kHz blocks, the same however far decoding goes.
+struct Output {
+    resampler: Option<FftFixedIn<f32>>,
+    from: u32,
+    fed: usize,
+    emitter: Emitter,
+}
+
+struct Emitter {
+    delay_left: usize,
+    emitted: usize,
+}
+
+impl Emitter {
+    /// Hands on `res` minus the resampler's start-up delay, up to `total` frames overall.
+    fn emit(&mut self, res: &[Vec<f32>], total: usize, sink: Sink) -> bool {
+        let d = self.delay_left.min(res[0].len());
+        self.delay_left -= d;
+        let n = (res[0].len() - d).min(total.saturating_sub(self.emitted));
+        self.emitted += n;
+        n == 0 || sink(&res[0][d..d + n], &res[1][d..d + n])
     }
-    const CHUNK: usize = 1024;
-    let mut rs = FftFixedIn::<f32>::new(from as usize, SAMPLE_RATE as usize, CHUNK, 2, 2)?;
-    let mut out = [Vec::new(), Vec::new()];
-    let mut push = |res: Vec<Vec<f32>>| {
-        out[0].extend_from_slice(&res[0]);
-        out[1].extend_from_slice(&res[1]);
-    };
-    let n = a.len();
-    let mut pos = 0;
-    while pos + CHUNK <= n {
-        push(rs.process(&[&a.left[pos..pos + CHUNK], &a.right[pos..pos + CHUNK]], None)?);
-        pos += CHUNK;
+}
+
+impl Output {
+    fn new(from: u32) -> Result<Self> {
+        let resampler = (from != SAMPLE_RATE)
+            .then(|| FftFixedIn::<f32>::new(from as usize, SAMPLE_RATE as usize, RESAMPLE_BLOCK, 2, 2))
+            .transpose()?;
+        let delay_left = resampler.as_ref().map_or(0, |r| r.output_delay());
+        Ok(Self { resampler, from, fed: 0, emitter: Emitter { delay_left, emitted: 0 } })
     }
-    if pos < n {
-        push(rs.process_partial(Some(&[&a.left[pos..], &a.right[pos..]]), None)?);
+
+    /// Converts and hands on every whole block in `src`; false once `sink` wants no more.
+    fn push(&mut self, src: &mut [Vec<f32>; 2], sink: Sink) -> Result<bool> {
+        let Some(rs) = &mut self.resampler else {
+            let more = src[0].is_empty() || sink(&src[0], &src[1]);
+            src.iter_mut().for_each(Vec::clear);
+            return Ok(more);
+        };
+        let mut pos = 0;
+        while pos + RESAMPLE_BLOCK <= src[0].len() {
+            let res = rs.process(&[&src[0][pos..pos + RESAMPLE_BLOCK], &src[1][pos..pos + RESAMPLE_BLOCK]], None)?;
+            pos += RESAMPLE_BLOCK;
+            self.fed += RESAMPLE_BLOCK;
+            if !self.emitter.emit(&res, usize::MAX, sink) {
+                return Ok(false);
+            }
+        }
+        src.iter_mut().for_each(|c| drop(c.drain(..pos)));
+        Ok(true)
     }
-    push(rs.process_partial(None::<&[&[f32]]>, None)?);
-    let delay = rs.output_delay();
-    let expected = (n as u64 * SAMPLE_RATE as u64 / from as u64) as usize;
-    let [mut left, mut right] = out;
-    for ch in [&mut left, &mut right] {
-        ch.drain(..delay.min(ch.len()));
-        ch.resize(expected, 0.0);
+
+    /// Converts the leftover frames and pads or trims to the exact resampled length.
+    fn finish(mut self, src: &[Vec<f32>; 2], sink: Sink) -> Result<()> {
+        let Some(mut rs) = self.resampler.take() else { return Ok(()) };
+        self.fed += src[0].len();
+        let total = (self.fed as u64 * SAMPLE_RATE as u64 / self.from as u64) as usize;
+        if !src[0].is_empty() {
+            let res = rs.process_partial(Some(&[&src[0][..], &src[1][..]]), None)?;
+            self.emitter.emit(&res, total, sink);
+        }
+        let res = rs.process_partial(None::<&[&[f32]]>, None)?;
+        self.emitter.emit(&res, total, sink);
+        if self.emitter.emitted < total {
+            let silence = vec![0.0; total - self.emitter.emitted];
+            sink(&silence, &silence);
+        }
+        Ok(())
     }
-    Ok(Stereo { left, right })
 }
 
 fn to_i16(x: f32) -> i16 {
@@ -294,6 +367,20 @@ mod tests {
             let a = decode_file(&p).unwrap().audio;
             assert_eq!(a.len(), 44_100, "{}", p.display());
             assert!(a.left[..100].iter().any(|x| x.abs() > 0.1), "{} starts late", p.display());
+        }
+    }
+
+    #[test]
+    fn a_decoded_range_matches_the_same_part_of_the_full_decode() {
+        let dir = tempfile::tempdir().unwrap();
+        for rate in [44_100, 48_000] {
+            let p = dir.path().join(format!("{rate}.wav"));
+            write_sine_wav(&p, rate, 2, 2.5, 440.0);
+            let full = decode_file(&p).unwrap().audio;
+            for (start, len) in [(0, 1000), (44_100, 44_100), (100_000, 44_100), (200_000, 10)] {
+                let end = (start + len).min(full.len());
+                assert_eq!(decode_range(&p, start, len).unwrap(), full.slice(start.min(end), end), "{rate} Hz, {start}+{len}");
+            }
         }
     }
 
