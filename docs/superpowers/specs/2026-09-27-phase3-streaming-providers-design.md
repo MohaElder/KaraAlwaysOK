@@ -1,9 +1,11 @@
-# KaraAlwaysOK Phase 3: Apple Music and Spotify — Design
+# KaraAlwaysOK Phase 3: Apple Music — Design
 
 Date: 2026-09-27
 Status: design approved in conversation; pending written-spec review
 Builds on: `2026-09-26-kara-always-oki-design.md` (Phase 1). Its UI rules, languages, copy rules and engineering bar apply.
 Research: `../spikes/2026-09-27-streaming-providers.md`.
+
+> **Scope change (2026-09-27): Apple Music only.** A spike confirmed the Apple Music web-player route end to end (library playlists, playlist tracks, and animated artwork via `editorialVideo` HLS). Spotify's web player did not hand a logged-in token to our login window in three attempts (only anonymous tokens and a client token), matching how actively Spotify guards its web player since 2025; Cider supports only Apple Music as well. Spotify is dropped for now; everything below that mentions Spotify is deferred and not part of this phase's plan.
 
 ## 1. What it is
 
