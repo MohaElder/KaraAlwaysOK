@@ -24,11 +24,12 @@
   let info = $state<StorageInfo | null>(null);
   let version = $state("");
   let asking = $state(false);
+  const failed = (e: unknown) => void toasts.show(say(e), { icon: WarningIcon });
 
   $effect(() => {
     if (!shown) return;
     asking = false;
-    void storageInfo().then((i) => (info = i));
+    void storageInfo().then((i) => (info = i), failed);
     void getVersion().then((v) => (version = v));
   });
 
@@ -38,8 +39,12 @@
   async function stepLimit(delta: number) {
     const at = LIMITS.findIndex((l) => l >= limitGb);
     const next = LIMITS[Math.max(0, Math.min(LIMITS.length - 1, (at < 0 ? LIMITS.length - 1 : at) + delta))];
-    await setStorageLimit(next * GB);
-    info = await storageInfo();
+    try {
+      await setStorageLimit(next * GB);
+      info = await storageInfo();
+    } catch (e) {
+      failed(e);
+    }
   }
 
   async function clear() {
@@ -48,7 +53,7 @@
       info = await clearStorage();
       toasts.show(t("settings.cleared"));
     } catch (e) {
-      toasts.show(say(e), { icon: WarningIcon });
+      failed(e);
     }
   }
 </script>
@@ -78,7 +83,7 @@
         <div class="hstack confirm" in:fade>
           <WarningIcon /><span class="grow">{t("settings.clearAsk")}</span>
           <button class="btn" onclick={() => (asking = false)}>{t("common.cancel")}</button>
-          <button class="btn accent" onclick={clear}><TrashIcon />{t("settings.clearConfirm")}</button>
+          <button class="btn accent" disabled={adding.ids.size > 0} onclick={clear}><TrashIcon />{t("settings.clearConfirm")}</button>
         </div>
       {:else}
         <button class="btn start" in:fade disabled={adding.ids.size > 0} onclick={() => (asking = true)}><TrashIcon />{t("settings.clear")}</button>

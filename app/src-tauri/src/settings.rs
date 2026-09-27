@@ -33,10 +33,9 @@ pub fn set_storage_limit(state: State<'_, AppState>, bytes: u64) -> Result<(), A
 /// Clears every prepared song except the one playing and the ones queued after it.
 #[tauri::command]
 pub fn clear_storage(state: State<'_, AppState>) -> Result<StorageInfo, AppError> {
-    let protected: Vec<String> = {
+    let protected = {
         let p = state.player.lock().unwrap();
-        let lib = state.lib.lock().unwrap();
-        p.upcoming().into_iter().filter_map(|t| lib.selected_source(t).ok().flatten()?.audio_hash).collect()
+        cache::audio_hashes(&state.lib.lock().unwrap(), p.upcoming())
     };
     cache::clear(&state.store, &state.lib.lock().unwrap(), &protected).plain()?;
     storage(state.inner()).plain()

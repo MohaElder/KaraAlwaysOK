@@ -467,11 +467,7 @@ impl Worker {
                     st.running = None;
                     (st.queue.iter().copied().collect(), st.playing)
                 };
-                let protected: Vec<String> = std::iter::once(track)
-                    .chain(playing)
-                    .chain(upcoming)
-                    .filter_map(|t| lib.selected_source(t).ok().flatten()?.audio_hash)
-                    .collect();
+                let protected = cache::audio_hashes(&lib, std::iter::once(track).chain(playing).chain(upcoming));
                 let _ = cache::enforce_budget(&ctx.store, &lib, &protected);
             }
         });

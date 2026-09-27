@@ -149,6 +149,11 @@ pub fn enforce_budget(store: &Store, lib: &Library, protected: &[String]) -> Res
     evict_to(store, lib, protected, budget(lib)?)
 }
 
+/// The audio hashes of `tracks`' selected sources, for the `protected` lists.
+pub fn audio_hashes(lib: &Library, tracks: impl IntoIterator<Item = i64>) -> Vec<String> {
+    tracks.into_iter().filter_map(|t| lib.selected_source(t).ok().flatten()?.audio_hash).collect()
+}
+
 /// Deletes every song's prepared audio, with the same exceptions as `enforce_budget`.
 pub fn clear(store: &Store, lib: &Library, protected: &[String]) -> Result<Vec<String>> {
     evict_to(store, lib, protected, 0)

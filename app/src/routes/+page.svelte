@@ -54,6 +54,9 @@
       player.toggle();
     } else if ((e.key === "/" && !typing) || (e.key === "f" && e.metaKey)) {
       e.preventDefault();
+      ui.menu = null;
+      ui.moreOpen = false;
+      ui.sheet = null;
       ui.karaoke = false;
       searchBar?.focus();
     }
