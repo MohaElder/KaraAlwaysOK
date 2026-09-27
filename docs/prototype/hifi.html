@@ -1067,9 +1067,9 @@ function togglePlay(){
 function playQueue(ids, i){ queue = ids.map(id => ({id, by:''})); load(i); openKara(true); togglePlay(); }
 function enqueue(id, next = false, by = ''){
   const s = byId(id), ended = cur && !playing && !wantPlay && pos >= DUR && qi === queue.length - 1;
-  if (!cur){ queue = [{id, by}]; load(0); togglePlay(); toast(`Playing “${s.t}”`, 'play'); return; }
+  if (!cur){ queue = [{id, by}]; load(0); if (!by) openKara(true); togglePlay(); return; }
   queue.splice(next ? qi + 1 : queue.length, 0, {id, by});
-  if (ended){ load(qi + 1); togglePlay(); }
+  if (ended){ load(qi + 1); if (!by) openKara(true); togglePlay(); }
   else toast(by ? `${by} added “${s.t}”` : next ? `“${s.t}” plays next` : 'Added to queue', next ? 'arrow-bend-down-right' : 'list-plus');
   renderQueue();
 }
