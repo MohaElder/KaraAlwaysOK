@@ -6,7 +6,7 @@ use rubato::{FftFixedIn, Resampler};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_AAC, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
@@ -50,7 +50,7 @@ pub struct Tags {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub lyrics: Option<String>,
-    /// From iTunes' gapless tag: encoder delay frames to drop, then frames of real audio.
+    /// From iTunes' gapless tag on AAC audio: encoder delay frames to drop, then frames of real audio.
     pub gapless: Option<(usize, usize)>,
 }
 
@@ -75,6 +75,9 @@ fn open(path: &Path) -> Result<(Box<dyn FormatReader>, Tags)> {
     }
     if let Some(rev) = probed.format.metadata().current() {
         collect_tags(rev.tags(), &mut tags);
+    }
+    if !audio_track(probed.format.as_ref()).is_ok_and(|t| t.codec_params.codec == CODEC_TYPE_AAC) {
+        tags.gapless = None;
     }
     Ok((probed.format, tags))
 }
@@ -280,11 +283,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let wav = dir.path().join("s.wav");
         write_sine_wav(&wav, 44_100, 2, 1.0, 330.0);
-        let (m4a, mp3) = (dir.path().join("s.m4a"), dir.path().join("s.mp3"));
+        let (m4a, mp3, flac) = (dir.path().join("s.m4a"), dir.path().join("s.mp3"), dir.path().join("s.flac"));
         let run = |c: &mut std::process::Command| assert!(c.status().expect("this test needs afconvert and ffmpeg").success());
         run(std::process::Command::new("afconvert").args(["-f", "m4af", "-d", "aac"]).arg(&wav).arg(&m4a));
-        run(std::process::Command::new("ffmpeg").args(["-v", "error", "-i"]).arg(&wav).args(["-c:a", "libmp3lame"]).arg(&mp3));
-        for p in [m4a, mp3] {
+        // An iTunes gapless tag on a file that isn't AAC must not trim it.
+        let tag = "iTunSMPB= 00000000 00000840 000002CE 000000000000AC44";
+        run(std::process::Command::new("ffmpeg").args(["-v", "error", "-i"]).arg(&wav).args(["-c:a", "libmp3lame", "-metadata", tag]).arg(&mp3));
+        run(std::process::Command::new("ffmpeg").args(["-v", "error", "-i"]).arg(&wav).args(["-metadata", tag]).arg(&flac));
+        for p in [m4a, mp3, flac] {
             let a = decode_file(&p).unwrap().audio;
             assert_eq!(a.len(), 44_100, "{}", p.display());
             assert!(a.left[..100].iter().any(|x| x.abs() > 0.1), "{} starts late", p.display());
