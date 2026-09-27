@@ -645,7 +645,7 @@ mod tests {
         let l = lib();
         let t = l.add_track(&local("A", None)).unwrap();
         assert!(l.lyrics(t).unwrap().is_none());
-        let lines = vec![Line { start_ms: 0, end_ms: 1000, text: "hi there".into(), words: vec![Word { start_ms: 0, end_ms: 500, text: "hi".into() }] }];
+        let lines = vec![Line { start_ms: 0, end_ms: 1000, text: "hi there".into(), words: vec![Word { start_ms: 0, end_ms: 500, text: "hi".into() }], voice: None }];
         l.set_lyrics(t, LyricsSource::Lrclib, &lines, 7).unwrap();
         let got = l.lyrics(t).unwrap().unwrap();
         assert_eq!((got.source, got.lines, got.fetched_at), (LyricsSource::Lrclib, lines, 7));

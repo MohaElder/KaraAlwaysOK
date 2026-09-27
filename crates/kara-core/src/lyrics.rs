@@ -12,12 +12,23 @@ pub struct Word {
     pub text: String,
 }
 
+/// Who sings a duet line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Voice {
+    M,
+    F,
+    Both,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Line {
     pub start_ms: i64,
     pub end_ms: i64,
     pub text: String,
     pub words: Vec<Word>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<Voice>,
 }
 
 /// A word never takes longer than this, so a line before a long instrumental
@@ -66,10 +77,23 @@ fn spread_words(text: &str, start: i64, end: i64) -> Vec<Word> {
         .collect()
 }
 
-/// LRC text → timed lines with evenly spread word timings. Metadata tags and
-/// blank lines produce no line (a blank line still ends the line before it).
+/// "M: words" → (Some(Voice::M), "words"); text without a voice marker is returned as is.
+fn split_voice(text: &str) -> (Option<Voice>, &str) {
+    let Some((tag, rest)) = text.split_once(':') else { return (None, text) };
+    let voice = match tag.trim().to_ascii_lowercase().as_str() {
+        "m" | "male" | "v1" => Voice::M,
+        "f" | "female" | "v2" => Voice::F,
+        "d" | "duet" | "both" | "all" | "v1000" => Voice::Both,
+        _ => return (None, text),
+    };
+    (Some(voice), rest.trim())
+}
+
+/// LRC text → timed lines with evenly spread word timings and duet voices.
+/// Metadata tags and blank lines produce no line (a blank line still ends the line before it).
 pub fn parse_lrc(text: &str, duration_ms: i64) -> Vec<Line> {
-    let mut stamped: Vec<(i64, String)> = Vec::new();
+    let mut stamped: Vec<(i64, String, Option<Voice>)> = Vec::new();
+    let mut voice = None;
     for raw in strip_bom(text).lines() {
         let mut rest = raw.trim();
         let mut times = Vec::new();
@@ -82,22 +106,25 @@ pub fn parse_lrc(text: &str, duration_ms: i64) -> Vec<Line> {
             }
             rest = &inner[end + 1..];
         }
-        let words = rest.trim().to_string();
+        let (marker, words) = split_voice(rest.trim());
+        if marker.is_some() {
+            voice = marker;
+        }
         for t in times {
-            stamped.push((t, words.clone()));
+            stamped.push((t, words.to_string(), voice));
         }
     }
-    stamped.sort_by_key(|(t, _)| *t);
+    stamped.sort_by_key(|(t, ..)| *t);
     let mut lines = Vec::new();
-    for (i, (start, text)) in stamped.iter().enumerate() {
+    for (i, (start, text, voice)) in stamped.iter().enumerate() {
         if text.is_empty() {
             continue;
         }
         let end = match stamped.get(i + 1) {
-            Some((next, _)) => *next,
+            Some((next, ..)) => *next,
             None => duration_ms.max(start + LAST_LINE_MS),
         };
-        lines.push(Line { start_ms: *start, end_ms: end, text: text.clone(), words: spread_words(text, *start, end) });
+        lines.push(Line { start_ms: *start, end_ms: end, text: text.clone(), words: spread_words(text, *start, end), voice: *voice });
     }
     lines
 }
@@ -266,6 +293,22 @@ mod tests {
         let mut two = hits();
         two.push(hit(179.2, Some("[00:01.00]another")));
         assert_eq!(sole_synced_match(two, 180), None);
+    }
+
+    #[test]
+    fn duet_markers_set_each_lines_voice_and_carry_over() {
+        let lrc = "[00:01.00]M: Paper boats along the gutter\n[00:04.00]still floating after rain\n\
+                   [00:07.00]F: I folded mine from bus tickets\n[00:10.00]Both: we sail them anyway\n";
+        let lines = parse_lrc(lrc, 14_000);
+        let voices: Vec<_> = lines.iter().map(|l| l.voice).collect();
+        assert_eq!(voices, vec![Some(Voice::M), Some(Voice::M), Some(Voice::F), Some(Voice::Both)]);
+        assert_eq!(lines[0].text, "Paper boats along the gutter");
+        assert_eq!(lines[0].words[0].text, "Paper");
+        let plain = parse_lrc("[00:01.00]Time: half past nine\n", 5_000);
+        assert_eq!((plain[0].voice, plain[0].text.as_str()), (None, "Time: half past nine"));
+        let stored: Line = serde_json::from_str(r#"{"start_ms":0,"end_ms":1,"text":"x","words":[]}"#).unwrap();
+        assert_eq!(stored.voice, None);
+        assert_eq!(serde_json::to_value(&lines[3]).unwrap()["voice"], "both");
     }
 
     #[test]
