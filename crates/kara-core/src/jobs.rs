@@ -57,19 +57,40 @@ pub fn prepare(
     emit: &mut dyn FnMut(Event),
 ) -> Result<Outcome> {
     let result = prepare_inner(ctx, lib, model, fetcher, track_id, cancel, emit);
-    if let Err(e) = &result {
-        // Only the outermost context reaches the user.
-        let message = e.to_string();
-        if let Ok(Some(src)) = lib.selected_source(track_id) {
-            let _ = lib.set_source_status(src.id, SourceStatus::Failed, Some(&message));
+    match &result {
+        Ok(Outcome::Done) => {
+            if let Ok(Some(src)) = lib.selected_source(track_id) {
+                let _ = lib.set_source_status(src.id, SourceStatus::Ready, None);
+            }
         }
-        emit(Event::Failed { track_id, message });
+        Err(e) => {
+            // Only the outermost context reaches the user.
+            let message = e.to_string();
+            if let Ok(Some(src)) = lib.selected_source(track_id) {
+                let _ = lib.set_source_status(src.id, SourceStatus::Failed, Some(&message));
+            }
+            emit(Event::Failed { track_id, message });
+        }
+        Ok(Outcome::Cancelled) => {}
     }
     result
 }
 
 fn is_ready(ctx: &Ctx, lib: &Library, hash: &str) -> Result<bool> {
     Ok(lib.separation(hash, &ctx.model_id)?.is_some_and(|r| r.status == SepStatus::Ready))
+}
+
+fn look_up_lyrics(track: &Track, fetcher: &(dyn LyricsFetcher + Sync)) -> Result<(LyricsSource, Vec<lyrics::Line>)> {
+    let dur = track.duration_ms.unwrap_or(0);
+    lyrics::find(None, &track.title, track.artist.as_deref(), track.album.as_deref(), dur, fetcher)
+}
+
+/// Looks up lyrics and saves them if found. A failed lookup or save leaves
+/// lyrics unset, so we try again next time.
+fn refresh_lyrics(lib: &Library, track: &Track, fetcher: &(dyn LyricsFetcher + Sync)) {
+    if let Ok((src, lines)) = look_up_lyrics(track, fetcher) {
+        let _ = lib.set_lyrics(track.id, src, &lines, now_ms());
+    }
 }
 
 fn prepare_inner(
@@ -86,19 +107,29 @@ fn prepare_inner(
         .selected_source(track_id)
         .context("This song is no longer in your library.")?
         .context("This song has no audio to play.")?;
+    let need_lyrics = match lib.lyrics(track_id)? {
+        None => true,
+        Some(l) => l.source == LyricsSource::None && now_ms() - l.fetched_at > LYRICS_RETRY_MS,
+    };
+
     if let Some(hash) = &source.audio_hash {
         if is_ready(ctx, lib, hash)? {
             lib.touch_separation(hash, &ctx.model_id, now_ms())?;
-            lib.set_source_status(source.id, SourceStatus::Ready, None)?;
+            if need_lyrics {
+                refresh_lyrics(lib, &track, fetcher);
+            }
             emit(Event::Ready { track_id });
             return Ok(Outcome::Done);
         }
     }
 
     let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, emit)?;
+    let track = lib.track(track_id).context("This song is no longer in your library.")?; // fetching may have filled in title/artist
     if is_ready(ctx, lib, &hash)? {
         lib.touch_separation(&hash, &ctx.model_id, now_ms())?;
-        lib.set_source_status(source.id, SourceStatus::Ready, None)?;
+        if need_lyrics {
+            refresh_lyrics(lib, &track, fetcher);
+        }
         emit(Event::Ready { track_id });
         return Ok(Outcome::Done);
     }
@@ -106,23 +137,14 @@ fn prepare_inner(
         return Ok(Outcome::Cancelled);
     }
 
-    let track = lib.track(track_id).context("This song is no longer in your library.")?; // fetching may have filled in title/artist
-    let need_lyrics = match lib.lyrics(track_id)? {
-        None => true,
-        Some(l) => l.source == LyricsSource::None && now_ms() - l.fetched_at > LYRICS_RETRY_MS,
-    };
     emit(Event::Stage { track_id, stage: Stage::Lyrics });
     let outcome = std::thread::scope(|s| {
         let lookup = need_lyrics.then(|| {
             let track = &track;
-            s.spawn(move || {
-                let dur = track.duration_ms.unwrap_or(0);
-                lyrics::find(None, &track.title, track.artist.as_deref(), track.album.as_deref(), dur, fetcher)
-            })
+            s.spawn(move || look_up_lyrics(track, fetcher))
         });
-        let outcome = separate_stage(ctx, lib, track_id, source.id, &hash, &mix, model, cancel, emit);
+        let outcome = separate_stage(ctx, lib, track_id, &hash, &mix, model, cancel, emit);
         if let Some(handle) = lookup {
-            // A failed lookup or save leaves lyrics unset, so we try again next time.
             if let Ok(Ok((src, lines))) = handle.join() {
                 let _ = lib.set_lyrics(track_id, src, &lines, now_ms());
             }
@@ -158,7 +180,7 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
     let hash = audio::audio_hash(&decoded.audio);
     let dst = ctx.store.source_path(&hash);
     if !is_ready(ctx, lib, &hash)? && !dst.exists() {
-        let bytes = audio::encode_flac(&decoded.audio).context("Couldn't save the audio. Is the disk full?")?;
+        let bytes = audio::encode_flac(&decoded.audio).context("Couldn't prepare this song's audio.")?;
         write_atomic(&dst, &bytes).context("Couldn't save the audio. Is the disk full?")?;
     }
     lib.set_source_audio(source.id, &hash, decoded.audio.duration_ms())?;
@@ -176,7 +198,6 @@ fn separate_stage(
     ctx: &Ctx,
     lib: &Library,
     track_id: i64,
-    source_id: i64,
     hash: &str,
     mix: &Stereo,
     model: &mut dyn VocalModel,
@@ -212,7 +233,7 @@ fn separate_stage(
         Ok(o) => o,
         Err(e) => {
             row.status = SepStatus::Failed;
-            lib.upsert_separation(&row)?;
+            let _ = lib.upsert_separation(&row);
             return Err(e.context("Couldn't take the vocals out of this song."));
         }
     };
@@ -224,7 +245,6 @@ fn separate_stage(
         }
         Outcome::Done => {
             cache::finish(&ctx.store, lib, hash, &ctx.model_id)?;
-            lib.set_source_status(source_id, SourceStatus::Ready, None)?;
         }
     }
     Ok(outcome)
@@ -304,8 +324,8 @@ impl Worker {
         let mut queue: VecDeque<i64> = tracks.into();
         if let Some((running, flag)) = &st.running {
             if queue.front() == Some(running) {
-                // Still preparing the same song: keep it queued (so it
-                // resumes) unless it was already told to cancel.
+                // Already preparing this song: don't queue it again, unless
+                // its job was told to cancel (then it must run again).
                 if !flag.load(Ordering::Relaxed) {
                     queue.pop_front();
                 }
@@ -351,8 +371,15 @@ mod tests {
         }
     }
 
+    struct MadeUpLyrics;
+    impl LyricsFetcher for MadeUpLyrics {
+        fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            Ok(Some("[00:00.00]la la la\n".into()))
+        }
+    }
+
     /// Slow enough (2 ms/segment, hundreds of segments per chunk) that a
-    /// cancel set right after `play()` is guaranteed to land before it finishes.
+    /// cancel set right after `play()` lands well before it finishes.
     struct Slow;
     impl VocalModel for Slow {
         fn infer(&mut self, i: ndarray::Array4<f32>) -> Result<ndarray::Array4<f32>> {
@@ -491,12 +518,6 @@ mod tests {
 
     #[test]
     fn lyrics_are_saved_before_ready_is_emitted() {
-        struct MadeUpLyrics;
-        impl LyricsFetcher for MadeUpLyrics {
-            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
-                Ok(Some("[00:00.00]la la la\n".into()))
-            }
-        }
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
@@ -510,6 +531,28 @@ mod tests {
         })
         .unwrap();
         assert_eq!(lines_at_ready.unwrap()[0].text, "la la la");
+    }
+
+    #[test]
+    fn lyrics_are_retried_for_an_already_ready_song() {
+        struct Offline;
+        impl LyricsFetcher for Offline {
+            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+                anyhow::bail!("offline")
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        lib.update_track_meta(t, "Title", Some("Artist"), None).unwrap();
+        prepare(&c, &lib, &mut Silence, &Offline, t, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert!(lib.lyrics(t).unwrap().is_none());
+
+        // The song is already ready; this must still look lyrics up rather
+        // than skip straight to Ready.
+        prepare(&c, &lib, &mut Silence, &MadeUpLyrics, t, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(lib.lyrics(t).unwrap().unwrap().lines[0].text, "la la la");
     }
 
     fn wait_for(rx: &mpsc::Receiver<Event>, want: &Event) -> Vec<Event> {
