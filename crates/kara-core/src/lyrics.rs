@@ -351,7 +351,7 @@ fn strip_suffix_ci<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
 
 /// A song's name as a lyrics service knows it, from a file's or upload's title: without tags like
 /// 【4K】, (Official Video) or (Radio Edit), a trailing version like 现场版 and anything after " | "; the name in 《》「」『』 when there is one;
-/// for "A - B", A when B is the singer or a version or no singer is known, else B. Also returns a singer named in the title
+/// for "A - B", B when A is the singer, A when B is the singer, a version, starts with "from" or no singer is known, else B. Also returns a singer named in the title
 /// (before 《》「」『』 or " - ").
 pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>) {
     let singer = |s: &str| Some(s.trim_matches(|c: char| c.is_whitespace() || "-|:：".contains(c)).to_string()).filter(|s| !s.is_empty());
@@ -372,7 +372,9 @@ pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>
     }
     let is_singer = |part: &str| artist.into_iter().flat_map(clean_artist).any(|a| key(&a) == key(part));
     let (name, named) = match name.split_once(" - ") {
-        Some((left, right)) if is_singer(right) || version_phrase(right) || artist.is_none() => (left, None),
+        Some((left, right)) if !is_singer(left) && (is_singer(right) || version_phrase(right) || words(right).first().is_some_and(|w| w == "from") || artist.is_none()) => {
+            (left, None)
+        }
         Some((left, right)) => (right, singer(left).filter(|_| !is_singer(left))),
         None => (name.as_str(), None),
     };
@@ -500,6 +502,9 @@ mod tests {
         assert_eq!(title("Radio - Single Version", Some("Lana Del Rey")), ("Radio".into(), None));
         assert_eq!(title("Lana Del Rey - Radio", Some("Lana Del Rey")), ("Radio".into(), None));
         assert_eq!(title("Hozier - From Eden", Some("Hozier")), ("From Eden".into(), None));
+        assert_eq!(title("Let It Go - From \"Frozen\"/Soundtrack Version", Some("Idina Menzel")), ("Let It Go".into(), None));
+        assert_eq!(title("India.Arie - Video", Some("India.Arie")), ("Video".into(), None));
+        assert_eq!(title("Portugal. The Man - Live in the Moment", Some("Portugal. The Man")), ("Live in the Moment".into(), None));
         assert_eq!(title("Paper Boats - Live at Wembley", Some("Juniper Row")), ("Paper Boats".into(), None));
         assert_eq!(title("Paper Boats (From Me to You) (Radio Edit)", None), ("Paper Boats (From Me to You)".into(), None));
         assert_eq!(clean_artist("盧廣仲(版本)"), ["盧廣仲"]);
