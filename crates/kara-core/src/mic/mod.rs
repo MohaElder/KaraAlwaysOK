@@ -20,23 +20,28 @@ pub fn voice_gain(volume: u8, voice: u8) -> f32 {
 const MOST_FRAMES: usize = 4096;
 const MOST_PHONES: usize = 8;
 
-#[derive(Clone)]
 pub struct Level {
     pub id: Arc<str>,
     pub peak: f32,
     pub down: bool,
 }
 
-/// A phone's id, buffer and feedback control, made before taking the mixer lock.
+/// A phone's id, buffer, feedback control and scratch room, made before taking the mixer lock.
 pub struct NewVoice {
     id: Arc<str>,
     buffer: JitterBuffer,
     howl: Howl,
+    scratch: Vec<f32>,
 }
 
 impl NewVoice {
     pub fn new(id: &str, in_rate: u32, out_rate: u32, floor_ms: f64) -> Self {
-        Self { id: id.into(), buffer: JitterBuffer::new(in_rate, out_rate, floor_ms), howl: Howl::new(out_rate) }
+        Self {
+            id: id.into(),
+            buffer: JitterBuffer::new(in_rate, out_rate, floor_ms),
+            howl: Howl::new(out_rate),
+            scratch: Vec::with_capacity(MOST_FRAMES),
+        }
     }
 }
 
@@ -83,8 +88,8 @@ impl Mixer {
             std::mem::swap(&mut v.buffer, &mut new.buffer);
             return Some(new);
         }
-        let NewVoice { id, buffer, howl } = new;
-        self.voices.push(Voice { id, buffer, howl, gain: 1.0, peak: 0.0, scratch: Vec::with_capacity(MOST_FRAMES) });
+        let NewVoice { id, buffer, howl, scratch } = new;
+        self.voices.push(Voice { id, buffer, howl, gain: 1.0, peak: 0.0, scratch });
         None
     }
 
@@ -108,7 +113,10 @@ impl Mixer {
 
     pub fn set_gain(&mut self, id: &str, gain: f32) {
         if let Some(v) = self.voice(id) {
-            v.gain = gain.min(MAX_GAIN);
+            // min then max, not clamp: clamp passes a NaN gain through, this turns it into MAX_GAIN.
+            #[allow(clippy::manual_clamp)]
+            let gain = gain.min(MAX_GAIN).max(0.0);
+            v.gain = gain;
         }
     }
 
@@ -131,9 +139,9 @@ impl Mixer {
         }
     }
 
-    /// Each phone's loudest moment since the last call, into `out` (cleared first; its room is reused).
+    /// Each phone's loudest moment since the last call, appended to `out`, which must be empty (the caller clears it before locking, so nothing is freed here).
     pub fn levels(&mut self, out: &mut Vec<Level>) {
-        out.clear();
+        debug_assert!(out.is_empty());
         out.extend(self.voices.iter_mut().map(|v| Level { id: v.id.clone(), peak: std::mem::take(&mut v.peak), down: v.howl.down() }));
     }
 
@@ -177,18 +185,27 @@ impl Reverb {
         let mut out = 0.0;
         for c in &mut self.combs {
             let y = c.buf[c.i];
-            c.low = y * (1.0 - COMB_DAMP) + c.low * COMB_DAMP;
-            c.buf[c.i] = x * COMB_INPUT + c.low * COMB_FEEDBACK;
+            c.low = flush(y * (1.0 - COMB_DAMP) + c.low * COMB_DAMP);
+            c.buf[c.i] = flush(x * COMB_INPUT + c.low * COMB_FEEDBACK);
             c.i = (c.i + 1) % c.buf.len();
             out += y;
         }
         for a in &mut self.allpasses {
             let y = a.buf[a.i];
-            a.buf[a.i] = out + y * ALLPASS_FEEDBACK;
+            a.buf[a.i] = flush(out + y * ALLPASS_FEEDBACK);
             a.i = (a.i + 1) % a.buf.len();
             out = y - out;
         }
         out
+    }
+}
+
+/// Rounds a value too tiny to matter down to true zero, so silence in the reverb's delay lines never lingers as a subnormal.
+fn flush(x: f32) -> f32 {
+    if x.abs() < 1e-20 {
+        0.0
+    } else {
+        x
     }
 }
 
@@ -236,5 +253,28 @@ mod tests {
         let peak = out.iter().fold(0f32, |p, x| p.max(x.abs()));
         assert!(peak > 0.5 && peak <= CEILING + 1e-6, "peak {peak}");
         assert!(out[out.len() - 4_800..].iter().all(|x| x.abs() < 1e-3), "the reverb tail dies away");
+    }
+
+    #[test]
+    fn a_returning_phone_keeps_its_gain_and_hands_back_the_old_buffer_while_peaks_reset_on_read() {
+        let mut m = Mixer::new(48_000, 20.0);
+        m.add(NewVoice::new("a", 48_000, 48_000, 20.0));
+        m.set_gain("a", 1.5);
+        m.push("a", &[0.5; 256]);
+
+        let leftover = m.add(NewVoice::new("a", 48_000, 48_000, 20.0)).expect("a returning phone hands its old buffer back");
+        assert!(leftover.buffer.fill_ms() > 0.0, "the leftover holds what the phone had already sent");
+        assert_eq!(m.voices[0].gain, 1.5, "gain survives a returning phone");
+
+        m.push("a", &[0.9; 2_000]);
+        let mut out = [0.0; 256];
+        m.render(&mut out);
+        let mut levels = Vec::new();
+        m.levels(&mut levels);
+        assert!(levels[0].peak > 0.0, "a peak was recorded");
+
+        levels.clear();
+        m.levels(&mut levels);
+        assert_eq!(levels[0].peak, 0.0, "the peak resets once read");
     }
 }
