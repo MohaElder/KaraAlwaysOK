@@ -9,6 +9,7 @@ pub mod jobs;
 pub mod library;
 pub mod lyric_sync;
 pub mod lyrics;
+pub mod mic;
 pub mod problem;
 pub mod quiet;
 pub mod separate;
