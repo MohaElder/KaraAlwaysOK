@@ -1,12 +1,16 @@
 //! What a pasted link points to, shown before anything is downloaded.
 
 use super::link::host_is;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 use url::Url;
+
+/// How long `probe` waits for yt-dlp before giving up.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +46,11 @@ struct OEmbed {
 
 pub fn parse_oembed(json: &str) -> Result<LinkPreview> {
     let o: OEmbed = serde_json::from_str(json)?;
-    Ok(LinkPreview { title: o.title, channel: o.author_name, duration_ms: o.duration.map(|s| (s * 1000.0) as i64), thumbnail: o.thumbnail_url })
+    Ok(LinkPreview { title: o.title, channel: o.author_name, duration_ms: o.duration.map(to_ms), thumbnail: o.thumbnail_url })
+}
+
+fn to_ms(seconds: f64) -> i64 {
+    (seconds * 1000.0).round() as i64
 }
 
 /// A quick preview from the site's oEmbed endpoint; `None` for sites without one.
@@ -64,19 +72,39 @@ struct Dump {
 
 /// A full preview from yt-dlp, without downloading anything.
 pub fn probe(bin: &Path, url: &Url) -> Result<LinkPreview> {
-    let out = Command::new(bin)
+    probe_with_timeout(bin, url, PROBE_TIMEOUT)
+}
+
+/// Runs yt-dlp and kills it if it hasn't finished within `timeout`.
+fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPreview> {
+    let mut child = Command::new(bin)
         .args(["--dump-json", "--skip-download", "--no-playlist", "--no-warnings"])
         .arg(url.as_str())
-        .output()?;
-    if !out.status.success() {
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("Couldn't find a song at this link.");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    if !status.success() {
         bail!("Couldn't find a song at this link.");
     }
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut stdout = String::new();
+    child.stdout.take().context("read yt-dlp output")?.read_to_string(&mut stdout)?;
     let d: Dump = serde_json::from_str(stdout.lines().next().unwrap_or(""))?;
     Ok(LinkPreview {
         title: d.title.unwrap_or_else(|| "Unknown song".into()),
         channel: d.channel.or(d.uploader),
-        duration_ms: d.duration.map(|s| (s * 1000.0).round() as i64),
+        duration_ms: d.duration.map(to_ms),
         thumbnail: d.thumbnail,
     })
 }
@@ -127,6 +155,19 @@ mod tests {
             LinkPreview { title: "Made Up Song".into(), channel: Some("Made Up Channel".into()), duration_ms: Some(205_400), thumbnail: Some("https://i.example/t.jpg".into()) }
         );
         assert!(std::fs::read_to_string(dir.path().join("args")).unwrap().contains("--skip-download"));
+    }
+
+    #[test]
+    fn probe_gives_up_on_a_hung_ytdlp_instead_of_blocking_forever() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("yt-dlp");
+        std::fs::write(&bin, "#!/bin/sh\nsleep 5\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let start = std::time::Instant::now();
+        let err = probe_with_timeout(&bin, &Url::parse("https://youtu.be/x").unwrap(), Duration::from_millis(200)).unwrap_err();
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert_eq!(err.to_string(), "Couldn't find a song at this link.");
     }
 
     #[test]
