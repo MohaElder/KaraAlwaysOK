@@ -98,7 +98,7 @@ impl Effects {
         }
     }
 
-    /// The voice with its echo and warm room; runs whatever the effect, so turning karaoke on replays nothing old.
+    /// The voice with its echo and warm room, kept running while the effect is off.
     fn karaoke(&mut self, x: f32) -> f32 {
         let echoed = self.echo[self.echo_i];
         self.echo[self.echo_i] = flush(x + echoed * ECHO_FEEDBACK);
@@ -161,7 +161,7 @@ impl Tune {
         }
     }
 
-    /// Keeps the recent input while auto-tune is off, so turning it on replays nothing old.
+    /// Keeps the recent input while auto-tune is off.
     fn hear(&mut self, x: f32) {
         self.line[self.write] = x;
         self.write = (self.write + 1) % self.line.len();
