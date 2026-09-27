@@ -274,6 +274,11 @@ impl Library {
         Ok(self.conn.query_row(&sql, [track_id], source_row).optional()?)
     }
 
+    pub fn source_by_uri(&self, kind: SourceKind, uri: &str) -> Result<Option<AudioSource>> {
+        let sql = format!("SELECT {SOURCE_COLS} FROM audio_source WHERE kind = ?1 AND uri = ?2");
+        Ok(self.conn.query_row(&sql, params![kind, uri], source_row).optional()?)
+    }
+
     pub fn sources_with_hash(&self, hash: &str) -> Result<Vec<AudioSource>> {
         let sql = format!("SELECT {SOURCE_COLS} FROM audio_source WHERE audio_hash = ?1");
         let mut stmt = self.conn.prepare(&sql)?;

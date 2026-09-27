@@ -39,7 +39,13 @@ pub fn link_collections(lib: &Library, track_id: i64, artist: Option<&str>, albu
     Ok(())
 }
 
+/// Adds a local file; a file that is already in the library returns its existing track.
 pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
+    let path = &path.canonicalize().context("The file was moved or deleted.")?;
+    let uri = path.display().to_string();
+    if let Some(s) = lib.source_by_uri(SourceKind::File, &uri)? {
+        return Ok(Ingested { track_id: s.track_id, source_id: s.id });
+    }
     let (tags, duration_ms) = audio::read_tags(path).context("This file isn't audio we can play.")?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
     let title = tags.title.clone().unwrap_or_else(|| title_from_file_name(name));
@@ -51,7 +57,7 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
         album: tags.album.as_deref(),
         duration_ms,
     })?;
-    let source_id = lib.add_source(track_id, SourceKind::File, &path.display().to_string(), Some(name))?;
+    let source_id = lib.add_source(track_id, SourceKind::File, &uri, Some(name))?;
     link_collections(lib, track_id, tags.artist.as_deref(), tags.album.as_deref())?;
     Ok(Ingested { track_id, source_id })
 }
@@ -133,10 +139,26 @@ mod tests {
         let t = lib.track(ing.track_id).unwrap();
         assert_eq!((t.title.as_str(), t.provider, t.duration_ms), ("rooftop static", ProviderId::Local, Some(1000)));
         let src = lib.selected_source(ing.track_id).unwrap().unwrap();
-        assert_eq!((src.kind, src.status, src.uri), (SourceKind::File, SourceStatus::Pending, p.display().to_string()));
+        assert_eq!((src.kind, src.status), (SourceKind::File, SourceStatus::Pending));
         let pls = lib.collections(Some(ProviderId::Local), CollectionKind::Playlist).unwrap();
         assert_eq!(pls[0].name, "Imported");
         assert_eq!(lib.collection_tracks(pls[0].id).unwrap()[0].id, ing.track_id);
+    }
+
+    #[test]
+    fn re_adding_the_same_file_returns_the_existing_track() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let p = dir.path().join("a.wav");
+        write_sine_wav(&p, 44_100, 2, 0.2, 440.0);
+        let lib = Library::open_in_memory().unwrap();
+        let first = add_file(&lib, &p).unwrap();
+        let again = add_file(&lib, &dir.path().join("sub/../a.wav")).unwrap();
+        assert_eq!((again.track_id, again.source_id), (first.track_id, first.source_id));
+        let src = lib.selected_source(first.track_id).unwrap().unwrap();
+        assert_eq!(Path::new(&src.uri), p.canonicalize().unwrap());
+        let imported = &lib.collections(None, CollectionKind::Playlist).unwrap()[0];
+        assert_eq!(lib.collection_tracks(imported.id).unwrap().len(), 1);
     }
 
     #[test]

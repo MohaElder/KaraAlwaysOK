@@ -455,9 +455,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
-        let p = song(dir.path(), "a.wav");
-        let t1 = ingest::add_file(&lib, &p).unwrap().track_id;
-        let t2 = ingest::add_file(&lib, &p).unwrap().track_id;
+        let t1 = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let t2 = ingest::add_file(&lib, &song(dir.path(), "copy.wav")).unwrap().track_id;
         run(&c, &lib, t1, &AtomicBool::new(false)).0.unwrap();
         let (_, events) = run(&c, &lib, t2, &AtomicBool::new(false));
         assert!(!events.iter().any(|e| matches!(e, Event::Progress { .. })));
@@ -638,9 +637,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
-        let p = song(dir.path(), "a.wav");
-        let t1 = ingest::add_file(&lib, &p).unwrap().track_id;
-        let t2 = ingest::add_file(&lib, &p).unwrap().track_id;
+        let t1 = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let t2 = ingest::add_file(&lib, &song(dir.path(), "copy.wav")).unwrap().track_id;
         lib.update_track_meta(t2, "Title", Some("Artist"), None).unwrap();
         run(&c, &lib, t1, &AtomicBool::new(false)).0.unwrap();
         prepare(&c, &lib, &mut Silence, &MadeUpLyrics, t2, &AtomicBool::new(false), &mut |_| {}).unwrap();
