@@ -50,6 +50,8 @@ pub struct Tags {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub lyrics: Option<String>,
+    /// From iTunes' gapless tag: encoder delay frames to drop, then frames of real audio.
+    pub gapless: Option<(usize, usize)>,
 }
 
 pub struct Decoded {
@@ -65,7 +67,7 @@ fn open(path: &Path) -> Result<(Box<dyn FormatReader>, Tags)> {
         hint.with_extension(ext);
     }
     let mut probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(&hint, mss, &FormatOptions { enable_gapless: true, ..Default::default() }, &MetadataOptions::default())
         .context("not a supported audio file")?;
     let mut tags = Tags::default();
     if let Some(rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
@@ -77,8 +79,19 @@ fn open(path: &Path) -> Result<(Box<dyn FormatReader>, Tags)> {
     Ok((probed.format, tags))
 }
 
+/// "iTunSMPB" value: " 00000000 <delay> <padding> <length> …" in hex.
+fn parse_itunsmpb(value: &str) -> Option<(usize, usize)> {
+    let fields: Vec<&str> = value.split_whitespace().collect();
+    let hex = |i: usize| usize::from_str_radix(fields.get(i)?, 16).ok();
+    Some((hex(1)?, hex(3)?)).filter(|(_, len)| *len > 0)
+}
+
 fn collect_tags(src: &[Tag], out: &mut Tags) {
     for tag in src {
+        if tag.key.ends_with("iTunSMPB") {
+            out.gapless = out.gapless.or(parse_itunsmpb(&tag.value.to_string()));
+            continue;
+        }
         let slot = match tag.std_key {
             Some(StandardTagKey::TrackTitle) => &mut out.title,
             Some(StandardTagKey::Artist) => &mut out.artist,
@@ -106,7 +119,8 @@ fn audio_track(format: &dyn FormatReader) -> Result<&symphonia::core::formats::T
 pub fn read_tags(path: &Path) -> Result<(Tags, Option<i64>)> {
     let (format, tags) = open(path)?;
     let p = &audio_track(format.as_ref())?.codec_params;
-    let dur = match (p.n_frames, p.sample_rate) {
+    let frames = tags.gapless.map(|(_, len)| len as u64).or(p.n_frames);
+    let dur = match (frames, p.sample_rate) {
         (Some(n), Some(rate)) => Some(n as i64 * 1000 / rate as i64),
         _ => None,
     };
@@ -144,6 +158,12 @@ pub fn decode_file(path: &Path) -> Result<Decoded> {
         for frame in buf.samples().chunks(ch) {
             left.push(frame[0]);
             right.push(if ch > 1 { frame[1] } else { frame[0] });
+        }
+    }
+    if let Some((delay, len)) = tags.gapless {
+        for ch in [&mut left, &mut right] {
+            ch.drain(..delay.min(ch.len()));
+            ch.truncate(len);
         }
     }
     let audio = resample(Stereo { left, right }, rate)?;
@@ -253,6 +273,22 @@ mod tests {
         assert_eq!(d.audio.left, d.audio.right);
         let peak = d.audio.left[20_000..60_000].iter().fold(0f32, |m, x| m.max(x.abs()));
         assert!((0.45..0.55).contains(&peak), "peak {peak}");
+    }
+
+    #[test]
+    fn lossy_files_decode_to_their_true_length_and_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("s.wav");
+        write_sine_wav(&wav, 44_100, 2, 1.0, 330.0);
+        let (m4a, mp3) = (dir.path().join("s.m4a"), dir.path().join("s.mp3"));
+        let run = |c: &mut std::process::Command| assert!(c.status().expect("this test needs afconvert and ffmpeg").success());
+        run(std::process::Command::new("afconvert").args(["-f", "m4af", "-d", "aac"]).arg(&wav).arg(&m4a));
+        run(std::process::Command::new("ffmpeg").args(["-v", "error", "-i"]).arg(&wav).args(["-c:a", "libmp3lame"]).arg(&mp3));
+        for p in [m4a, mp3] {
+            let a = decode_file(&p).unwrap().audio;
+            assert_eq!(a.len(), 44_100, "{}", p.display());
+            assert!(a.left[..100].iter().any(|x| x.abs() > 0.1), "{} starts late", p.display());
+        }
     }
 
     #[test]
