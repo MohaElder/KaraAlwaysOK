@@ -82,7 +82,19 @@ struct Info {
 }
 
 /// Downloads the best audio we can decode (M4A, else MP3, else whatever is best).
+/// If that fails, updates yt-dlp (sites change) and tries once more.
 pub fn download(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
+    download_once(bin, url, out_dir).or_else(|e| {
+        let updated = Command::new(bin).arg("-U").output().is_ok_and(|o| o.status.success());
+        if updated {
+            download_once(bin, url, out_dir)
+        } else {
+            Err(e)
+        }
+    })
+}
+
+fn download_once(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
     std::fs::create_dir_all(out_dir)?;
     let out = Command::new(bin)
         .args(["--no-playlist", "--no-progress", "-f", "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio"])
@@ -114,6 +126,33 @@ mod tests {
         let sums = "aaa  yt-dlp\nbbb  yt-dlp_macos\nccc  yt-dlp_macos.zip\n";
         assert_eq!(sha_from_sums(sums, "yt-dlp_macos").as_deref(), Some("bbb"));
         assert_eq!(sha_from_sums(sums, "nope"), None);
+    }
+
+    /// A stand-in yt-dlp: `-U` runs `update`; a download succeeds only once a file named "updated" exists.
+    fn fake_ytdlp(dir: &Path, update: &str) -> PathBuf {
+        let bin = dir.join("yt-dlp");
+        let script = format!(
+            "#!/bin/sh\ncd \"$(dirname \"$0\")\"\nif [ \"$1\" = -U ]; then {update}; fi\necho x >> attempts\n\
+             [ -f updated ] || {{ echo 'ERROR: site changed' >&2; exit 1; }}\n\
+             echo '{{\"filepath\":\"/made/up.m4a\",\"title\":\"Made Up Song\",\"uploader\":\"Made Up Channel\"}}'\n"
+        );
+        std::fs::write(&bin, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+
+    #[test]
+    fn a_failed_download_updates_ytdlp_and_retries_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = fake_ytdlp(dir.path(), "touch updated; exit 0");
+        let f = download(&bin, "https://youtu.be/x", dir.path()).unwrap();
+        assert_eq!((f.title.as_str(), f.artist.as_deref()), ("Made Up Song", Some("Made Up Channel")));
+
+        let dir = tempfile::tempdir().unwrap();
+        let bin = fake_ytdlp(dir.path(), "exit 0");
+        assert!(download(&bin, "https://youtu.be/x", dir.path()).is_err());
+        assert_eq!(std::fs::read_to_string(dir.path().join("attempts")).unwrap().lines().count(), 2);
     }
 
     #[test]
