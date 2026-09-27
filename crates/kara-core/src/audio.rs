@@ -140,12 +140,12 @@ pub fn is_damaged(e: &anyhow::Error) -> bool {
 }
 
 /// Explains a `read_tags`/`decode_file` failure: `unsupported` for a damaged or unrecognized
-/// file, or that KaraAlwaysOK isn't allowed to read it when the file itself couldn't be opened.
+/// file, that it's missing, or that KaraAlwaysOK isn't allowed to read it.
 pub fn describe_read_failure(e: anyhow::Error, unsupported: &'static str) -> anyhow::Error {
-    if is_damaged(&e) {
-        e.context(unsupported)
-    } else {
-        e.context("KaraAlwaysOK isn't allowed to read this file.")
+    match e.downcast_ref::<std::io::Error>().map(std::io::Error::kind) {
+        None => e.context(unsupported),
+        Some(std::io::ErrorKind::NotFound) => e.context("The file was moved or deleted."),
+        Some(_) => e.context("KaraAlwaysOK isn't allowed to read this file."),
     }
 }
 
@@ -414,6 +414,13 @@ mod tests {
         let (tags, dur) = read_tags(&p).unwrap();
         assert_eq!(tags, Tags::default());
         assert_eq!(dur, Some(1500));
+    }
+
+    #[test]
+    fn a_missing_file_is_reported_as_moved_or_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = read_tags(&dir.path().join("gone.wav")).unwrap_err();
+        assert_eq!(describe_read_failure(e, "unsupported").to_string(), "The file was moved or deleted.");
     }
 
     #[test]
