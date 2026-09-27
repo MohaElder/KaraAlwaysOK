@@ -1,6 +1,7 @@
 use crate::library::{cards, CollectionCard};
 use crate::state::{coded, AppError, AppState, Plain};
 use anyhow::Context;
+use kara_core::fuzzy::{best_first, Fuzzy};
 use kara_core::ingest::link::{self, LinkVerdict};
 use kara_core::ingest::preview::{self, LinkPreview};
 use kara_core::ingest::ytdlp;
@@ -27,17 +28,14 @@ pub fn search_input(lib: &Library, input: &str, imported: &str) -> anyhow::Resul
             verdict => SearchOutcome::Rejected { streaming: verdict == LinkVerdict::Streaming, host },
         });
     }
-    let query = input.trim().to_lowercase();
-    if query.is_empty() {
+    let Some(mut fuzzy) = Fuzzy::new(input) else {
         return Ok(SearchOutcome::Text { tracks: Vec::new(), collections: Vec::new() });
-    }
-    let mut collections = Vec::new();
+    };
+    let mut all = Vec::new();
     for kind in [CollectionKind::Playlist, CollectionKind::Album, CollectionKind::Artist] {
-        collections.extend(cards(lib, kind)?.into_iter().filter(|c| {
-            let name = if kind == CollectionKind::Playlist && !c.row.user { imported } else { &c.row.name };
-            name.to_lowercase().contains(&query)
-        }));
+        all.extend(cards(lib, kind)?);
     }
+    let collections = best_first(all, |c| fuzzy.score(if c.row.kind == CollectionKind::Playlist && !c.row.user { imported } else { &c.row.name }));
     Ok(SearchOutcome::Text { tracks: lib.search(input, 50)?, collections })
 }
 
@@ -93,7 +91,7 @@ mod tests {
             (Some("text"), Some("Paper Boats"), Some("Juniper Row"))
         );
         let ids = |input: &str| json(input)["collections"].as_array().unwrap().iter().map(|c| c["id"].as_i64()).collect::<Vec<_>>();
-        assert_eq!((ids("読み込"), ids("imp")), (vec![Some(imported)], vec![]));
+        assert_eq!((ids("込曲"), ids("imp")), (vec![Some(imported)], vec![]));
         let link = json("youtu.be/abc");
         assert_eq!((link["kind"].as_str(), link["host"].as_str()), (Some("link"), Some("youtu.be")));
         let refused = json("https://open.spotify.com/track/x");

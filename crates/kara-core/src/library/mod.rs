@@ -1,6 +1,7 @@
 //! The library database: tracks, collections, audio sources, separation
-//! progress, lyrics and settings. One SQLite file (WAL), search via FTS5.
+//! progress, lyrics and settings. One SQLite file (WAL).
 
+use crate::fuzzy::{best_first, Fuzzy};
 use crate::lyrics::Line;
 use crate::problem::Problem;
 use anyhow::{Context, Result};
@@ -192,6 +193,7 @@ const STEPS: &[Step] = &[
     |tx| Ok(tx.execute_batch(include_str!("schema.sql"))?),
     |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN instrumental INTEGER NOT NULL DEFAULT 0")?),
     |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN art_seed INTEGER NOT NULL DEFAULT 0; UPDATE track SET art_seed = abs(random()) % 360;")?),
+    |tx| Ok(tx.execute_batch("DROP TRIGGER track_ai; DROP TRIGGER track_ad; DROP TRIGGER track_au; DROP TABLE track_fts;")?),
 ];
 
 pub struct Library {
@@ -270,21 +272,17 @@ impl Library {
         Ok(())
     }
 
-    /// Prefix search over title/artist/album; accent-insensitive; never a syntax error.
+    /// Fuzzy search over title, artist and album, best matches first; a title match counts a little more.
     pub fn search(&self, query: &str, limit: u32) -> Result<Vec<Track>> {
-        let terms: Vec<String> = query
-            .split_whitespace()
-            .map(|w| format!("\"{}\"*", w.chars().filter(|c| !c.is_control()).collect::<String>().replace('"', "\"\"")))
-            .collect();
-        if terms.is_empty() {
-            return Ok(Vec::new());
-        }
-        let sql = format!(
-            "SELECT {TRACK_COLS} FROM track_fts JOIN track t ON t.id = track_fts.rowid WHERE track_fts MATCH ?1 ORDER BY rank LIMIT ?2"
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![terms.join(" "), limit], track_row)?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let Some(mut fuzzy) = Fuzzy::new(query) else { return Ok(Vec::new()) };
+        let mut stmt = self.conn.prepare(&format!("SELECT {TRACK_COLS} FROM track t"))?;
+        let tracks = stmt.query_map([], track_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut hits = best_first(tracks, |t| {
+            let all = [&t.artist, &t.album].into_iter().flatten().fold(t.title.clone(), |all, field| all + " " + field);
+            fuzzy.score(&t.title).map(|s| s + s / 10).max(fuzzy.score(&all))
+        });
+        hits.truncate(limit as usize);
+        Ok(hits)
     }
 
     // ---- collections ----
@@ -570,15 +568,37 @@ mod tests {
     }
 
     #[test]
-    fn search_handles_special_characters_and_accents() {
+    fn search_is_fuzzy_in_every_language_with_best_matches_first() {
         let l = lib();
-        l.add_track(&local("Crazy in Love", Some("Beyoncé"))).unwrap();
-        l.add_track(&local("Back in Black", Some("AC/DC"))).unwrap();
-        assert_eq!(l.search("beyon", 10).unwrap()[0].title, "Crazy in Love");
-        assert_eq!(l.search("back bla", 10).unwrap()[0].artist.as_deref(), Some("AC/DC"));
-        assert!(l.search("AC/DC \"Back\" *", 10).is_ok());
-        assert!(l.search("   ", 10).unwrap().is_empty());
-        assert!(l.search("back\0bla", 10).is_ok());
+        for (title, artist) in [
+            ("夜に駆ける", None),
+            ("星空下的小船", None),
+            ("바다 위의 편지", None),
+            ("Canción del Río", None),
+            ("ABC Morning", None),
+            ("Bohemian Rhapsody", None),
+            ("Paper Satellites", Some("Mina Okada")),
+            ("Last Train Home", Some("Starling")),
+            ("Starlight Road", None),
+        ] {
+            l.add_track(&local(title, artist)).unwrap();
+        }
+        let cases: &[(&str, &[&str])] = &[
+            ("駆ける", &["夜に駆ける"]),
+            ("的小", &["星空下的小船"]),
+            ("위의", &["바다 위의 편지"]),
+            ("cancion", &["Canción del Río"]),
+            ("ＡＢＣ", &["ABC Morning"]),
+            ("bohmian", &["Bohemian Rhapsody"]),
+            ("okada paper", &["Paper Satellites"]),
+            ("starl", &["Starlight Road", "Last Train Home"]),
+            ("zzqx", &[]),
+            ("   ", &[]),
+        ];
+        for (query, want) in cases {
+            let got: Vec<_> = l.search(query, 10).unwrap().into_iter().map(|t| t.title).collect();
+            assert_eq!(&got, want, "query {query:?}");
+        }
     }
 
     #[test]
@@ -765,6 +785,8 @@ mod tests {
         drop(conn);
         let l = Library::open(&p).unwrap();
         assert!(!l.search("old", 1).unwrap()[0].instrumental);
+        let fts: i64 = l.conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'track_%'", [], |r| r.get(0)).unwrap();
+        assert_eq!(fts, 0);
     }
 
     #[test]

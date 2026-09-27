@@ -20,6 +20,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 url = "2"
 libc = "0.2"
+nucleo-matcher = "0.3"
+unicode-normalization = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24", "coreml"] }
