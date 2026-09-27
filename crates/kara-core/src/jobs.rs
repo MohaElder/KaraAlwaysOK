@@ -187,8 +187,12 @@ impl LyricsLookup {
 }
 
 impl Drop for LyricsLookup {
+    /// Stops after the lookup in progress, dropping the waiting ones.
     fn drop(&mut self) {
-        self.pending.update(|r| r.closed = true);
+        self.pending.update(|r| {
+            r.closed = true;
+            r.track_ids.clear();
+        });
     }
 }
 
@@ -829,22 +833,26 @@ mod tests {
         }
     }
 
+    fn titled(lib: &Library, title: &str) -> i64 {
+        lib.add_track(&crate::library::NewTrack { provider: crate::library::ProviderId::Local, provider_ref: None, title, artist: None, album: None, duration_ms: None }).unwrap()
+    }
+
+    /// Reports each title it is asked about, then waits for the test to let it finish.
+    struct Paced(mpsc::Receiver<()>, mpsc::Sender<String>);
+    impl LyricsFetcher for Paced {
+        fn fetch(&self, title: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            self.1.send(title.to_string())?;
+            self.0.recv_timeout(Duration::from_secs(10))?;
+            Ok(None)
+        }
+    }
+
     #[test]
     fn lyrics_lookups_take_the_newest_request_and_skip_songs_no_longer_wanted() {
-        /// Reports each title it is asked about, then waits for the test to let it finish.
-        struct Paced(mpsc::Receiver<()>, mpsc::Sender<String>);
-        impl LyricsFetcher for Paced {
-            fn fetch(&self, title: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
-                self.1.send(title.to_string())?;
-                self.0.recv_timeout(Duration::from_secs(10))?;
-                Ok(None)
-            }
-        }
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
-        let add = |title| lib.add_track(&crate::library::NewTrack { provider: crate::library::ProviderId::Local, provider_ref: None, title, artist: None, album: None, duration_ms: None }).unwrap();
-        let (x, a, b, cc) = (add("x"), add("a"), add("b"), add("c"));
+        let (x, a, b, cc) = (titled(&lib, "x"), titled(&lib, "a"), titled(&lib, "b"), titled(&lib, "c"));
         let (step, paced) = mpsc::channel();
         let (asked_tx, asked) = mpsc::channel();
         let (lyrics, _) = lookup(&c, Paced(paced, asked_tx));
@@ -859,6 +867,23 @@ mod tests {
         }
         lyrics.finish();
         assert_eq!(asked.try_iter().collect::<Vec<_>>(), vec!["c", "a"]);
+    }
+
+    #[test]
+    fn dropping_the_lookup_drops_its_waiting_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let (x, a) = (titled(&lib, "x"), titled(&lib, "a"));
+        let (step, paced) = mpsc::channel();
+        let (asked_tx, asked) = mpsc::channel();
+        let (lyrics, _) = lookup(&c, Paced(paced, asked_tx));
+        lyrics.request(x);
+        assert_eq!(asked.recv_timeout(Duration::from_secs(10)).unwrap(), "x");
+        lyrics.request(a);
+        drop(lyrics);
+        drop(step);
+        assert_eq!(asked.iter().collect::<Vec<_>>(), Vec::<String>::new());
     }
 
     #[test]
