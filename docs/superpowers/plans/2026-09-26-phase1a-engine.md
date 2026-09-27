@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - Before any `cargo` command in this environment run: `source "$HOME/.cargo/env"`.
-- Target: macOS on Apple Silicon (M1 baseline). Rust edition 2021 (so `std::env::set_var` is a safe call).
+- Target: the author's MacBook (Apple Silicon) for the MVP; Windows comes later. Rust edition 2021 (so `std::env::set_var` is a safe call).
 - `kara-core` must not depend on Tauri.
 - Standard audio format: 44.1 kHz stereo, stored as 16-bit FLAC. Every source is converted to it before separation.
 - Chunk files are 10 s: `CHUNK_LEN = 441_000` samples per channel. File names: `NNNN.vocals.flac`, `NNNN.inst.flac`.
@@ -24,7 +24,7 @@
 - ONNX Runtime: `ort = "=2.0.0-rc.12"` with `load-dynamic`; runtime dylib = ONNX Runtime 1.26.0 osx-arm64 from `https://github.com/MohaElder/openenlarge/releases/download/upscaler-assets-v1/libonnxruntime.dylib` (sha256 `ba6ff4015f593fa87682b0e7d36164c1f7fa05148b7dff442efb34e13a60bf1a`). CoreML execution provider on macOS.
 - The model session is created once and reused for a whole song.
 - Downloads are verified by SHA-256 in memory before writing, then written as `<name>.part` and renamed.
-- Memory: separation peak resident memory ≤ 3 GB (user-approved 2026-09-26; leaves ~1 GB of the 4 GB app budget for the UI).
+- Memory: no enforced limit (user decision 2026-09-26). Measured peaks go into README.md as recommended specs.
 - Cache budget default: 5 GiB (`5 * 1024 * 1024 * 1024` bytes), setting key `cache_budget_bytes`.
 - Data root: `~/Library/Application Support/kara-always-oki/` (layout in spec §4).
 - Error messages that can reach the UI are plain language with no engineering words (no "stems", "FLAC", "LRCLIB", "chunk", "ONNX").

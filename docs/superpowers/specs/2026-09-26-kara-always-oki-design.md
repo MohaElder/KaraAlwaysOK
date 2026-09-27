@@ -8,14 +8,14 @@ Status: approved in brainstorming, pending written-spec review
 A desktop karaoke app. Pick any song and sing over it: the app strips the vocals (fully, or partly via a slider) and shows synced lyrics. Songs come from your own files, links, and later your Spotify / Apple Music library. Friends join by scanning a QR code and use their phones as live microphones.
 
 - Open-source, personal use, distributed as GitHub release downloads.
-- Target: macOS on Apple Silicon (M1 baseline). App memory budget: 4 GB.
+- Target: MVP runs on the author's MacBook (Apple Silicon). Windows (and other hardware) is planned for the public release. No enforced hardware limits: measured requirements are published as recommended specs in README.md.
 - Local-only: no servers we run, nothing we pay for. Audio, stems and lyrics stay on the computer.
 
 ### Success criteria (MVP)
 
-1. Drop a file or paste a supported link → singing starts within ~10 s on an M1.
+1. Drop a file or paste a supported link → singing starts within ~10 s.
 2. Vocal slider changes the mix live without restarting the song; slider at 0 is the original.
-3. Separation stays ahead of playback for a normal song on an M1, within the 4 GB budget.
+3. Separation stays ahead of playback for a normal song.
 4. Synced lyrics show for songs LRCLIB or the file's tags know.
 
 ## 2. Experience (settled via prototype)
@@ -110,7 +110,7 @@ Only yt-dlp is an external binary; no ffmpeg.
 - Release profile: `lto = "thin"`, `codegen-units = 1`; dev profile builds dependencies at `opt-level = 3`.
 
 ### 3.6 Model choice (spike, first plan task)
-Benchmark via `kara bench`: an MDX-Net vocals ONNX model vs. an ONNX export of HTDemucs. Measure speed as a multiple of real time on an M1, peak memory, quality by ear on a fixed test set, and license compatibility. Pick the winner; must be ≥ 2× real time and fit the 4 GB budget.
+Benchmark via `kara bench`: an MDX-Net vocals ONNX model vs. an ONNX export of HTDemucs. Measure speed as a multiple of real time, peak memory, quality on a fixed test set, and license compatibility. Pick the winner; it must be ≥ 2× real time. Peak memory is recorded for the README's recommended specs, not enforced.
 
 ## 4. Data schema (SQLite)
 
@@ -248,6 +248,6 @@ Each phase gets its own implementation plan.
 
 - Lyric timing from audio (Whisper) when no synced lyrics exist.
 - Recording or exporting performances.
-- Windows / Linux builds.
+- Windows / Linux builds (planned for the public release).
 - Mics plugged into the Mac.
 - Scoring, duets, multiple lyric tracks.
