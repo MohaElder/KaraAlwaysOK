@@ -60,7 +60,7 @@ enum Cmd {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("{e:#}");
+        eprintln!("{e}");
         hide_output_for_the_rest_of_the_process();
         std::process::exit(1);
     }
@@ -219,7 +219,7 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
             eprintln!("  {chunks_done}/{chunks_total} ready  ({:.1} s)", started.elapsed().as_secs_f64())
         }
         Event::Ready { .. } => eprintln!("Ready to sing."),
-        Event::Failed { message, .. } => eprintln!("{message}"),
+        Event::Failed { .. } => {} // `result?` below reports this once, in main.
     });
     result?;
     let lyrics = lib.lyrics(track_id)?.map(|l| l.lines.len()).unwrap_or(0);
