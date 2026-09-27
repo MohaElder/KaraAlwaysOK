@@ -342,6 +342,7 @@ body.k-open #bar{left:var(--s7)}
 .qr{width:200px;height:200px;padding:var(--s3);border-radius:var(--r-lg);background:var(--qr-light);border:1px solid var(--line)}
 .qr img,.qr canvas{width:100%!important;height:auto!important;display:block}
 .code{font:500 26px/1 var(--mono);letter-spacing:.08em;margin-top:var(--s2)}
+.curl{margin-top:var(--s2);color:var(--muted);font-size:13px}.curl b{font:500 13px var(--mono);color:var(--text)}
 .tut{display:grid;gap:var(--s2);padding:var(--s3) var(--s4);border-radius:var(--r-sm);background:var(--raised)}
 .tut .hstack{align-items:flex-start;font-size:13px}
 .tut .i{margin-top:2px}
@@ -662,12 +663,13 @@ body.k-open #bar{left:var(--s7)}
 
 <div class="scrim fx off" id="mics">
   <div class="sheet wide" role="dialog" aria-labelledby="micT">
-    <div class="shead"><div class="badge sm"><i data-i="microphone-stage"></i></div><div class="grow"><h2 id="micT">Sing into your phone</h2><p class="hstack"><i data-i="wifi-high"></i>Scan with a phone on the same Wi-Fi. No app needed.</p></div><button class="ib" data-close data-tip="Close" aria-label="Close"><i data-i="x"></i></button></div>
+    <div class="shead"><div class="badge sm"><i data-i="microphone-stage"></i></div><div class="grow"><h2 id="micT">Sing into your phone</h2><p class="hstack"><i data-i="wifi-high"></i>Scan with a phone on the same Wi-Fi.</p></div><button class="ib" data-close data-tip="Close" aria-label="Close"><i data-i="x"></i></button></div>
     <div class="join">
       <div>
         <div class="qr" id="qr"></div>
         <p class="cap hstack" style="margin-top:var(--s4)"><i data-i="keyboard"></i>Or type this code</p>
         <div class="code">OKI-4827</div>
+        <p class="curl hstack"><i data-i="globe"></i>on <b>kara.local</b></p>
       </div>
       <div>
         <div class="tut">
