@@ -59,6 +59,7 @@ const en = {
   "search.noMatchTitle": "Nothing matches “{query}”",
   "search.noMatchBody": "Check the spelling, or paste a link to a song.",
   "search.fromLink": "From this link",
+  "search.youtube": "YouTube",
   "search.addToLibraryLabel": "Add {title} to your library",
   "search.streamingTitle": "{host} links can't be downloaded",
   "search.streamingTip": "Search for the song instead.",

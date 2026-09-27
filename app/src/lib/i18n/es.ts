@@ -61,6 +61,7 @@ const es: Record<Key, string> = {
   "search.noMatchTitle": "Nada coincide con «{query}»",
   "search.noMatchBody": "Revisa la ortografía o pega el enlace de una canción.",
   "search.fromLink": "De este enlace",
+  "search.youtube": "YouTube",
   "search.addToLibraryLabel": "Añadir {title} a tu biblioteca",
   "search.streamingTitle": "Los enlaces de {host} no se pueden descargar",
   "search.streamingTip": "Busca la canción en su lugar.",

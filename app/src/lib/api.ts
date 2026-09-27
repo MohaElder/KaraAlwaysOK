@@ -93,6 +93,7 @@ export type EngineEvent =
 export const onEngine = (cb: (e: EngineEvent) => void) => listen<EngineEvent>("engine", (e) => cb(e.payload));
 
 export interface LinkPreview { title: string; channel: string | null; durationMs: number | null; thumbnail: string | null }
+export interface SearchHit extends LinkPreview { url: string }
 
 export type SearchOutcome =
   | { kind: "text"; tracks: Track[]; collections: CollectionCard[] }
@@ -106,6 +107,8 @@ export async function linkPreview(url: string, onUpdate: (p: LinkPreview) => voi
   channel.onmessage = onUpdate;
   await invoke("link_preview", { url, onUpdate: channel });
 }
+
+export const youtubeSearch = (query: string) => invoke<SearchHit[]>("youtube_search", { query });
 
 export const addFile = (path: string) => invoke<Track>("add_file", { path });
 export const addLink = (url: string) => invoke<Track>("add_link", { url });

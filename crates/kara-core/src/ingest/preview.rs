@@ -12,6 +12,10 @@ use url::Url;
 
 /// How long `probe` waits for yt-dlp before giving up.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long `search` waits for yt-dlp before giving up.
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
+/// How many videos `search` asks for.
+const SEARCH_RESULTS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,27 +68,62 @@ pub fn oembed(url: &Url) -> Result<Option<LinkPreview>> {
 
 #[derive(Deserialize)]
 struct Dump {
+    url: Option<String>,
     title: Option<String>,
     channel: Option<String>,
     uploader: Option<String>,
     duration: Option<f64>,
     thumbnail: Option<String>,
+    #[serde(default)]
+    thumbnails: Vec<Thumbnail>,
+}
+
+#[derive(Deserialize)]
+struct Thumbnail {
+    url: String,
+}
+
+impl Dump {
+    fn preview(self) -> LinkPreview {
+        LinkPreview {
+            title: self.title.unwrap_or_else(|| "Unknown song".into()),
+            channel: self.channel.or(self.uploader),
+            duration_ms: self.duration.map(to_ms),
+            thumbnail: self.thumbnail.or_else(|| self.thumbnails.into_iter().next().map(|t| t.url)),
+        }
+    }
+}
+
+/// A video found by `search`, with the link to add it by.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SearchHit {
+    pub url: String,
+    #[serde(flatten)]
+    pub preview: LinkPreview,
 }
 
 /// A full preview from yt-dlp, without downloading anything.
 pub fn probe(bin: &Path, url: &Url) -> Result<LinkPreview> {
-    probe_with_timeout(bin, url, PROBE_TIMEOUT)
+    let out = run_with_timeout(bin, &["--dump-json", "--skip-download", "--no-playlist", "--no-warnings", url.as_str()], PROBE_TIMEOUT)?;
+    let d: Dump = serde_json::from_str(out.lines().next().unwrap_or(""))?;
+    Ok(d.preview())
 }
 
-/// Runs yt-dlp and kills it if it hasn't finished within `timeout`, draining its
-/// stdout on a reader thread while polling so a full pipe can't stall it.
-fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPreview> {
-    let mut child = Command::new(bin)
-        .args(["--dump-json", "--skip-download", "--no-playlist", "--no-warnings"])
-        .arg(url.as_str())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
+/// The top YouTube videos for `query`, from yt-dlp's search without downloading anything.
+pub fn search(bin: &Path, query: &str) -> Result<Vec<SearchHit>> {
+    let target = format!("ytsearch{SEARCH_RESULTS}:{query}");
+    let out = run_with_timeout(bin, &["--flat-playlist", "--dump-json", "--skip-download", "--no-warnings", &target], SEARCH_TIMEOUT)?;
+    Ok(out
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Dump>(line).ok())
+        .filter_map(|mut d| Some(SearchHit { url: d.url.take()?, preview: d.preview() }))
+        .collect())
+}
+
+/// Runs yt-dlp and returns its output, killing it if it hasn't finished within `timeout`;
+/// drains its stdout on a reader thread while polling so a full pipe can't stall it.
+fn run_with_timeout(bin: &Path, args: &[&str], timeout: Duration) -> Result<String> {
+    let mut child = Command::new(bin).args(args).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let mut stdout_pipe = child.stdout.take().context("read yt-dlp output")?;
     let reader = std::thread::spawn(move || {
         let mut buf = Vec::new();
@@ -106,15 +145,7 @@ fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPr
     if !status.success() {
         bail!(Problem::NoSongAtLink);
     }
-    let stdout = reader.join().unwrap_or_default();
-    let stdout = String::from_utf8_lossy(&stdout);
-    let d: Dump = serde_json::from_str(stdout.lines().next().unwrap_or(""))?;
-    Ok(LinkPreview {
-        title: d.title.unwrap_or_else(|| "Unknown song".into()),
-        channel: d.channel.or(d.uploader),
-        duration_ms: d.duration.map(to_ms),
-        thumbnail: d.thumbnail,
-    })
+    Ok(String::from_utf8_lossy(&reader.join().unwrap_or_default()).into_owned())
 }
 
 /// A preview for a direct link to an audio file, from its name.
@@ -166,20 +197,20 @@ mod tests {
     }
 
     #[test]
-    fn probe_gives_up_on_a_hung_ytdlp_instead_of_blocking_forever() {
+    fn running_ytdlp_gives_up_on_a_hung_one_instead_of_blocking_forever() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("yt-dlp");
         std::fs::write(&bin, "#!/bin/sh\nsleep 5\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         let start = std::time::Instant::now();
-        let err = probe_with_timeout(&bin, &Url::parse("https://youtu.be/x").unwrap(), Duration::from_millis(200)).unwrap_err();
+        let err = run_with_timeout(&bin, &[], Duration::from_millis(200)).unwrap_err();
         assert!(start.elapsed() < Duration::from_secs(2));
         assert_eq!(err.to_string(), "Couldn't find a song at this link.");
     }
 
     #[test]
-    fn probe_drains_large_output_instead_of_deadlocking_on_a_full_pipe() {
+    fn running_ytdlp_drains_large_output_instead_of_deadlocking_on_a_full_pipe() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("yt-dlp");
         let padding = "x".repeat(500_000);
@@ -193,9 +224,50 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         let start = std::time::Instant::now();
-        let p = probe_with_timeout(&bin, &Url::parse("https://youtu.be/x").unwrap(), Duration::from_secs(3)).unwrap();
+        let out = run_with_timeout(&bin, &[], Duration::from_secs(3)).unwrap();
         assert!(start.elapsed() < Duration::from_secs(1));
-        assert_eq!(p.title, "Made Up Song");
+        assert!(out.starts_with(r#"{"title":"Made Up Song""#));
+    }
+
+    #[test]
+    fn search_lists_ytdlp_flat_results_and_skips_broken_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("yt-dlp");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\ncd \"$(dirname \"$0\")\"\nprintf '%s\\n' \"$@\" > args\ncat <<'EOF'\n\
+             {\"_type\":\"url\",\"id\":\"aaa\",\"url\":\"https://www.youtube.com/watch?v=aaa\",\"title\":\"Made Up Song\",\"channel\":\"Made Up Channel\",\"duration\":205.4,\"thumbnails\":[{\"url\":\"https://i.example/a-small.jpg\",\"width\":360},{\"url\":\"https://i.example/a-big.jpg\",\"width\":720}]}\n\
+             not json\n\
+             {\"_type\":\"url\",\"id\":\"bbb\",\"title\":\"No Link\"}\n\
+             {\"_type\":\"url\",\"id\":\"ccc\",\"url\":\"https://www.youtube.com/watch?v=ccc\",\"title\":\"Live Thing\",\"uploader\":\"Someone\",\"duration\":null}\n\
+             EOF\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let hits = search(&bin, "paper boats").unwrap();
+        assert_eq!(
+            hits,
+            vec![
+                SearchHit {
+                    url: "https://www.youtube.com/watch?v=aaa".into(),
+                    preview: LinkPreview { title: "Made Up Song".into(), channel: Some("Made Up Channel".into()), duration_ms: Some(205_400), thumbnail: Some("https://i.example/a-small.jpg".into()) },
+                },
+                SearchHit {
+                    url: "https://www.youtube.com/watch?v=ccc".into(),
+                    preview: LinkPreview { title: "Live Thing".into(), channel: Some("Someone".into()), duration_ms: None, thumbnail: None },
+                },
+            ]
+        );
+        let args = std::fs::read_to_string(dir.path().join("args")).unwrap();
+        assert!(args.lines().any(|a| a == "ytsearch8:paper boats") && args.contains("--flat-playlist") && args.contains("--skip-download"));
+    }
+
+    #[test]
+    #[ignore = "network"]
+    fn search_live_lookup_finds_videos() {
+        let hits = search(Path::new("yt-dlp"), "lofi piano instrumental").unwrap();
+        assert!(!hits.is_empty() && hits.iter().all(|h| h.url.starts_with("https://www.youtube.com/")));
     }
 
     #[test]

@@ -37,6 +37,7 @@ pub fn run() {
             engine::setup_engine,
             adding::search,
             adding::link_preview,
+            adding::youtube_search,
             adding::add_file,
             adding::add_link,
             adding::start_adding,

@@ -61,6 +61,7 @@ const ja: Record<Key, string> = {
   "search.noMatchTitle": "「{query}」に一致するものはありません",
   "search.noMatchBody": "つづりを確認するか、曲へのリンクを貼り付けてください。",
   "search.fromLink": "このリンクから",
+  "search.youtube": "YouTube",
   "search.addToLibraryLabel": "{title} をライブラリに追加",
   "search.streamingTitle": "{host} のリンクはダウンロードできません",
   "search.streamingTip": "代わりに曲を検索してください。",

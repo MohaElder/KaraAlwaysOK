@@ -11,6 +11,17 @@ test("typing shows matching songs, also by part of a CJK title", async ({ page }
   await expect(page.locator(".row")).toHaveText([/東京の夜空/]);
 });
 
+test("typing also shows YouTube videos after the library's songs, and tapping one adds it without playing", async ({ page }) => {
+  await box(page).fill("lemon");
+  await expect(page.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Songs", "YouTube"]);
+  await page.getByRole("button", { name: "Add Made-up Clip to your library" }).click();
+  expect(await calls(page, "youtube_search")).toEqual([{ query: "lemon" }]);
+  await expect(page.locator(".toasts")).toContainText("Adding “Made-up Clip”");
+  expect(await calls(page, "add_link")).toEqual([{ url: "https://www.youtube.com/watch?v=madeup" }]);
+  expect(await calls(page, "queue_add")).toEqual([]);
+  await expect(page.getByRole("region", { name: "Player" })).toBeHidden();
+});
+
 test("a pasted link shows its preview, and Enter adds it only once composing is done", async ({ page }) => {
   await box(page).fill("https://youtu.be/abc123");
   await expect(page.getByRole("heading", { name: "From this link" })).toBeVisible();

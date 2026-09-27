@@ -4,7 +4,7 @@ use anyhow::Context;
 use kara_core::fuzzy::{best_first, Fuzzy};
 use kara_core::ingest;
 use kara_core::ingest::link::{self, LinkVerdict};
-use kara_core::ingest::preview::{self, LinkPreview};
+use kara_core::ingest::preview::{self, LinkPreview, SearchHit};
 use kara_core::ingest::ytdlp;
 use kara_core::library::{CollectionKind, Library, Track};
 use serde::Serialize;
@@ -72,6 +72,13 @@ pub async fn link_preview(state: State<'_, AppState>, url: String, on_update: Ch
     .await
     .map_err(AppError::from)?
     .plain()
+}
+
+/// The top YouTube videos for the search bar's words.
+#[tauri::command]
+pub async fn youtube_search(state: State<'_, AppState>, query: String) -> Result<Vec<SearchHit>, AppError> {
+    let bin_dir = state.store.bin_dir();
+    tauri::async_runtime::spawn_blocking(move || ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query))).await.map_err(AppError::from)?.plain()
 }
 
 /// Puts a dropped file in Imported; `start_adding` then gets it ready.

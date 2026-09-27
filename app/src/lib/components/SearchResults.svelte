@@ -10,11 +10,13 @@
   import Cover from "./Cover.svelte";
   import Empty from "./Empty.svelte";
   import SongRow from "./SongRow.svelte";
+  import LinkRow from "./LinkRow.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import PlaylistIcon from "phosphor-svelte/lib/PlaylistIcon";
   import VinylRecordIcon from "phosphor-svelte/lib/VinylRecordIcon";
   import UserIcon from "phosphor-svelte/lib/UserIcon";
   import MagnifyingGlassMinusIcon from "phosphor-svelte/lib/MagnifyingGlassMinusIcon";
+  import YoutubeLogoIcon from "phosphor-svelte/lib/YoutubeLogoIcon";
 
   let { onOpen }: { onOpen: (kind: Kind, id: number) => void } = $props();
   const GROUPS: { kind: Kind; label: Key; icon: Icon }[] = [
@@ -30,7 +32,7 @@
 {#if view}
   {#key view.query}
   <div in:fade|global out:fadeAway|global>
-  {#if !tracks.length && !groups.length}
+  {#if !tracks.length && !groups.length && view.youtube?.length === 0}
     <Empty icon={MagnifyingGlassMinusIcon} title={t("search.noMatchTitle", { query: view.query })}><p>{t("search.noMatchBody")}</p></Empty>
   {:else}
     {#if tracks.length}
@@ -50,6 +52,14 @@
         {/each}
       </div>
     {/each}
+  {/if}
+  {#if view.youtube?.length !== 0}
+    <section transition:fade>
+      <h2 class="sec"><YoutubeLogoIcon size={18} />{t("search.youtube")}</h2>
+      {#each view.youtube ?? [null, null, null] as hit, i (hit?.url ?? i)}
+        <LinkRow preview={hit} host="youtube.com" onAdd={(then) => { if (!hit) return; ui.clearSearch(); void adding.link(hit.url, then, hit.title); }} />
+      {/each}
+    </section>
   {/if}
   </div>
   {/key}

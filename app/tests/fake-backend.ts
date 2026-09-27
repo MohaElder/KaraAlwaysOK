@@ -200,6 +200,7 @@ const commands: Record<string, (a: any) => unknown> = {
   chunk_pcm: () => new ArrayBuffer(CHUNK_FRAMES * 16),
   search: ({ input, imported }) => search(input, imported),
   link_preview: ({ onUpdate }) => onUpdate.onmessage({ title: "Made-up Clip", channel: "Someone Sings", durationMs: 185_000, thumbnail: null }),
+  youtube_search: () => [{ url: "https://www.youtube.com/watch?v=madeup", title: "Made-up Clip", channel: "Someone Sings", durationMs: 185_000, thumbnail: null }],
   add_file: ({ path }) => {
     if (!paths.has(path)) paths.set(path, addTrack(path.split("/").pop()!.replace(/\.\w+$/, "")).id);
     return tracks.get(paths.get(path)!);

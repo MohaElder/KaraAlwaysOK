@@ -1,8 +1,8 @@
 <script lang="ts">
   import { composing } from "$lib/keys";
   import { untrack } from "svelte";
-  import { linkPreview, search } from "$lib/api";
-  import { fromOutcome, previewFailed, withPreview } from "$lib/search";
+  import { linkPreview, search, youtubeSearch } from "$lib/api";
+  import { fromOutcome, previewFailed, withPreview, withYoutube } from "$lib/search";
   import { ui } from "$lib/state/ui.svelte";
   import { library } from "$lib/state/library.svelte";
   import { t } from "$lib/i18n/index.svelte";
@@ -16,6 +16,7 @@
   let input: HTMLInputElement | undefined = $state();
   let seq = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let youtubeTimer: ReturnType<typeof setTimeout> | undefined;
 
   export function focus() {
     input?.focus();
@@ -23,6 +24,7 @@
 
   function changed() {
     clearTimeout(timer);
+    clearTimeout(youtubeTimer);
     timer = setTimeout(run, 120);
   }
 
@@ -37,6 +39,17 @@
       const url = ui.search.url;
       linkPreview(url, (p) => (ui.search = withPreview(ui.search, url, p))).catch(() => (ui.search = previewFailed(ui.search, url)));
     }
+    if (ui.search.kind === "text" && ui.search.youtube === null) {
+      clearTimeout(youtubeTimer);
+      youtubeTimer = setTimeout(findOnYoutube, 280);
+    }
+  }
+
+  async function findOnYoutube() {
+    if (ui.search.kind !== "text") return;
+    const query = ui.search.query;
+    const hits = await youtubeSearch(query).catch(() => []);
+    ui.search = withYoutube(ui.search, query, hits);
   }
 
   $effect(() => {
@@ -47,6 +60,7 @@
   export function clear() {
     seq++;
     clearTimeout(timer);
+    clearTimeout(youtubeTimer);
     ui.clearSearch();
   }
 

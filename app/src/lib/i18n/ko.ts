@@ -61,6 +61,7 @@ const ko: Record<Key, string> = {
   "search.noMatchTitle": "‘{query}’과(와) 일치하는 항목이 없습니다",
   "search.noMatchBody": "철자를 확인하거나 노래 링크를 붙여 넣으세요.",
   "search.fromLink": "이 링크에서",
+  "search.youtube": "YouTube",
   "search.addToLibraryLabel": "{title}을(를) 보관함에 추가",
   "search.streamingTitle": "{host} 링크는 다운로드할 수 없습니다",
   "search.streamingTip": "대신 노래를 검색하세요.",

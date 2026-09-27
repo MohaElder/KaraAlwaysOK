@@ -9,7 +9,7 @@ import { ui } from "./ui.svelte";
 import ArrowClockwiseIcon from "phosphor-svelte/lib/ArrowClockwiseIcon";
 import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
-type Then = "" | "queue" | "next";
+export type Then = "" | "queue" | "next";
 
 interface Pending {
   title: string;
