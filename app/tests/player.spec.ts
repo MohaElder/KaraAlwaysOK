@@ -34,6 +34,10 @@ test("the … menu opens outside the player bar, nudges the lyrics past 5 s, tak
   await timing.press("Enter");
   await expect(timing).toHaveValue("−12.3 s");
   await expect.poll(async () => (await calls(page, "set_lyric_offset")).at(-1)).toEqual({ ms: -12300 });
+  await timing.fill("4");
+  await timing.press("Escape");
+  await expect(timing).toHaveValue("−12.3 s");
+  await expect(menu).toBeVisible();
   await page.mouse.click(640, 400);
   await expect(menu).toBeHidden();
   await more.click();
