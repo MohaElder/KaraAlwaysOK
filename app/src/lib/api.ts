@@ -6,7 +6,7 @@ export type ProblemCode =
   | "notAudio" | "songGone" | "noAudio" | "download" | "downloaderSetup" | "unreadable" | "songAudio" | "empty" | "diskFull"
   | "save" | "separate" | "notPrepared" | "partNotReady" | "streamingLater" | "upgradeFailed" | "linkStreaming"
   | "linkUnsupported" | "noSongAtLink" | "lyricsLookup" | "readFailed" | "nothingPlaying" | "notALink"
-  | "tooManyLinks";
+  | "tooManyLinks" | "phonesStart" | "noNetwork";
 
 /** How every command fails: a problem code to translate, and the English text. */
 export interface AppError { problem: ProblemCode | null; message: string }
@@ -78,6 +78,22 @@ export const setKey = (semitones: number) => invoke<PlayerSnapshot>("set_key", {
 export const setLyricOffset = (ms: number) => invoke<PlayerSnapshot>("set_lyric_offset", { ms });
 export const retryPrepare = () => invoke<void>("retry_prepare");
 export const onPlayer = (cb: (s: PlayerSnapshot) => void) => listen<PlayerSnapshot>("player", (e) => cb(e.payload));
+
+export interface JoinInfo { qr: string; code: string; host: string }
+export interface PhoneRow { id: string; name: string; connected: boolean; volume: number }
+export interface PhonesView { join: JoinInfo | null; phones: PhoneRow[] }
+export interface PhoneLevel { id: string; level: number; down: boolean }
+export type PhoneNews = { kind: "joined"; name: string; mic: number } | { kind: "added"; name: string; title: string };
+
+export const phonesOpen = () => invoke<PhonesView>("phones_open");
+export const phonesClose = () => invoke<void>("phones_close");
+export const phoneVolume = (id: string, volume: number) => invoke<void>("phone_volume", { id, volume });
+export const phoneRemove = (id: string) => invoke<void>("phone_remove", { id });
+export const phonesClock = (key: number | null, positionMs: number, playing: boolean) => invoke<void>("phones_clock", { key, positionMs, playing });
+export const onPhones = (cb: (v: PhonesView) => void) => listen<PhonesView>("phones", (e) => cb(e.payload));
+export const onPhoneLevels = (cb: (levels: PhoneLevel[]) => void) => listen<PhoneLevel[]>("phone-levels", (e) => cb(e.payload));
+export const onPhoneNews = (cb: (news: PhoneNews) => void) => listen<PhoneNews>("phone-news", (e) => cb(e.payload));
+export const onLibraryChanged = (cb: () => void) => listen("library", () => cb());
 
 export interface PlaybackInfo { chunkFrames: number; chunksTotal: number | null; chunksDone: number; durationMs: number | null }
 

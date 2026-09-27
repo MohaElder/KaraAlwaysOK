@@ -6,6 +6,7 @@
   import { tip } from "$lib/tooltip.svelte";
   import KaraokeBackground from "./KaraokeBackground.svelte";
   import Lyrics from "./Lyrics.svelte";
+  import MicPill from "./MicPill.svelte";
   import CaretDownIcon from "phosphor-svelte/lib/CaretDownIcon";
   import HourglassMediumIcon from "phosphor-svelte/lib/HourglassMediumIcon";
 
@@ -26,7 +27,7 @@
       {:else}
         <div></div>
       {/if}
-      <div></div>
+      <MicPill />
     </div>
     <Lyrics />
   </section>

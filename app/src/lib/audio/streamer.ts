@@ -77,6 +77,11 @@ export class Streamer {
     return Math.min(this.duration, Math.max(this.startPos, this.ctx.currentTime - this.anchor - this.key.latency));
   }
 
+  /** The song time phones should follow: like `position()`, but already moving during the short wait before sound starts. */
+  clock(): number {
+    return this.phase === "playing" ? this.ctx.currentTime - this.anchor - this.key.latency : this.pos;
+  }
+
   /** Lets audio start; call it from a click. */
   resume() {
     void this.ctx.resume();

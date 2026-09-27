@@ -1,6 +1,6 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { CollectionCard, EngineEvent, Kind, LyricLine, Lyrics, PlayerSnapshot, SearchOutcome, Track } from "$lib/api";
+import type { CollectionCard, EngineEvent, Kind, LyricLine, Lyrics, PhoneLevel, PhoneNews, PhonesView, PlayerSnapshot, SearchOutcome, Track } from "$lib/api";
 
 declare global {
   interface Window {
@@ -56,6 +56,7 @@ const paths = new Map<string, number>();
 const lyricOffsets = new Map<number, number>();
 const ready = new Set(tracks.keys());
 const groupIds = new Map<string, number>();
+let phonesView: PhonesView = { join: { qr: '<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>', code: "OKI-4827", host: "Test-Mac.local" }, phones: [] };
 
 /** The fake backend's state and levers, for tests to read and pull through `window.fake`. */
 const fake = {
@@ -76,6 +77,23 @@ const fake = {
     queue.push({ key: ++nextKey, trackId, by });
     if (current == null || ended) [current, ended] = [queue.length - 1, false];
     changed();
+  },
+  /** The phone session changes, as the app reports it. */
+  phones(view: PhonesView) {
+    phonesView = view;
+    return emit("phones", view);
+  },
+  /** The phones' levels, as the app sends them every 80 ms. */
+  levels(levels: PhoneLevel[]) {
+    return emit("phone-levels", levels);
+  },
+  /** Something a phone did that the Mac toasts. */
+  news(news: PhoneNews) {
+    return emit("phone-news", news);
+  },
+  /** The session ends on its own (the Mac woke); opening again gives the same view. */
+  sessionEnded() {
+    return emit("phones", { join: null, phones: [] });
   },
 };
 window.fake = fake;
@@ -253,6 +271,11 @@ const commands: Record<string, (a: any) => unknown> = {
   storage_info: () => storage,
   set_storage_limit: ({ bytes }) => void (storage = { ...storage, limitBytes: bytes }),
   clear_storage: () => (storage = { ...storage, usedBytes: 0 }),
+  phones_open: () => phonesView,
+  phones_close: () => null,
+  phone_volume: () => null,
+  phone_remove: () => null,
+  phones_clock: () => null,
 };
 
 mockWindows("main");

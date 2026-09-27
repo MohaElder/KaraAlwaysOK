@@ -1,5 +1,5 @@
 import {
-  onEngine, onPlayer, playerState, playTracks, queueAdd, queueMove, queueRemove, retryPrepare, setKey, setLyricOffset, setSinger, skipSong, songEnded, trackLyrics,
+  onEngine, onPlayer, phonesClock, playerState, playTracks, queueAdd, queueMove, queueRemove, retryPrepare, setKey, setLyricOffset, setSinger, skipSong, songEnded, trackLyrics,
   type EngineEvent, type Lyrics, type PlayerSnapshot,
 } from "$lib/api";
 import type { Label } from "$lib/audio/chunks";
@@ -109,6 +109,7 @@ class PlayerState {
 
   /** Takes a queue snapshot from the `player` event; loads the song when the current entry changed. */
   apply(s: PlayerSnapshot) {
+    const wasIdle = this.idle;
     this.snapshot = s;
     const cur = s.current == null ? null : s.entries[s.current];
     const same = (cur?.key ?? null) === this.loadedKey;
@@ -121,6 +122,10 @@ class PlayerState {
     this.loadedKey = cur?.key ?? null;
     this.lyrics = null;
     if (!cur) return this.streamer.unload();
+    if (wasIdle && cur.by) {
+      this.wantPlay = true;
+      ui.karaoke = true;
+    }
     void this.streamer.load(cur.track.id, this.wantPlay && !s.ended);
     void this.loadLyrics(cur.track.id);
   }
@@ -235,6 +240,7 @@ class PlayerState {
     this.ready = this.streamer.ready;
     this.waitLabel = this.streamer.waiting;
     this.keyWorks = this.streamer.keyWorks;
+    void phonesClock(this.current?.key ?? null, Math.round(this.streamer.clock() * 1000), this.phase === "playing").catch(() => {});
   }
 
   /** Follows the playing position every animation frame until playback stops. */

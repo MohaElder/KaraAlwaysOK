@@ -4,7 +4,7 @@ import type { SearchView } from "$lib/search";
 export type MenuState =
   | { kind: "song"; track: Track; playlistId: number | null; x: number; y: number; alignRight: boolean }
   | { kind: "playlist"; card: CollectionCard; x: number; y: number };
-export type SheetState = { kind: "edit"; track: Track } | { kind: "settings" };
+export type SheetState = { kind: "edit"; track: Track } | { kind: "settings" } | { kind: "mics" };
 
 class UiState {
   karaoke = $state(false);

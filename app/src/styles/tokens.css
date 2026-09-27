@@ -6,7 +6,7 @@
   --shadow: rgba(27, 36, 48, .2); --scrim: rgba(27, 36, 48, .28);
   --glass: rgba(255, 255, 255, .5); --glass-btn: rgba(255, 255, 255, .4); --glass-hi: rgba(255, 255, 255, .8);
   --glass-edge: rgba(255, 255, 255, .8); --glass-line: rgba(27, 36, 48, .12);
-  --thumb: #FFFFFF; --bezel: #0B0F14;
+  --thumb: #FFFFFF; --bezel: #0B0F14; --qr-dark: #10151B; --qr-light: #FFFFFF;
   --blur: blur(30px) saturate(1.9);
   --cjk: "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo";
   --body: "Geist", var(--cjk), ui-sans-serif, system-ui, -apple-system, sans-serif;

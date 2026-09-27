@@ -14,6 +14,8 @@
   import PlaylistMenu from "$lib/components/PlaylistMenu.svelte";
   import EditSheet from "$lib/components/EditSheet.svelte";
   import SettingsSheet from "$lib/components/SettingsSheet.svelte";
+  import MicPill from "$lib/components/MicPill.svelte";
+  import MicsSheet from "$lib/components/MicsSheet.svelte";
   import UpdatePrompt from "$lib/update/UpdatePrompt.svelte";
   import { updater } from "$lib/update/updater.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
@@ -23,11 +25,12 @@
   import { library } from "$lib/state/library.svelte";
   import { player } from "$lib/state/player.svelte";
   import { adding, type Then } from "$lib/state/adding.svelte";
+  import { phones } from "$lib/state/phones.svelte";
   import { ui } from "$lib/state/ui.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SearchResults from "$lib/components/SearchResults.svelte";
   import LinkResult from "$lib/components/LinkResult.svelte";
-  import { reduceTransparency, type Kind } from "$lib/api";
+  import { onLibraryChanged, reduceTransparency, type Kind } from "$lib/api";
   import { composing } from "$lib/keys";
 
   let searchBar: SearchBar | undefined = $state();
@@ -74,6 +77,8 @@
     engine.start();
     player.init();
     adding.init();
+    void phones.init();
+    void onLibraryChanged(() => void library.refresh());
     void updater.autoCheck();
   });
 </script>
@@ -83,7 +88,7 @@
 <div class="app">
   <Sidebar />
   <main class="main" class:q-open={ui.queueOpen}>
-    <header class="top"><SearchBar bind:this={searchBar} onSubmitLink={(url, title) => adding.link(url, "", title)} /></header>
+    <header class="top"><SearchBar bind:this={searchBar} onSubmitLink={(url, title) => adding.link(url, "", title)} /><MicPill /></header>
     <div class="view">
       {#if ui.search.kind === "text"}
         <SearchResults onOpen={openFromSearch} onAdd={addLink} />
@@ -109,6 +114,7 @@
 <PlaylistMenu />
 <EditSheet />
 <SettingsSheet />
+{#if ui.sheet?.kind === "mics"}<MicsSheet />{/if}
 <UpdatePrompt />
 <DropOverlay />
 <Toasts />
