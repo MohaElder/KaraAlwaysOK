@@ -72,6 +72,8 @@ const zhHant: Record<Key, string> = {
   "player.next": "下一首",
   "player.openKaraoke": "打開卡拉OK畫面",
   "player.backToLibrary": "返回資料庫",
+  "karaoke.label": "卡拉OK",
+  "karaoke.noLyrics": "沒有找到歌詞，隨心唱吧。",
   "player.position": "播放位置",
   "singer.original": "原唱：保留",
   "singer.removed": "原唱：去除",

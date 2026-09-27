@@ -70,6 +70,8 @@ const en = {
   "player.next": "Next",
   "player.openKaraoke": "Open karaoke view",
   "player.backToLibrary": "Back to library",
+  "karaoke.label": "Karaoke",
+  "karaoke.noLyrics": "No lyrics found, sing it your way.",
   "player.position": "Position",
   "singer.original": "Singer: original",
   "singer.removed": "Singer: removed",

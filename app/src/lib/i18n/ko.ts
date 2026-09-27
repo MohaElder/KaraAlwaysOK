@@ -72,6 +72,8 @@ const ko: Record<Key, string> = {
   "player.next": "다음",
   "player.openKaraoke": "노래방 화면 열기",
   "player.backToLibrary": "보관함으로 돌아가기",
+  "karaoke.label": "노래방",
+  "karaoke.noLyrics": "가사를 찾지 못했습니다. 마음대로 불러 보세요.",
   "player.position": "재생 위치",
   "singer.original": "가수 목소리: 원곡",
   "singer.removed": "가수 목소리: 제거",

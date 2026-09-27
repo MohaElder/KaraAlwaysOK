@@ -72,6 +72,8 @@ const es: Record<Key, string> = {
   "player.next": "Siguiente",
   "player.openKaraoke": "Abrir vista de karaoke",
   "player.backToLibrary": "Volver a la biblioteca",
+  "karaoke.label": "Karaoke",
+  "karaoke.noLyrics": "No se encontró la letra. Cántala a tu manera.",
   "player.position": "Posición",
   "singer.original": "Voz: original",
   "singer.removed": "Voz: quitada",

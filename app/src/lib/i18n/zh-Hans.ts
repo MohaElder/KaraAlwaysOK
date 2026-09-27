@@ -72,6 +72,8 @@ const zhHans: Record<Key, string> = {
   "player.next": "下一首",
   "player.openKaraoke": "打开卡拉OK画面",
   "player.backToLibrary": "返回资料库",
+  "karaoke.label": "卡拉OK",
+  "karaoke.noLyrics": "没有找到歌词，随心唱吧。",
   "player.position": "播放位置",
   "singer.original": "原唱：保留",
   "singer.removed": "原唱：去除",

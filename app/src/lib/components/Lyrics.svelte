@@ -1,0 +1,57 @@
+<script lang="ts">
+  import { player } from "$lib/state/player.svelte";
+  import { dotProgress, itemAt, timeline, wordProgress } from "$lib/lyrics/timeline";
+  import { t as text } from "$lib/i18n/index.svelte";
+  import { fade } from "$lib/motion";
+
+  const items = $derived(player.lyrics ? timeline(player.lyrics.lines) : []);
+  const t = $derived(player.position - player.lyricOffset / 1000);
+  const now = $derived(itemAt(items, t));
+  const none = $derived(player.lyrics != null && items.length === 0);
+  let list: HTMLDivElement | undefined = $state();
+  let shift = $state(0);
+
+  $effect(() => {
+    const el = list?.children[now] as HTMLElement | undefined;
+    if (el && items.length) shift = el.offsetTop + el.offsetHeight / 2;
+  });
+</script>
+
+<div class="lyr">
+  {#if none}
+    <div class="nolyr" in:fade><h2>{text("karaoke.noLyrics")}</h2></div>
+  {:else}
+    <div class="track" bind:this={list} style:transform="translateY({-shift}px)">
+      {#each items as x, i (i)}
+        {#if x.gap}
+          <p class="line gap" class:now={i === now}>
+            {#each [0, 1, 2] as d (d)}<i style:--p={i === now ? dotProgress(x, d, t) : 0}></i>{/each}
+          </p>
+        {:else}
+          <p class="line v-{x.line.voice ?? 'none'}" class:now={i === now} class:past={i < now}>
+            {#each x.line.words as w, j (j)}<span class="w" style:--p={i === now ? wordProgress(w, t) : 0}>{w.text}</span>{" "}{/each}
+          </p>
+        {/if}
+      {/each}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .lyr { position: relative; overflow: hidden; margin-bottom: 112px; -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); }
+  .track { position: absolute; left: 0; right: 0; top: 50%; max-width: 1100px; margin: 0 auto; padding: 0 max(var(--s6), 6vw); text-align: center; transition: transform var(--t) var(--ease); }
+  @media (prefers-reduced-motion: reduce) { .track { transition: none; } }
+  .line { font: 800 clamp(28px, 3.4vw, 40px)/1.15 var(--display); letter-spacing: -.02em; margin: 0 0 .5em; opacity: .3; transition: opacity var(--t) var(--ease); text-wrap: balance; }
+  .line.now { opacity: 1; }
+  .line.past { opacity: .14; }
+  .w { --p: 0; background: linear-gradient(90deg, var(--fill, var(--text)) calc(var(--p) * 100%), color-mix(in srgb, var(--fill, var(--text)) 40%, transparent) calc(var(--p) * 100%)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .line:not(.now) .w { background: none; color: inherit; }
+  .v-m { text-align: left; }
+  .v-f { text-align: right; --fill: color-mix(in srgb, var(--accent) 55%, var(--text)); color: var(--fill); }
+  .v-both { text-align: center; }
+  .gap { display: flex; justify-content: center; align-items: center; gap: 14px; height: .7em; }
+  .gap:not(.now) { opacity: 0; }
+  .gap i { --p: 0; width: 14px; height: 14px; border-radius: 50%; background: var(--text); opacity: calc(.25 + var(--p) * .75); transform: scale(calc(1 + (var(--p) * .35 - .15) * var(--motion))); }
+  .nolyr { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .nolyr h2 { font: 800 clamp(28px, 3.4vw, 40px)/1.1 var(--display); letter-spacing: -.02em; }
+</style>

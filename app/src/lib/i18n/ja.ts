@@ -72,6 +72,8 @@ const ja: Record<Key, string> = {
   "player.next": "次へ",
   "player.openKaraoke": "カラオケ画面を開く",
   "player.backToLibrary": "ライブラリに戻る",
+  "karaoke.label": "カラオケ",
+  "karaoke.noLyrics": "歌詞が見つかりません。自由に歌いましょう。",
   "player.position": "再生位置",
   "singer.original": "歌声: オリジナル",
   "singer.removed": "歌声: 除去",
