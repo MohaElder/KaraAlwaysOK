@@ -83,6 +83,16 @@ second.ws.send(JSON.stringify({ t: "add", trackId: 987654321, next: false }));
 await until(() => second.got.some((m) => m.t === "refused" && m.problem === "songGone"), "a missing song refused");
 second.ws.send(JSON.stringify({ t: "lyrics", trackId: 987654321 }));
 await until(() => heard(second, "lyrics"), "lyrics");
+second.ws.send(JSON.stringify({ t: "voice", v: 1 }));
+second.ws.send(JSON.stringify({ t: "live", on: true, rate: 48000 }));
+second.ws.send(JSON.stringify({ t: "effect", kind: "autoTune", amount: 100 }));
+const frame = new Int16Array(240);
+for (let i = 0; i < 400; i++) {
+  for (let j = 0; j < frame.length; j++) frame[j] = Math.round(300 * Math.sin((2 * Math.PI * 440 * (i * frame.length + j)) / 48_000));
+  second.ws.send(frame.slice().buffer);
+  await wait(5);
+}
+await until(() => second.got.some((m) => m.t === "level" && Number(m.v) > 0), "its voice level");
 
 console.log("phone check OK");
 for (const g of [...guests.slice(1), again]) g.ws.close();

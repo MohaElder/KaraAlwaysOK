@@ -87,6 +87,7 @@ pub fn run() {
             phones::phones_open,
             phones::phones_close,
             phones::phone_remove,
+            phones::phone_volume,
             phones::phones_clock,
         ])
         .build(tauri::generate_context!())

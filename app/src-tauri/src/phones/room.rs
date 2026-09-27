@@ -1,5 +1,7 @@
 //! Who is in the room: up to four phones, each keeping its row through a dropped connection.
 
+use kara_core::mic::Effect;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
 pub const MAX_PHONES: usize = 4;
@@ -8,6 +10,7 @@ const MAX_NAME: usize = 40;
 const MAX_ID: usize = 64;
 const TRIES: u32 = 5;
 const LOCKOUT_MS: i64 = 10_000;
+pub const GONE_AFTER: Duration = Duration::from_secs(120);
 
 /// What goes out on a phone's connection.
 pub enum Out {
@@ -20,6 +23,10 @@ pub struct Guest {
     pub name: String,
     pub conn: u64,
     pub tx: Option<UnboundedSender<Out>>,
+    pub volume: u8,
+    pub voice: u8,
+    pub effect: (Effect, u8),
+    pub dropped_at: Option<Instant>,
 }
 
 impl Guest {
@@ -78,20 +85,27 @@ impl Room {
             g.name = name;
             g.conn = conn;
             g.tx = Some(tx);
+            g.dropped_at = None;
             return Ok(false);
         }
         if self.guests.len() >= MAX_PHONES {
             return Err(Refusal::Full);
         }
-        self.guests.push(Guest { id: id.to_string(), name, conn, tx: Some(tx) });
+        self.guests.push(Guest { id: id.to_string(), name, conn, tx: Some(tx), volume: 80, voice: 80, effect: (Effect::None, 0), dropped_at: None });
         Ok(true)
     }
 
-    /// Marks a phone's connection gone, unless it already came back on a newer one.
-    pub fn dropped(&mut self, id: &str, conn: u64) {
+    /// Marks a phone's connection gone at `at`, unless it already came back on a newer one.
+    pub fn dropped(&mut self, id: &str, conn: u64, at: Instant) {
         if let Some(g) = self.guests.iter_mut().find(|g| g.id == id && g.conn == conn) {
             g.tx = None;
+            g.dropped_at = Some(at);
         }
+    }
+
+    /// Removes and returns the rows whose phone has been gone for GONE_AFTER or longer.
+    pub fn expire(&mut self, now: Instant) -> Vec<Guest> {
+        self.guests.extract_if(.., |g| g.dropped_at.is_some_and(|at| now.duration_since(at) >= GONE_AFTER)).collect()
     }
 
     pub fn guest(&mut self, id: &str) -> Option<&mut Guest> {
@@ -119,6 +133,7 @@ pub fn new_code() -> Result<String, getrandom::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     fn tx() -> UnboundedSender<Out> {
         tokio::sync::mpsc::unbounded_channel().0
@@ -154,12 +169,24 @@ mod tests {
         for id in ["a", "b", "c", "d"] {
             room.admit("4827", id, id, 1, tx(), 0).unwrap();
         }
-        room.dropped("a", 1);
+        room.dropped("a", 1, Instant::now());
         assert!(room.guests[0].tx.is_none(), "greyed, not gone");
         assert_eq!(room.admit("4827", "e", "Emi", 2, tx(), 0), Err(Refusal::Full), "its row is kept for it");
         assert_eq!(room.admit("4827", "a", "Aiko", 3, tx(), 0), Ok(false), "back in its own row");
-        room.dropped("a", 1);
+        room.dropped("a", 1, Instant::now());
         let a = &room.guests[0];
         assert_eq!((room.guests.len(), a.name.as_str(), a.tx.is_some()), (4, "Aiko", true), "a late close of the old connection changes nothing");
+    }
+
+    #[test]
+    fn a_phone_gone_for_two_minutes_loses_its_row() {
+        let mut room = Room::new("4827");
+        room.admit("4827", "a", "Aiko", 1, tx(), 0).unwrap();
+        room.admit("4827", "b", "Ben", 1, tx(), 0).unwrap();
+        let t = Instant::now();
+        room.dropped("a", 1, t);
+        assert!(room.expire(t + GONE_AFTER - Duration::from_secs(1)).is_empty(), "kept while it may still come back");
+        let gone = room.expire(t + GONE_AFTER);
+        assert_eq!((gone.len(), gone[0].id.as_str(), room.guests.len()), (1, "a", 1));
     }
 }

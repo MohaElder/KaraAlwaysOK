@@ -1,6 +1,7 @@
 //! Phone mics: the session guests join, the Mac's commands for it, and what phones and the Mac window hear.
 
 mod cert;
+mod output;
 mod room;
 mod server;
 
@@ -12,17 +13,19 @@ use anyhow::Context;
 use axum_server::tls_rustls::RustlsConfig;
 use kara_core::jobs::Event;
 use kara_core::library::{CollectionKind, Library};
+use kara_core::mic::{voice_gain, Level, Mixer, NewVoice, MOST_PHONES};
 use kara_core::problem::Problem;
 use qrcode::render::svg;
 use qrcode::QrCode;
-use room::{Out, Room, ENDED};
+use room::{Guest, Out, Room, ENDED};
 use serde::Serialize;
 use serde_json::Value;
 use server::FromPhone;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -38,6 +41,7 @@ pub struct Phones {
 }
 
 struct Session {
+    id: u64,
     room: Room,
     window_open: bool,
     join: JoinInfo,
@@ -46,6 +50,15 @@ struct Session {
     shown: Option<PhonesView>,
     clock: Clock,
     links: Vec<PendingLink>,
+    mixer: Arc<Mutex<Mixer>>,
+    output: output::Output,
+    levels: Vec<Level>,
+    tls: RustlsConfig,
+    dir: PathBuf,
+    host: String,
+    port: u16,
+    redirect: bool,
+    ips: Vec<IpAddr>,
 }
 
 /// A song a guest added by link, queued once it has been downloaded.
@@ -90,6 +103,7 @@ pub struct PhoneRow {
     id: String,
     name: String,
     connected: bool,
+    volume: u8,
 }
 
 #[derive(Clone, Default, PartialEq, Serialize)]
@@ -104,6 +118,15 @@ pub struct PhonesView {
 pub(crate) enum News {
     Joined { name: String, mic: usize },
     Added { name: String, title: String },
+    Stopped,
+}
+
+/// A phone's level as the Mac window's meter reads it.
+#[derive(Serialize)]
+pub struct PhoneLevel {
+    id: String,
+    level: f32,
+    down: bool,
 }
 
 /// What the Mac tells a phone.
@@ -117,16 +140,17 @@ pub(crate) enum ToPhone<'a> {
     LyricsChanged { track_id: i64 },
     Results { q: &'a str, outcome: &'a SearchOutcome },
     Refused { problem: Option<Problem> },
+    Level { v: f32 },
 }
 
 impl Session {
     fn view(&self) -> PhonesView {
-        let phones = self.room.guests.iter().map(|g| PhoneRow { id: g.id.clone(), name: g.name.clone(), connected: g.tx.is_some() }).collect();
+        let phones = self.room.guests.iter().map(|g| PhoneRow { id: g.id.clone(), name: g.name.clone(), connected: g.tx.is_some(), volume: g.volume }).collect();
         PhonesView { join: Some(self.join.clone()), phones }
     }
 }
 
-/// Starts a session with `code`: certificate, server, join details.
+/// Starts a session with `code`: certificate, sound output, server, join details.
 async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
     let ips = cert::lan_ips();
     let ip = *ips.first().context(Problem::NoNetwork)?;
@@ -135,11 +159,31 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
     let (cert_pem, key_pem) = cert::ensure(&dir, &host, &ips, kara_core::now_ms() / 1000).context(Problem::PhonesStart)?;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let tls = RustlsConfig::from_pem(cert_pem, key_pem).await.context(Problem::PhonesStart)?;
+    let floor = std::env::var("KARA_MIC_BUFFER_MS").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(20.0).clamp(10.0, 60.0);
+    let (output, mixer) = output::start(floor).context(Problem::PhonesStart)?;
     let server = axum_server::Handle::new();
-    let (port, redirect) = server::serve(app.clone(), tls, server.clone()).context(Problem::PhonesStart)?;
+    let (port, redirect) = server::serve(app.clone(), tls.clone(), server.clone()).context(Problem::PhonesStart)?;
     let room = Room::new(code);
     let join = join_info(&host, ip, port, redirect, &room.code).context(Problem::PhonesStart)?;
-    Ok(Session { room, window_open: false, join, server, shown: None, clock: Clock::new(None, 0, false), links: Vec::new() })
+    Ok(Session {
+        id: NEXT.fetch_add(1, Ordering::Relaxed),
+        room,
+        window_open: false,
+        join,
+        server,
+        shown: None,
+        clock: Clock::new(None, 0, false),
+        links: Vec::new(),
+        mixer,
+        output,
+        levels: Vec::with_capacity(MOST_PHONES),
+        tls,
+        dir,
+        host,
+        port,
+        redirect,
+        ips,
+    })
 }
 
 /// What the Mac window shows to join: a QR code of the address with the code, the code, and the address to type
@@ -166,7 +210,9 @@ pub async fn ensure_session(app: &AppHandle, code: String) -> anyhow::Result<()>
         return Ok(());
     }
     let session = start(app, &code).await?;
+    let id = session.id;
     *phones.session.lock().unwrap() = Some(session);
+    tauri::async_runtime::spawn(tick(app.clone(), id));
     Ok(())
 }
 
@@ -231,18 +277,20 @@ pub fn phone_remove(app: AppHandle, id: String) {
         if let Some(g) = s.room.remove(&id) {
             g.send(Out::Close(ENDED));
         }
+        let gone = s.mixer.lock().unwrap().remove(&id);
+        drop(gone);
     });
     changed(&app);
 }
 
-/// Lets a phone in or names the close code refusing it; a phone let in hears it joined, what's playing and where the song is,
-/// before any later change (the queue stays locked until then).
-pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<u64, u16> {
+/// Lets a phone in, handing back its connection number and the mix its sound goes to, or names the close code refusing it; a
+/// phone let in hears it joined, what's playing and where the song is, before any later change (the queue stays locked until then).
+pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<(u64, Arc<Mutex<Mixer>>), u16> {
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
     let state = app.state::<AppState>();
     let queue = state.player.lock().unwrap();
     let lib = state.lib.lock().unwrap();
-    let joined = with(app, |s| {
+    let (joined, mixer) = with(app, |s| {
         let new = s.room.admit(code, id, name, conn, tx.clone(), kara_core::now_ms())?;
         let _ = tx.send(Out::Text(encode(&ToPhone::Joined)));
         if let Ok(snapshot) = player::snapshot(&lib, &queue) {
@@ -250,7 +298,7 @@ pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: Unbou
         }
         let _ = tx.send(Out::Text(encode(&s.clock.message())));
         let g = &s.room.guests;
-        Ok(new.then(|| (g.len(), g[g.len() - 1].name.clone())))
+        Ok((new.then(|| (g.len(), g[g.len() - 1].name.clone())), s.mixer.clone()))
     })
     .ok_or(ENDED)?
     .map_err(|r: room::Refusal| r.close_code())?;
@@ -259,7 +307,7 @@ pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: Unbou
     if let Some((mic, name)) = joined {
         let _ = app.emit("phone-news", News::Joined { name, mic });
     }
-    Ok(conn)
+    Ok((conn, mixer))
 }
 
 /// Carries out what phone `id` asked for; songs it adds carry the guest's name. A refusal goes back to that phone.
@@ -277,6 +325,23 @@ pub(crate) fn handle(app: &AppHandle, id: &str, msg: FromPhone) {
             found.plain().map(|outcome| Some(encode(&ToPhone::Results { q: &q, outcome: &outcome })))
         }
         FromPhone::Lyrics { track_id } => library::track_lyrics(app.state(), track_id).map(|lyrics| Some(encode(&ToPhone::Lyrics { track_id, lyrics: &lyrics }))),
+        FromPhone::Live { on, rate } => {
+            live(app, id, on, rate);
+            Ok(None)
+        }
+        FromPhone::Voice { v } => {
+            set_gain(app, id, |g| g.voice = v.min(100));
+            Ok(None)
+        }
+        FromPhone::Effect { kind, amount } => {
+            with(app, |s| {
+                if let Some(g) = s.room.guest(id) {
+                    g.effect = (kind, amount.min(100));
+                    s.mixer.lock().unwrap().set_effect(id, kind, amount);
+                }
+            });
+            Ok(None)
+        }
         FromPhone::Join { .. } | FromPhone::Ping | FromPhone::Leave => Ok(None),
     };
     match reply {
@@ -284,6 +349,57 @@ pub(crate) fn handle(app: &AppHandle, id: &str, msg: FromPhone) {
         Ok(None) => {}
         Err(e) => tell(app, id, encode(&ToPhone::Refused { problem: e.problem })),
     }
+}
+
+/// A phone's mic went live at `rate` (a fresh buffer, built before taking the mixer lock, with the row's gain and effect) or was
+/// muted (its buffer empties).
+fn live(app: &AppHandle, id: &str, on: bool, rate: u32) {
+    if !(8_000..=96_000).contains(&rate) {
+        return;
+    }
+    with(app, |s| {
+        let Some(g) = s.room.guest(id) else { return };
+        let (gain, (effect, amount)) = (voice_gain(g.volume, g.voice), g.effect);
+        if !on {
+            return s.mixer.lock().unwrap().reset(id);
+        }
+        let (out_rate, floor) = {
+            let m = s.mixer.lock().unwrap();
+            (m.rate(), m.floor_ms())
+        };
+        let voice = NewVoice::new(id, rate, out_rate, floor);
+        let leftover = {
+            let mut m = s.mixer.lock().unwrap();
+            let leftover = m.add(voice);
+            m.set_gain(id, gain);
+            m.set_effect(id, effect, amount);
+            leftover
+        };
+        drop(leftover);
+    });
+}
+
+/// Changes a phone's row with `change` and applies its gain to the mix.
+fn set_gain(app: &AppHandle, id: &str, change: impl FnOnce(&mut Guest)) {
+    with(app, |s| {
+        if let Some(g) = s.room.guest(id) {
+            change(g);
+            let gain = voice_gain(g.volume, g.voice);
+            s.mixer.lock().unwrap().set_gain(id, gain);
+        }
+    });
+}
+
+/// Adds a phone's 16-bit little-endian samples to its buffer.
+pub(crate) fn hear(mixer: &Mutex<Mixer>, id: &str, bytes: &[u8]) {
+    let samples: Vec<f32> = bytes.chunks_exact(2).map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32_768.0).collect();
+    mixer.lock().unwrap().push(id, &samples);
+}
+
+#[tauri::command]
+pub fn phone_volume(app: AppHandle, id: String, volume: u8) {
+    set_gain(&app, &id, |g| g.volume = volume.min(100));
+    changed(&app);
 }
 
 /// The first `MAX_QUERY` characters of `s`.
@@ -392,6 +508,8 @@ pub fn phones_clock(app: AppHandle, key: Option<u64>, position_ms: i64, playing:
 pub(crate) fn leave(app: &AppHandle, id: &str) {
     let idle = with(app, |s| {
         s.room.remove(id);
+        let gone = s.mixer.lock().unwrap().remove(id);
+        drop(gone);
         !s.window_open && s.room.guests.is_empty()
     });
     if idle == Some(true) {
@@ -403,7 +521,91 @@ pub(crate) fn leave(app: &AppHandle, id: &str) {
 
 /// A phone's connection closed; its row stays, greyed, until it comes back or is removed.
 pub(crate) fn dropped(app: &AppHandle, id: &str, conn: u64) {
-    with(app, |s| s.room.dropped(id, conn));
+    with(app, |s| s.room.dropped(id, conn, Instant::now()));
+    changed(app);
+}
+
+/// What one tick found.
+struct Tick {
+    levels: Vec<PhoneLevel>,
+    expired: bool,
+    idle: bool,
+    moved: bool,
+    stopped: bool,
+}
+
+impl Session {
+    /// One tick: each phone hears its level, rows gone for two minutes leave, and every 60th tick the Mac's addresses are checked.
+    fn tick(&mut self, n: u64, now: Instant) -> Tick {
+        self.levels.clear();
+        self.mixer.lock().unwrap().levels(&mut self.levels);
+        for g in &self.room.guests {
+            let v = self.levels.iter().find(|l| *l.id == *g.id).map_or(0.0, |l| l.peak);
+            g.send(Out::Text(encode(&ToPhone::Level { v })));
+        }
+        let gone = self.room.expire(now);
+        for g in &gone {
+            let voice = self.mixer.lock().unwrap().remove(&g.id);
+            drop(voice);
+        }
+        Tick {
+            levels: self.levels.iter().map(|l| PhoneLevel { id: l.id.to_string(), level: l.peak, down: l.down }).collect(),
+            expired: !gone.is_empty(),
+            idle: !gone.is_empty() && !self.window_open && self.room.guests.is_empty(),
+            moved: n.is_multiple_of(60) && cert::lan_ips() != self.ips,
+            stopped: self.output.broken(),
+        }
+    }
+}
+
+/// Every 80 ms while this session lasts: levels, gone phones, a new address now and then; the session ends when the Mac wakes
+/// from sleep, its output device goes away, or its last phone is gone with the window closed.
+async fn tick(app: AppHandle, id: u64) {
+    let mut every = tokio::time::interval(Duration::from_millis(80));
+    let mut last = (SystemTime::now(), Instant::now());
+    for n in 1u64.. {
+        every.tick().await;
+        let now = (SystemTime::now(), Instant::now());
+        let slept = woke(now.0.duration_since(last.0).unwrap_or_default(), now.1 - last.1);
+        last = now;
+        let Some(t) = with(&app, |s| (s.id == id).then(|| s.tick(n, now.1))).flatten() else { return };
+        if t.stopped {
+            let _ = app.emit("phone-news", News::Stopped);
+        }
+        if slept || t.idle || t.stopped {
+            return end(&app);
+        }
+        let _ = app.emit("phone-levels", &t.levels);
+        if t.expired {
+            changed(&app);
+        }
+        if t.moved {
+            readdress(&app, id).await;
+        }
+    }
+}
+
+/// Whether the wall clock ran far ahead of the uptime clock between two ticks, as it does across sleep.
+fn woke(wall: Duration, uptime: Duration) -> bool {
+    wall > uptime + Duration::from_secs(10)
+}
+
+/// Makes a certificate for the Mac's new addresses, loads it into the running server and points the QR code at the new address.
+async fn readdress(app: &AppHandle, id: u64) {
+    let ips = cert::lan_ips();
+    let Some(&ip) = ips.first() else { return };
+    let Some((dir, host, port, redirect, code, tls)) = with(app, |s| (s.id == id).then(|| (s.dir.clone(), s.host.clone(), s.port, s.redirect, s.room.code.clone(), s.tls.clone()))).flatten() else { return };
+    let Ok((cert, key)) = cert::ensure(&dir, &host, &ips, kara_core::now_ms() / 1000) else { return };
+    if tls.reload_from_pem(cert, key).await.is_err() {
+        return;
+    }
+    let Ok(join) = join_info(&host, ip, port, redirect, &code) else { return };
+    with(app, |s| {
+        if s.id == id {
+            s.ips = ips;
+            s.join = join;
+        }
+    });
     changed(app);
 }
 

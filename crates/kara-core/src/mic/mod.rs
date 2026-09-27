@@ -18,9 +18,9 @@ pub fn voice_gain(volume: u8, voice: u8) -> f32 {
     MAX_GAIN * f32::from(volume.min(100)) / 100.0 * f32::from(voice.min(100)) / 100.0
 }
 
-/// Samples one output callback may ask for; each phone's scratch buffer is this big from the start.
-const MOST_FRAMES: usize = 4096;
-const MOST_PHONES: usize = 8;
+/// Most samples one `render` may ask for; each phone's scratch buffer is this big from the start.
+pub const MOST_FRAMES: usize = 4096;
+pub const MOST_PHONES: usize = 8;
 
 pub struct Level {
     pub id: Arc<str>,

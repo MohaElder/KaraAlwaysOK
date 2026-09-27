@@ -32,6 +32,9 @@ pub(crate) enum FromPhone {
     Remove { key: u64 },
     Search { q: String, imported: String },
     Lyrics { track_id: i64 },
+    Live { on: bool, rate: u32 },
+    Voice { v: u8 },
+    Effect { kind: kara_core::mic::Effect, amount: u8 },
     Ping,
     Leave,
 }
@@ -149,8 +152,8 @@ async fn phone(app: AppHandle, mut ws: WebSocket) {
     let Ok(Some(Ok(Message::Text(first)))) = tokio::time::timeout(Duration::from_secs(10), ws.recv()).await else { return };
     let Ok(FromPhone::Join { code, id, name }) = serde_json::from_str(first.as_str()) else { return };
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let conn = match super::admit(&app, &code, &id, &name, tx) {
-        Ok(conn) => conn,
+    let (conn, mixer) = match super::admit(&app, &code, &id, &name, tx) {
+        Ok(joined) => joined,
         Err(close) => return close_with(&mut ws, close).await,
     };
     let mut heard = Instant::now();
@@ -172,6 +175,7 @@ async fn phone(app: AppHandle, mut ws: WebSocket) {
                         Ok(msg) => super::handle(&app, &id, msg),
                         Err(_) => {}
                     },
+                    Some(Ok(Message::Binary(bytes))) => super::hear(&mixer, &id, &bytes),
                     Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                     Some(Ok(_)) => {}
                 }
