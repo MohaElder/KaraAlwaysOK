@@ -139,6 +139,16 @@ pub fn is_damaged(e: &anyhow::Error) -> bool {
     e.downcast_ref::<std::io::Error>().is_none()
 }
 
+/// Explains a `read_tags`/`decode_file` failure: `unsupported` for a damaged or unrecognized
+/// file, or that KaraAlwaysOK isn't allowed to read it when the file itself couldn't be opened.
+pub fn describe_read_failure(e: anyhow::Error, unsupported: &'static str) -> anyhow::Error {
+    if is_damaged(&e) {
+        e.context(unsupported)
+    } else {
+        e.context("KaraAlwaysOK isn't allowed to read this file.")
+    }
+}
+
 /// Decode any supported file to 44.1 kHz stereo. Mono is duplicated; channels past two are dropped.
 pub fn decode_file(path: &Path) -> Result<Decoded> {
     let mut audio = Stereo::default();

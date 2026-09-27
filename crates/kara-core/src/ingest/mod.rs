@@ -46,7 +46,7 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
     if let Some(s) = lib.source_by_uri(SourceKind::File, &uri)? {
         return Ok(Ingested { track_id: s.track_id, source_id: s.id });
     }
-    let (tags, duration_ms) = audio::read_tags(path).context("This file isn't audio we can play.")?;
+    let (tags, duration_ms) = audio::read_tags(path).map_err(|e| audio::describe_read_failure(e, "This file isn't audio we can play."))?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
     let title = tags.title.clone().unwrap_or_else(|| title_from_file_name(name));
     let track_id = lib.add_track(&NewTrack {
@@ -180,6 +180,19 @@ mod tests {
         let url = link::parse_link("https://youtu.be/abc").unwrap();
         let ing = add_link(&lib, &url).unwrap();
         assert_eq!(lib.track(ing.track_id).unwrap().title, "youtu.be link");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adding_a_file_we_are_not_allowed_to_read_says_so() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.wav");
+        write_sine_wav(&p, 44_100, 2, 0.2, 440.0);
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let lib = Library::open_in_memory().unwrap();
+        let err = add_file(&lib, &p).err().unwrap();
+        assert_eq!(err.to_string(), "KaraAlwaysOK isn't allowed to read this file.");
     }
 
     #[test]

@@ -267,7 +267,7 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
 
 /// Decodes a fetched file and keeps a copy of it as the song's original.
 fn decode_and_keep(ctx: &Ctx, path: &Path) -> Result<(String, audio::Decoded)> {
-    let decoded = audio::decode_file(path).context("Couldn't read this audio. The format may not be supported.")?;
+    let decoded = audio::decode_file(path).map_err(|e| audio::describe_read_failure(e, "Couldn't read this audio. The format may not be supported."))?;
     anyhow::ensure!(!decoded.audio.is_empty(), "This audio is empty.");
     let hash = audio::audio_hash(&decoded.audio);
     if ctx.store.original_path(&hash).is_none() {
@@ -651,6 +651,22 @@ mod tests {
         assert!(cache::track_chunk_pcm(&c.store, &lib, "test", t, 0).is_err());
         assert!(run(&c, &lib, t, &AtomicBool::new(false)).0.is_err());
         assert!(original.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_source_file_we_are_not_allowed_to_read_says_so() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let p = song(dir.path(), "a.wav");
+        let t = ingest::add_file(&lib, &p).unwrap().track_id;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let (r, events) = run(&c, &lib, t, &AtomicBool::new(false));
+        assert!(r.is_err());
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "KaraAlwaysOK isn't allowed to read this file.".into() }));
     }
 
     #[test]
