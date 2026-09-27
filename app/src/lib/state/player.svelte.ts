@@ -240,6 +240,11 @@ class PlayerState {
     this.ready = this.streamer.ready;
     this.waitLabel = this.streamer.waiting;
     this.keyWorks = this.streamer.keyWorks;
+    this.tellPhones();
+  }
+
+  /** Tells phones which song is playing and where. */
+  tellPhones() {
     void phonesClock(this.current?.key ?? null, Math.round(this.streamer.clock() * 1000), this.phase === "playing").catch(() => {});
   }
 

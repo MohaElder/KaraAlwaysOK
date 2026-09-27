@@ -45,9 +45,13 @@ test("joined phones show their name, level, volume and Remove, and the pill coun
   await expect(page.getByRole("button", { name: "Phone mics" })).toContainText("3");
 });
 
-test("the app tells phones which song is playing and where", async ({ page }) => {
-  await sing(page, "Paper Boats");
-  await expect.poll(async () => (await calls(page, "phones_clock")).some((c) => c.key === 1 && c.playing === true)).toBe(true);
+test("the app tells phones which song is playing and where, also when the phone window opens mid-song", async ({ page }) => {
+  const playing = async (from = 0) => (await calls(page, "phones_clock")).slice(from).some((c) => c.key === 1 && c.playing === true);
+  const karaoke = await sing(page, "Paper Boats");
+  await expect.poll(() => playing()).toBe(true);
+  const before = (await calls(page, "phones_clock")).length;
+  await karaoke.getByRole("button", { name: "Phone mics" }).click();
+  await expect.poll(() => playing(before)).toBe(true);
 });
 
 test("a guest's song starts when nothing is playing, and the Mac says who joined and who added what", async ({ page }) => {

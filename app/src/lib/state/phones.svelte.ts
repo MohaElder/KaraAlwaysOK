@@ -1,6 +1,7 @@
 import { onPhoneLevels, onPhoneNews, onPhones, phoneRemove, phonesClose, phonesOpen, phoneVolume, type PhoneLevel, type PhoneNews, type PhonesView } from "$lib/api";
 import { say } from "$lib/i18n/engine";
 import { t } from "$lib/i18n/index.svelte";
+import { player } from "./player.svelte";
 import { toasts } from "./toasts.svelte";
 import { ui } from "./ui.svelte";
 import ListPlusIcon from "phosphor-svelte/lib/ListPlusIcon";
@@ -17,6 +18,7 @@ class PhonesState {
   async init() {
     await onPhones((v) => {
       this.view = v;
+      this.levels = Object.fromEntries(Object.entries(this.levels).filter(([id]) => v.phones.some((p) => p.id === id)));
       if (!v.join && this.shown) void this.open();
     });
     await onPhoneLevels((levels) => (this.levels = Object.fromEntries(levels.map((l) => [l.id, l]))));
@@ -28,6 +30,7 @@ class PhonesState {
     this.shown = true;
     try {
       const view = await phonesOpen();
+      player.tellPhones();
       if (this.shown) this.view = view;
       else await phonesClose();
     } catch (e) {

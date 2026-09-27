@@ -22,9 +22,20 @@
   import WifiHighIcon from "phosphor-svelte/lib/WifiHighIcon";
 
   const BARS = [5, 8, 11, 14, 16];
+  const MOST_PHONES = 4;
   const join = $derived(phones.view.join);
+  const host = $derived(join?.host ?? "");
   const close = () => (ui.sheet = null);
   let drafts = $state<Record<string, number>>({});
+
+  /** `text` split around the first `part` in it, to show `part` bold. */
+  function around(text: string, part: string) {
+    const i = text.indexOf(part);
+    return [text.slice(0, i), part, text.slice(i + part.length)];
+  }
+
+  /** A tutorial line split so its lead-in up to the first colon (iPhone:, Android:) shows bold. */
+  const lead = (text: string) => around(text, /^[^:：]*[:：]/.exec(text)?.[0] ?? "");
 
   onMount(() => {
     void phones.open();
@@ -32,20 +43,22 @@
   });
 </script>
 
+{#snippet bold([before, part, after]: string[])}<span>{before}<b>{part}</b>{after}</span>{/snippet}
+
 <Sheet icon={MicrophoneStageIcon} title={t("mics.title")} subtitle={t("mics.scan")} subtitleIcon={WifiHighIcon} wide onClose={close}>
   <div class="join">
     <div>
       <div class="qr">{#if join}{@html join.qr}{/if}</div>
       <p class="cap hstack typed"><KeyboardIcon size={14} />{t("mics.typeCode")}</p>
       <div class="code">{join?.code ?? ""}</div>
-      <p class="curl hstack"><GlobeIcon size={14} />{t("mics.on", { host: join?.host ?? "" })}</p>
+      <p class="curl hstack"><GlobeIcon size={14} />{@render bold(around(t("mics.on", { host }), host))}</p>
     </div>
     <div>
       <div class="tut">
         <b class="hstack"><ShieldWarningIcon size={16} />{t("mics.warnTitle")}</b>
         <p class="muted">{t("mics.warnSafe")}</p>
-        <p class="hstack"><AppleLogoIcon size={16} />{t("mics.iphone")}</p>
-        <p class="hstack"><AndroidLogoIcon size={16} />{t("mics.android")}</p>
+        <p class="hstack"><AppleLogoIcon size={16} />{@render bold(lead(t("mics.iphone")))}</p>
+        <p class="hstack"><AndroidLogoIcon size={16} />{@render bold(lead(t("mics.android")))}</p>
         <p class="hstack"><ShieldCheckIcon size={16} />{t("mics.firewall")}</p>
         <p class="hstack"><SpeakerSlashIcon size={16} />{t("mics.apart")}</p>
       </div>
@@ -83,7 +96,9 @@
             <button class="ib" use:tip={t("mics.remove", { name: p.name })} onclick={() => phones.remove(p.id, p.name)}><UserMinusIcon size={18} /></button>
           </div>
         {/each}
-        <div class="mic wait"><WifiHighIcon size={18} />{phones.view.phones.length ? t("mics.waitingMore") : t("mics.waiting")}</div>
+        {#if phones.view.phones.length < MOST_PHONES}
+          <div class="mic wait"><WifiHighIcon size={18} />{phones.view.phones.length ? t("mics.waitingMore") : t("mics.waiting")}</div>
+        {/if}
       </div>
     </div>
   </div>
