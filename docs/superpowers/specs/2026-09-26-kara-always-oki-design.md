@@ -47,6 +47,12 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Karaoke view** — full screen, blurred artwork background, big lyrics with word-by-word fill, current line centered. Top-right: the mic pill. Collapse chevron returns to the library; music keeps playing.
 
+**Queue** — tapping a song row adds it to the end of the queue (and starts playing if nothing is playing). A second button on each row, "Play next", puts it right after the current song. The player bar has a queue button on its right: it opens the queue list, where songs can be dragged to reorder or removed. Guests can also search and add songs to the queue from their phone.
+
+**Karaoke view, details** — lyrics are centered. Before every sung part (the intro and each instrumental gap longer than ~3 s) show a 3-dot countdown, like Apple Music. The background is an animated gradient built from the album artwork's colors, slowly moving, like Apple Music. Duets: when the lyrics mark who sings a line (e.g. male / female / together, from LRC or TTML voice tags), show the parts distinctly (different alignment and tint); without such marks, lines show normally.
+
+**Selection style** — selected items (sidebar, lists) use a plain tinted overlay with no shadow, like Apple Music.
+
 **Mic pill** — top-right in both library and karaoke view. Handheld-karaoke-mic icon + number of joined phones, or a **+** when none. Opens the connect window: QR code, join code, a short tutorial for the one-time browser warning (iPhone: *Show Details → visit this website*; Android: *Advanced → Proceed*), and the list of joined phones with a level meter, volume and Remove.
 
 **Icon-first rule** — use icons wherever an icon can carry the meaning, and show nothing that doesn't help the user act. Every label gets an icon beside it, except the core song info (song title, artist, album). Providers are shown by their logos. No status or detail that the user can't act on (e.g. no "Ready" / "Preparing" badges in song lists).
