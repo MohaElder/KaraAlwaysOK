@@ -91,6 +91,16 @@ const es: Record<Key, string> = {
   "lyricsSource.embedded": "Del archivo de la canción",
   "lyricsSource.none": "No encontrada",
   "lyricsSource.looking": "Buscando…",
+  "queue.title": "Cola",
+  "common.close": "Cerrar",
+  "queue.nowPlaying": "Sonando ahora",
+  "queue.upNext": "A continuación · {n}",
+  "queue.nothingPlaying": "No suena nada",
+  "queue.nothingPlayingBody": "Toca cualquier canción para empezar. Las que toques se ponen en fila aquí.",
+  "queue.empty": "No hay nada a continuación",
+  "queue.emptyBody": "Toca una canción para añadirla aquí. Usa Reproducir a continuación para ponerla primero.",
+  "queue.drag": "Arrastra para reordenar",
+  "queue.remove": "Quitar",
 };
 
 export default es;

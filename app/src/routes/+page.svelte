@@ -8,12 +8,14 @@
   import Toasts from "$lib/components/Toasts.svelte";
   import Karaoke from "$lib/components/Karaoke.svelte";
   import PlayerBar from "$lib/components/PlayerBar.svelte";
+  import QueuePanel from "$lib/components/QueuePanel.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
   import { engine } from "$lib/state/engine.svelte";
   import { library } from "$lib/state/library.svelte";
   import { player } from "$lib/state/player.svelte";
+  import { ui } from "$lib/state/ui.svelte";
 
   onMount(() => {
     engine.start();
@@ -23,7 +25,7 @@
 
 <div class="app">
   <Sidebar />
-  <main class="main">
+  <main class="main" class:q-open={ui.queueOpen}>
     <header class="top"></header>
     <div class="view">
       {#if library.error}
@@ -40,6 +42,7 @@
 </div>
 <Karaoke />
 <PlayerBar />
+<QueuePanel />
 <GettingReady />
 <Toasts />
 <Tooltip />
@@ -47,5 +50,6 @@
 <style>
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); height: 100%; }
   .main { position: relative; overflow: auto; min-height: 0; padding: 0 var(--s7) 140px; transition: padding-right var(--t) var(--ease); }
+  .main.q-open { padding-right: 388px; }
   .top { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: 1fr minmax(0, 640px) 1fr; align-items: center; gap: var(--s4); height: 84px; margin: 0 calc(-1 * var(--s7)); padding: 0 var(--s7); }
 </style>

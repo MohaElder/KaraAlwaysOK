@@ -91,6 +91,16 @@ const zhHans: Record<Key, string> = {
   "lyricsSource.embedded": "来自歌曲文件",
   "lyricsSource.none": "未找到",
   "lyricsSource.looking": "正在查找…",
+  "queue.title": "队列",
+  "common.close": "关闭",
+  "queue.nowPlaying": "正在播放",
+  "queue.upNext": "接下来 · {n}",
+  "queue.nothingPlaying": "没有正在播放的歌曲",
+  "queue.nothingPlayingBody": "点任意一首歌开始。点过的歌会排在这里。",
+  "queue.empty": "后面没有歌曲",
+  "queue.emptyBody": "点一首歌即可加到这里。用“接下来播放”把它排到最前。",
+  "queue.drag": "拖动以重新排序",
+  "queue.remove": "移除",
 };
 
 export default zhHans;

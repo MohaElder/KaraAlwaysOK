@@ -91,6 +91,16 @@ const zhHant: Record<Key, string> = {
   "lyricsSource.embedded": "來自歌曲檔案",
   "lyricsSource.none": "未找到",
   "lyricsSource.looking": "正在尋找…",
+  "queue.title": "佇列",
+  "common.close": "關閉",
+  "queue.nowPlaying": "正在播放",
+  "queue.upNext": "接下來 · {n}",
+  "queue.nothingPlaying": "沒有正在播放的歌曲",
+  "queue.nothingPlayingBody": "點任何一首歌開始。點過的歌會排在這裡。",
+  "queue.empty": "後面沒有歌曲",
+  "queue.emptyBody": "點一首歌即可加到這裡。用「接下來播放」把它排到最前。",
+  "queue.drag": "拖曳以重新排序",
+  "queue.remove": "移除",
 };
 
 export default zhHant;

@@ -1,5 +1,5 @@
 import {
-  onEngine, onPlayer, playerState, playTracks, queueAdd, retryPrepare, setKey, setLyricOffset, setSinger, skipSong, songEnded, trackLyrics,
+  onEngine, onPlayer, playerState, playTracks, queueAdd, queueMove, queueRemove, retryPrepare, setKey, setLyricOffset, setSinger, skipSong, songEnded, trackLyrics,
   type EngineEvent, type Lyrics, type PlayerSnapshot,
 } from "$lib/api";
 import type { Label } from "$lib/audio/chunks";
@@ -153,6 +153,14 @@ class PlayerState {
 
   async next() {
     await skipSong(1).catch(this.refused);
+  }
+
+  async moveQueued(key: number, to: number) {
+    await queueMove(key, to).catch(this.refused);
+  }
+
+  async removeQueued(key: number) {
+    await queueRemove(key).catch(this.refused);
   }
 
   seek(target: number) {

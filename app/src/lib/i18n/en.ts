@@ -89,6 +89,16 @@ const en = {
   "lyricsSource.embedded": "From the song file",
   "lyricsSource.none": "None found",
   "lyricsSource.looking": "Looking…",
+  "queue.title": "Queue",
+  "common.close": "Close",
+  "queue.nowPlaying": "Now playing",
+  "queue.upNext": "Up next · {n}",
+  "queue.nothingPlaying": "Nothing playing",
+  "queue.nothingPlayingBody": "Tap any song to start. Songs you tap line up here.",
+  "queue.empty": "Nothing up next",
+  "queue.emptyBody": "Tap a song to add it here. Use Play next to put it first.",
+  "queue.drag": "Drag to reorder",
+  "queue.remove": "Remove",
 };
 
 export default en;

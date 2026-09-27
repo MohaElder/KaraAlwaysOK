@@ -91,6 +91,16 @@ const ja: Record<Key, string> = {
   "lyricsSource.embedded": "曲ファイルから",
   "lyricsSource.none": "見つかりません",
   "lyricsSource.looking": "検索中…",
+  "queue.title": "キュー",
+  "common.close": "閉じる",
+  "queue.nowPlaying": "再生中",
+  "queue.upNext": "次に再生 · {n}",
+  "queue.nothingPlaying": "再生中の曲はありません",
+  "queue.nothingPlayingBody": "曲をタップすると始まります。タップした曲はここに並びます。",
+  "queue.empty": "次の曲はありません",
+  "queue.emptyBody": "曲をタップするとここに追加されます。「次に再生」で先頭に入れられます。",
+  "queue.drag": "ドラッグして並べ替え",
+  "queue.remove": "削除",
 };
 
 export default ja;

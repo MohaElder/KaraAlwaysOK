@@ -12,6 +12,7 @@
   import PlayIcon from "phosphor-svelte/lib/PlayIcon";
   import PauseIcon from "phosphor-svelte/lib/PauseIcon";
   import DotsThreeIcon from "phosphor-svelte/lib/DotsThreeIcon";
+  import QueueIcon from "phosphor-svelte/lib/QueueIcon";
 
   let prog: HTMLDivElement | undefined = $state();
   let bar: HTMLDivElement | undefined = $state();
@@ -76,6 +77,7 @@
       </div>
     </div>
     <SingerSlider />
+    <button class="ib" use:tip={t("queue.title")} aria-pressed={ui.queueOpen} onclick={() => (ui.queueOpen = !ui.queueOpen)}><QueueIcon size={15} /></button>
     <button class="ib more" bind:this={moreButton} use:tip={t("common.more")} aria-expanded={ui.moreOpen} onclick={() => (ui.moreOpen = !ui.moreOpen)}><DotsThreeIcon size={15} /></button>
   </div>
   {#if ui.moreOpen && bar && moreButton}<MoreMenu {bar} anchor={moreButton} />{/if}
@@ -100,4 +102,5 @@
   .played { background: var(--text); }
   .bar :global(.ib) { border-radius: 50%; background: var(--glass-btn); box-shadow: inset 0 0 0 1px var(--glass-edge); }
   .bar :global(.ib:hover) { background: var(--glass-hi); }
+  .bar :global(.ib[aria-pressed="true"]) { color: var(--accent); background: var(--glass-hi); }
 </style>

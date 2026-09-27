@@ -91,6 +91,16 @@ const ko: Record<Key, string> = {
   "lyricsSource.embedded": "노래 파일에서",
   "lyricsSource.none": "찾지 못함",
   "lyricsSource.looking": "찾는 중…",
+  "queue.title": "대기열",
+  "common.close": "닫기",
+  "queue.nowPlaying": "지금 재생 중",
+  "queue.upNext": "다음 곡 · {n}",
+  "queue.nothingPlaying": "재생 중인 노래 없음",
+  "queue.nothingPlayingBody": "노래를 탭하면 시작됩니다. 탭한 노래가 여기에 줄을 섭니다.",
+  "queue.empty": "다음 곡 없음",
+  "queue.emptyBody": "노래를 탭하면 여기에 추가됩니다. ‘다음에 재생’으로 맨 앞에 넣을 수 있습니다.",
+  "queue.drag": "드래그하여 순서 변경",
+  "queue.remove": "제거",
 };
 
 export default ko;
