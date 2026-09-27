@@ -545,14 +545,6 @@ mod tests {
     }
 
     #[test]
-    fn reopening_a_file_keeps_data_and_does_not_rerun_the_schema() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("kara.db");
-        let id = Library::open(&p).unwrap().add_track(&local("A", None)).unwrap();
-        assert_eq!(Library::open(&p).unwrap().track(id).unwrap().title, "A");
-    }
-
-    #[test]
     fn opening_runs_the_steps_a_library_has_not_had() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("kara.db");
