@@ -2,7 +2,7 @@
 //! disk budget (least recently played goes first) and cleanup after a crash.
 
 use crate::audio::{encode_flac, read_flac, Stereo};
-use crate::library::{Library, SepStatus, SeparationRow, SourceKind};
+use crate::library::{Library, SepStatus, SourceKind};
 use crate::separate::mdx::ChunkOut;
 use crate::store::{write_atomic, Stem, Store};
 use anyhow::{Context, Result};
@@ -13,14 +13,16 @@ pub const DEFAULT_BUDGET: u64 = 5 * 1024 * 1024 * 1024;
 pub struct Entry {
     pub size_bytes: i64,
     pub last_used_at: i64,
+    pub ready: bool,
     pub protected: bool,
 }
 
-/// Indices to evict, least recently used first, until the total fits `budget`.
+/// Indices to evict, unfinished songs first, then least recently used, until
+/// the total fits `budget`.
 pub fn pick_evictions(entries: &[Entry], budget: u64) -> Vec<usize> {
     let mut total: i64 = entries.iter().map(|e| e.size_bytes).sum();
     let mut order: Vec<usize> = (0..entries.len()).filter(|&i| !entries[i].protected).collect();
-    order.sort_by_key(|&i| entries[i].last_used_at);
+    order.sort_by_key(|&i| (entries[i].ready, entries[i].last_used_at));
     let mut out = Vec::new();
     for i in order {
         if total <= budget as i64 {
@@ -57,10 +59,16 @@ pub fn count_complete_chunks(store: &Store, hash: &str, model_id: &str) -> u32 {
     n
 }
 
+/// Total size of the files under `dir`, including subfolders.
 fn dir_size(dir: &Path) -> i64 {
-    std::fs::read_dir(dir)
-        .map(|rd| rd.filter_map(|e| e.ok()?.metadata().ok()).map(|m| m.len() as i64).sum())
-        .unwrap_or(0)
+    let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+    rd.filter_map(|e| e.ok())
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) => m.len() as i64,
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 /// All chunks are on disk: mark ready, record the size, drop the now-redundant source.
@@ -90,34 +98,39 @@ pub fn budget(lib: &Library) -> Result<u64> {
     Ok(lib.setting("cache_budget_bytes")?.and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_BUDGET))
 }
 
-/// Deletes the separated audio of least recently played songs until the cache
-/// fits its budget. Never touches `protected` hashes (playing / queued), or a
-/// song whose only source is a local file that no longer exists.
+/// Deletes whole songs' audio folders until the cache fits its budget:
+/// unfinished songs first, then the least recently played. Never touches
+/// `protected` hashes (playing / queued), or a song whose only source is a
+/// local file that no longer exists.
 pub fn enforce_budget(store: &Store, lib: &Library, protected: &[String]) -> Result<Vec<String>> {
-    let rows: Vec<SeparationRow> = lib.separations()?.into_iter().filter(|r| r.status == SepStatus::Ready).collect();
-    let mut entries = Vec::with_capacity(rows.len());
-    for r in &rows {
+    let rows = lib.separations()?;
+    let hashes: Vec<String> = match std::fs::read_dir(store.audio_root()) {
+        Ok(rd) => rd.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect(),
+        Err(_) => Vec::new(),
+    };
+    let mut entries = Vec::with_capacity(hashes.len());
+    for hash in &hashes {
+        let ready = rows.iter().find(|r| &r.audio_hash == hash && r.status == SepStatus::Ready);
         let unrecoverable = lib
-            .sources_with_hash(&r.audio_hash)?
+            .sources_with_hash(hash)?
             .iter()
             .any(|s| s.kind == SourceKind::File && !Path::new(&s.uri).exists());
         entries.push(Entry {
-            size_bytes: r.size_bytes,
-            last_used_at: r.last_used_at.unwrap_or(0),
-            protected: unrecoverable || protected.contains(&r.audio_hash),
+            size_bytes: dir_size(&store.audio_dir(hash)),
+            last_used_at: ready.and_then(|r| r.last_used_at).unwrap_or(0),
+            ready: ready.is_some(),
+            protected: unrecoverable || protected.contains(hash),
         });
     }
     let mut evicted = Vec::new();
     for i in pick_evictions(&entries, budget(lib)?) {
-        let r = &rows[i];
-        match std::fs::remove_dir_all(store.stems_dir(&r.audio_hash, &r.model_id)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
+        let hash = &hashes[i];
+        std::fs::remove_dir_all(store.audio_dir(hash))?;
+        for r in rows.iter().filter(|r| &r.audio_hash == hash) {
+            lib.delete_separation(hash, &r.model_id)?;
         }
-        let _ = std::fs::remove_dir(store.audio_dir(&r.audio_hash)); // only if now empty
-        lib.delete_separation(&r.audio_hash, &r.model_id)?;
-        lib.reset_sources_for_hash(&r.audio_hash)?;
-        evicted.push(r.audio_hash.clone());
+        lib.reset_sources_for_hash(hash)?;
+        evicted.push(hash.clone());
     }
     Ok(evicted)
 }
@@ -165,11 +178,11 @@ pub fn startup_cleanup(store: &Store, lib: &Library) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::{NewTrack, ProviderId};
+    use crate::library::{NewTrack, ProviderId, SeparationRow};
     use crate::separate::mdx::ChunkOut;
 
     fn e(size: i64, used: i64, protected: bool) -> Entry {
-        Entry { size_bytes: size, last_used_at: used, protected }
+        Entry { size_bytes: size, last_used_at: used, ready: true, protected }
     }
 
     fn chunk(index: usize, len: usize) -> ChunkOut {
@@ -237,30 +250,40 @@ mod tests {
     }
 
     #[test]
-    fn enforce_budget_evicts_and_resets_sources_but_keeps_unrecoverable_files() {
+    fn enforce_budget_evicts_partial_songs_first_and_keeps_protected_ones() {
         let dir = tempfile::tempdir().unwrap();
         let s = Store::new(dir.path());
         let lib = Library::open_in_memory().unwrap();
-        lib.set_setting("cache_budget_bytes", "100").unwrap();
-        let t = |name| lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: name, artist: None, album: None, duration_ms: None }).unwrap();
-        // "old": a link (can be downloaded again). "gone": a file whose original was deleted.
-        let (old, gone) = (t("old"), t("gone"));
-        let s_old = lib.add_source(old, SourceKind::Link, "https://youtu.be/x", None).unwrap();
-        let s_gone = lib.add_source(gone, SourceKind::File, "/nowhere/gone.wav", None).unwrap();
-        lib.set_source_audio(s_old, "old", 1000).unwrap();
-        lib.set_source_audio(s_gone, "gone", 1000).unwrap();
-        for h in ["old", "gone", "new"] {
+        lib.set_setting("cache_budget_bytes", "0").unwrap();
+        let add = |hash: &str, kind, uri: &str| {
+            let t = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: hash, artist: None, album: None, duration_ms: None }).unwrap();
+            let src = lib.add_source(t, kind, uri, None).unwrap();
+            lib.set_source_audio(src, hash, 1000).unwrap();
+            t
+        };
+        // "old": ready, least recently used. "partial": cancelled halfway. "queued": partial but protected.
+        // "gone": ready, but its original file was deleted. "new": ready and protected.
+        let old = add("old", SourceKind::Link, "https://youtu.be/x");
+        let partial = add("partial", SourceKind::Link, "https://youtu.be/y");
+        add("queued", SourceKind::Link, "https://youtu.be/z");
+        add("gone", SourceKind::File, "/nowhere/gone.wav");
+        for (h, status, used) in [("old", SepStatus::Ready, 1), ("gone", SepStatus::Ready, 2), ("new", SepStatus::Ready, 3), ("partial", SepStatus::Cancelled, 4), ("queued", SepStatus::Cancelled, 5)] {
             write_chunk(&s, h, "m", &chunk(0, 10)).unwrap();
+            lib.upsert_separation(&sep_row(h, 2, status, 80, used)).unwrap();
         }
-        lib.upsert_separation(&sep_row("gone", 1, SepStatus::Ready, 80, 1)).unwrap();
-        lib.upsert_separation(&sep_row("old", 1, SepStatus::Ready, 80, 2)).unwrap();
-        lib.upsert_separation(&sep_row("new", 1, SepStatus::Ready, 80, 3)).unwrap();
-        let evicted = enforce_budget(&s, &lib, &["new".to_string()]).unwrap();
-        assert_eq!(evicted, vec!["old".to_string()]);
-        assert!(!s.stems_dir("old", "m").exists());
-        assert!(lib.separation("old", "m").unwrap().is_none());
-        assert_eq!(lib.selected_source(old).unwrap().unwrap().status, crate::library::SourceStatus::Pending);
-        assert!(s.stems_dir("gone", "m").exists());
+        write_atomic(&s.source_path("partial"), b"src").unwrap();
+
+        let evicted = enforce_budget(&s, &lib, &["new".to_string(), "queued".to_string()]).unwrap();
+
+        assert_eq!(evicted, vec!["partial".to_string(), "old".to_string()]);
+        for (h, t) in [("partial", partial), ("old", old)] {
+            assert!(!s.audio_dir(h).exists());
+            assert!(lib.separation(h, "m").unwrap().is_none());
+            assert_eq!(lib.selected_source(t).unwrap().unwrap().status, crate::library::SourceStatus::Pending);
+        }
+        for h in ["queued", "gone", "new"] {
+            assert!(s.stems_dir(h, "m").exists());
+        }
     }
 
     #[test]
