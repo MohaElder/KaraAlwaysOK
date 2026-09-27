@@ -2,7 +2,7 @@ use crate::library::{cards, CollectionCard};
 use crate::state::{coded, AppError, AppState, Plain};
 use anyhow::Context;
 use kara_core::fuzzy::{best_first, Fuzzy};
-use kara_core::ingest;
+use kara_core::ingest::{self, Ingested};
 use kara_core::ingest::link::{self, LinkVerdict};
 use kara_core::ingest::preview::{self, LinkPreview, SearchHit};
 use kara_core::ingest::{youtube, ytdlp};
@@ -105,10 +105,15 @@ pub fn add_file(state: State<'_, AppState>, path: String) -> Result<Track, AppEr
 /// Puts a pasted link in Imported; `start_adding` then downloads it.
 #[tauri::command]
 pub fn add_link(state: State<'_, AppState>, url: String) -> Result<Track, AppError> {
-    let url = link::parse_link(&url).context(kara_core::problem::Problem::NotALink).plain()?;
     let lib = state.lib.lock().unwrap();
-    let added = ingest::add_link(&lib, &url).plain()?;
+    let added = ingest_link(&lib, &url)?;
     lib.track(added.track_id).plain()
+}
+
+/// Puts a link in Imported, or finds the song already made from it.
+pub fn ingest_link(lib: &Library, url: &str) -> Result<Ingested, AppError> {
+    let url = link::parse_link(url).context(kara_core::problem::Problem::NotALink).plain()?;
+    ingest::add_link(lib, &url).plain()
 }
 
 /// Gets a newly added song's audio and lyrics in the background; false when the song

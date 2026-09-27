@@ -34,6 +34,7 @@ const zhHant: Record<Key, string> = {
   "problem.unknown": "發生了一些問題。",
   "problem.noSongAtLink": "在這個連結中找不到歌曲。",
   "problem.lyricsLookup": "無法尋找歌詞。請檢查網路連線。",
+  "problem.tooManyLinks": "請等你的歌曲新增完成。",
   "setup.title": "正在準備",
   "setup.body": "正在下載演唱引擎。只需下載一次。",
   "setup.progress": "{done} / {total} MB",

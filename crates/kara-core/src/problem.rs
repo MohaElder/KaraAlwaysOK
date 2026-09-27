@@ -37,6 +37,7 @@ pub enum Problem {
     PhonesStart,
     NoNetwork,
     LyricsLookup,
+    TooManyLinks,
 }
 
 impl std::fmt::Display for Problem {
@@ -74,6 +75,7 @@ impl std::fmt::Display for Problem {
             Self::PhonesStart => "Couldn't start phone mics.",
             Self::NoNetwork => "Connect this computer to Wi-Fi to use phone mics.",
             Self::LyricsLookup => "Couldn't look for lyrics. Check your connection.",
+            Self::TooManyLinks => "Wait for your songs to finish adding.",
         })
     }
 }

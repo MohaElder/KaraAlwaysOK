@@ -34,6 +34,7 @@ const zhHans: Record<Key, string> = {
   "problem.unknown": "出了点问题。",
   "problem.noSongAtLink": "在这个链接中找不到歌曲。",
   "problem.lyricsLookup": "无法查找歌词。请检查网络连接。",
+  "problem.tooManyLinks": "请等你的歌曲添加完成。",
   "setup.title": "正在准备",
   "setup.body": "正在下载演唱引擎。只需下载一次。",
   "setup.progress": "{done} / {total} MB",

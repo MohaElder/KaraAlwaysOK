@@ -34,6 +34,7 @@ const es: Record<Key, string> = {
   "problem.unknown": "Algo salió mal.",
   "problem.noSongAtLink": "No se encontró ninguna canción en este enlace.",
   "problem.lyricsLookup": "No se pudo buscar la letra. Revisa tu conexión.",
+  "problem.tooManyLinks": "Espera a que terminen de añadirse tus canciones.",
   "setup.title": "Preparando",
   "setup.body": "Descargando el motor de canto. Solo ocurre una vez.",
   "setup.progress": "{done} de {total} MB",

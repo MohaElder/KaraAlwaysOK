@@ -34,6 +34,7 @@ const ko: Record<Key, string> = {
   "problem.unknown": "문제가 발생했습니다.",
   "problem.noSongAtLink": "이 링크에서 노래를 찾을 수 없습니다.",
   "problem.lyricsLookup": "가사를 찾을 수 없습니다. 연결을 확인하세요.",
+  "problem.tooManyLinks": "추가 중인 노래가 끝날 때까지 기다려 주세요.",
   "setup.title": "준비 중",
   "setup.body": "노래 엔진을 다운로드하고 있습니다. 처음 한 번만 진행됩니다.",
   "setup.progress": "{done} / {total} MB",

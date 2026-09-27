@@ -5,7 +5,8 @@ export type ProblemCode =
   | "newerLibrary" | "dataFolder" | "inUse" | "libraryOpen" | "engineDownload" | "engineStart" | "fileMoved" | "fileNotAllowed"
   | "notAudio" | "songGone" | "noAudio" | "download" | "downloaderSetup" | "unreadable" | "songAudio" | "empty" | "diskFull"
   | "save" | "separate" | "notPrepared" | "partNotReady" | "streamingLater" | "upgradeFailed" | "linkStreaming"
-  | "linkUnsupported" | "noSongAtLink" | "lyricsLookup" | "readFailed" | "nothingPlaying" | "notALink";
+  | "linkUnsupported" | "noSongAtLink" | "lyricsLookup" | "readFailed" | "nothingPlaying" | "notALink"
+  | "tooManyLinks";
 
 /** How every command fails: a problem code to translate, and the English text. */
 export interface AppError { problem: ProblemCode | null; message: string }

@@ -10,9 +10,8 @@ use crate::player::{self, PlayerSnapshot};
 use crate::state::{AppError, AppState, Plain};
 use anyhow::Context;
 use axum_server::tls_rustls::RustlsConfig;
-use kara_core::ingest::link;
 use kara_core::jobs::Event;
-use kara_core::library::{CollectionKind, Library, SourceKind};
+use kara_core::library::{CollectionKind, Library};
 use kara_core::problem::Problem;
 use qrcode::render::svg;
 use qrcode::QrCode;
@@ -29,6 +28,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 const MAX_QUERY: usize = 200;
+const MAX_LINKS: usize = 3;
 
 /// The phone session while there is one; `opening` keeps two opens from starting two servers.
 #[derive(Default)]
@@ -235,25 +235,30 @@ pub fn phone_remove(app: AppHandle, id: String) {
     changed(&app);
 }
 
-/// Lets a phone in or names the close code refusing it; a phone let in hears it joined, what's playing and where the song is.
+/// Lets a phone in or names the close code refusing it; a phone let in hears it joined, what's playing and where the song is,
+/// before any later change (the queue stays locked until then).
 pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<u64, u16> {
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
-    let (joined, clock) = with(app, |s| {
+    let state = app.state::<AppState>();
+    let queue = state.player.lock().unwrap();
+    let snapshot = player::snapshot(&state.lib.lock().unwrap(), &queue);
+    let joined = with(app, |s| {
         let new = s.room.admit(code, id, name, conn, tx.clone(), kara_core::now_ms())?;
+        let _ = tx.send(Out::Text(encode(&ToPhone::Joined)));
+        if let Ok(snapshot) = &snapshot {
+            let _ = tx.send(Out::Text(encode(&ToPhone::Player { snapshot })));
+        }
+        let _ = tx.send(Out::Text(encode(&s.clock.message())));
         let g = &s.room.guests;
-        Ok((new.then(|| (g.len(), g[g.len() - 1].name.clone())), encode(&s.clock.message())))
+        Ok(new.then(|| (g.len(), g[g.len() - 1].name.clone())))
     })
     .ok_or(ENDED)?
     .map_err(|r: room::Refusal| r.close_code())?;
+    drop(queue);
     changed(app);
     if let Some((mic, name)) = joined {
         let _ = app.emit("phone-news", News::Joined { name, mic });
     }
-    let _ = tx.send(Out::Text(encode(&ToPhone::Joined)));
-    if let Ok(snapshot) = player::player_state(app.state()) {
-        let _ = tx.send(Out::Text(encode(&ToPhone::Player { snapshot: &snapshot })));
-    }
-    let _ = tx.send(Out::Text(clock));
     Ok(conn)
 }
 
@@ -303,23 +308,19 @@ fn queue_for(app: &AppHandle, track_id: i64, next: bool, name: &str) -> Result<(
     Ok(())
 }
 
-/// Adds a guest's link like the Mac does: queued once it's downloaded, or right away when it needs nothing more.
+/// Adds a guest's link like the Mac does: queued once it's downloaded, or right away when it needs nothing more. A guest waits
+/// while three of their links are still being added.
 fn add_link(app: &AppHandle, id: &str, name: &str, url: String, next: bool) -> Result<(), AppError> {
-    let fresh = !known_link(app, &url);
-    let track = adding::add_link(app.state(), url)?;
-    let _ = app.emit("library", ());
-    if !adding::start_adding(app.state(), track.id)? {
-        return queue_for(app, track.id, next, name);
+    if with(app, |s| s.links.iter().filter(|l| l.guest == id).count()).unwrap_or(0) >= MAX_LINKS {
+        return Err(anyhow::Error::new(Problem::TooManyLinks).into());
     }
-    with(app, |s| s.links.push(PendingLink { track_id: track.id, guest: id.to_string(), name: name.to_string(), next, fresh }));
+    let added = adding::ingest_link(&app.state::<AppState>().lib.lock().unwrap(), &url)?;
+    let _ = app.emit("library", ());
+    if !adding::start_adding(app.state(), added.track_id)? {
+        return queue_for(app, added.track_id, next, name);
+    }
+    with(app, |s| s.links.push(PendingLink { track_id: added.track_id, guest: id.to_string(), name: name.to_string(), next, fresh: added.new }));
     Ok(())
-}
-
-/// Whether a song in the library already comes from `url`.
-fn known_link(app: &AppHandle, url: &str) -> bool {
-    let Some(url) = link::parse_link(url) else { return false };
-    let known = app.state::<AppState>().lib.lock().unwrap().source_by_uri(SourceKind::Link, link::canonical(&url).as_str());
-    matches!(known, Ok(Some(_)))
 }
 
 /// The engine finished adding a song: a guest's link is queued now, or on failure the guest hears why and a song the link made
@@ -357,12 +358,14 @@ fn phone_search(lib: &Library, q: &str, imported: &str) -> anyhow::Result<Search
 
 /// Sends one message to every connected phone.
 fn broadcast(app: &AppHandle, msg: &ToPhone) {
-    with(app, |s| {
-        let text = encode(msg);
-        for g in &s.room.guests {
-            g.send(Out::Text(text.clone()));
-        }
-    });
+    with(app, |s| send_all(s, msg));
+}
+
+fn send_all(s: &Session, msg: &ToPhone) {
+    let text = encode(msg);
+    for g in &s.room.guests {
+        g.send(Out::Text(text.clone()));
+    }
 }
 
 /// Sends the queue to every phone.
@@ -378,8 +381,10 @@ pub fn lyrics_changed(app: &AppHandle, track_id: i64) {
 /// The Mac says where the song is; phones follow it for the lyrics.
 #[tauri::command]
 pub fn phones_clock(app: AppHandle, key: Option<u64>, position_ms: i64, playing: bool) {
-    with(&app, |s| s.clock = Clock::new(key, position_ms, playing));
-    broadcast(&app, &ToPhone::Clock { key, position_ms, playing });
+    with(&app, |s| {
+        s.clock = Clock::new(key, position_ms, playing);
+        send_all(s, &s.clock.message());
+    });
 }
 
 /// A phone left: its row goes, and the session ends when nobody is left and the window is closed.

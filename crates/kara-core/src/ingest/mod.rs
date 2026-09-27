@@ -17,6 +17,8 @@ use url::Url;
 pub struct Ingested {
     pub track_id: i64,
     pub source_id: i64,
+    /// This call made the track; false when the file or link was already in the library.
+    pub new: bool,
 }
 
 /// "salt-and_static.flac" -> "salt and static"
@@ -99,7 +101,7 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
     let path = &path.canonicalize().map_err(|e| audio::describe_read_failure(e.into(), Problem::NotAudio))?;
     let uri = path.display().to_string();
     if let Some(s) = lib.source_by_uri(SourceKind::File, &uri)? {
-        return Ok(Ingested { track_id: s.track_id, source_id: s.id });
+        return Ok(Ingested { track_id: s.track_id, source_id: s.id, new: false });
     }
     let (tags, duration_ms) = audio::read_tags(path).map_err(|e| audio::describe_read_failure(e, Problem::NotAudio))?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
@@ -117,7 +119,7 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
     }
     let source_id = lib.add_source(track_id, SourceKind::File, &uri, Some(name))?;
     link_collections(lib, track_id, tags.artist.as_deref(), tags.album.as_deref())?;
-    Ok(Ingested { track_id, source_id })
+    Ok(Ingested { track_id, source_id, new: true })
 }
 
 /// Adds a link as a track right away (a link already in the library returns its existing track); its real title arrives when the audio is fetched.
@@ -127,7 +129,7 @@ pub fn add_link(lib: &Library, url: &Url) -> Result<Ingested> {
         bail!(p);
     }
     if let Some(s) = lib.source_by_uri(SourceKind::Link, url.as_str())? {
-        return Ok(Ingested { track_id: s.track_id, source_id: s.id });
+        return Ok(Ingested { track_id: s.track_id, source_id: s.id, new: false });
     }
     let host = url.host_str().unwrap_or("link").trim_start_matches("www.");
     let title = match link::verdict(url) {
@@ -137,7 +139,7 @@ pub fn add_link(lib: &Library, url: &Url) -> Result<Ingested> {
     let track_id = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: &title, artist: None, album: None, duration_ms: None })?;
     let source_id = lib.add_source(track_id, SourceKind::Link, url.as_str(), Some(host))?;
     link_collections(lib, track_id, None, None)?;
-    Ok(Ingested { track_id, source_id })
+    Ok(Ingested { track_id, source_id, new: true })
 }
 
 fn download_file(url: &Url, dir: &Path) -> Result<PathBuf> {
@@ -219,7 +221,7 @@ mod tests {
         let url = Url::parse("https://www.youtube.com/watch?v=abc").unwrap();
         let first = add_link(&lib, &url).unwrap();
         let again = add_link(&lib, &url).unwrap();
-        assert_eq!((again.track_id, again.source_id), (first.track_id, first.source_id));
+        assert_eq!((again.track_id, again.source_id, first.new, again.new), (first.track_id, first.source_id, true, false));
         let imported = &lib.collections(None, CollectionKind::Playlist).unwrap()[0];
         assert_eq!(lib.collection_tracks(imported.id).unwrap().len(), 1);
     }

@@ -34,6 +34,7 @@ const ja: Record<Key, string> = {
   "problem.unknown": "問題が発生しました。",
   "problem.noSongAtLink": "このリンクに曲が見つかりませんでした。",
   "problem.lyricsLookup": "歌詞を探せませんでした。接続を確認してください。",
+  "problem.tooManyLinks": "追加中の曲が終わるまでお待ちください。",
   "setup.title": "準備中",
   "setup.body": "歌唱エンジンをダウンロードしています。これは最初の一度だけです。",
   "setup.progress": "{done} / {total} MB",

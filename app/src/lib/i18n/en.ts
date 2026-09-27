@@ -32,6 +32,7 @@ const en = {
   "problem.unknown": "Something went wrong.",
   "problem.noSongAtLink": "Couldn't find a song at this link.",
   "problem.lyricsLookup": "Couldn't look for lyrics. Check your connection.",
+  "problem.tooManyLinks": "Wait for your songs to finish adding.",
   "setup.title": "Getting ready",
   "setup.body": "Downloading the singing engine. This only happens once.",
   "setup.progress": "{done} of {total} MB",
