@@ -68,3 +68,15 @@ Some tests build small audio files with `ffmpeg` (embedded lyrics, MP3) and
 macOS's `afconvert` (AAC), so running the tests needs `ffmpeg` installed. The app itself never
 needs `ffmpeg` — it only downloads `yt-dlp` on its own, the first time you add
 a link that needs it.
+
+## Before the first release
+
+Do these once, after the app is built and the GitHub repo exists:
+
+1. Create the repo on GitHub and push.
+2. Make the update signing key: run `cargo tauri signer generate -w ~/.tauri/kara-always-oki.key`
+   and keep the private key and its password safe (never commit them).
+3. Add GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` (the private key's contents) and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+4. Put the public key in `plugins.updater.pubkey` in `tauri.conf.json`, and the repo owner
+   in the updater endpoint URL.
