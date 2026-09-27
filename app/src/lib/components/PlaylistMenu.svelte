@@ -14,6 +14,9 @@
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
   const m = $derived(ui.menu?.kind === "playlist" ? ui.menu : null);
+  let last: NonNullable<typeof m> | null = null;
+  /** The open menu, kept while it closes so its contents never read a menu that is gone. */
+  const shown = $derived.by(() => (last = m ?? last));
   let asking = $state(false);
   /** The open playlist's songs that Sing and Shuffle would play. */
   let singable = $state<number[]>([]);
@@ -44,13 +47,13 @@
 </script>
 
 {#if m}
-  {@const card = m.card}
+  {@const card = shown!.card}
   <Menu x={m.x} y={m.y} onClose={close}>
     {#if asking}
       <div class="ask"><WarningIcon size={18} /><div class="grow"><b>{t("confirm.deleteSongTitle", { title: cardName(card) })}</b><small>{t("confirm.deletePlaylistBody")}</small></div></div>
       <div class="hstack end">
         <button class="btn" onclick={() => (asking = false)}>{t("common.cancel")}</button>
-        <button class="btn accent" onclick={() => { close(); void manage.deletePlaylist(card); }}><TrashIcon />{t("common.delete")}</button>
+        <button class="btn accent" onclick={() => { void manage.deletePlaylist(card); close(); }}><TrashIcon />{t("common.delete")}</button>
       </div>
     {:else}
       <button class="opt" disabled={!singable.length} onclick={() => sing(false)}><PlayIcon size={18} /><span class="grow">{t("collection.sing")}</span></button>

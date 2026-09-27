@@ -19,6 +19,9 @@
   import PlusIcon from "phosphor-svelte/lib/PlusIcon";
 
   const m = $derived(ui.menu?.kind === "song" ? ui.menu : null);
+  let last: NonNullable<typeof m> | null = null;
+  /** The open menu, kept while it closes so its contents never read a menu that is gone. */
+  const shown = $derived.by(() => (last = m ?? last));
   let asking = $state(false);
   let sub = $state<{ x: number; y: number } | null>(null);
   let playlists = $state<CollectionCard[]>([]);
@@ -38,8 +41,8 @@
 
   const close = () => (ui.menu = null);
   const run = (action: () => unknown) => {
-    close();
     void action();
+    close();
   };
   const hideSub = () => (sub = null);
 
@@ -52,8 +55,8 @@
 </script>
 
 {#if m}
-  {@const track = m.track}
-  {@const playlistId = m.playlistId}
+  {@const track = shown!.track}
+  {@const playlistId = shown!.playlistId}
   {@const busy = adding.ids.has(track.id)}
   <Menu x={m.x} y={m.y} alignRight={m.alignRight} onClose={close}>
     {#if asking}
@@ -73,7 +76,7 @@
       {#if track.provider === "local"}
         <div class="msep"></div>
         <button class="opt" onpointerenter={hideSub} onclick={() => run(() => (ui.sheet = { kind: "edit", track }))}><PencilSimpleIcon size={18} /><span class="grow">{t("menu.editInfo")}</span></button>
-        <button class="opt" onpointerenter={hideSub} onclick={() => (asking = true)}><TrashIcon size={18} /><span class="grow">{t("menu.deleteSong")}</span></button>
+        <button class="opt" disabled={busy} onpointerenter={hideSub} onclick={() => (asking = true)}><TrashIcon size={18} /><span class="grow">{t("menu.deleteSong")}</span></button>
       {/if}
     {/if}
   </Menu>
