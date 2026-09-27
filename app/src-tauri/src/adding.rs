@@ -2,11 +2,13 @@ use crate::library::{cards, CollectionCard};
 use crate::state::{coded, AppError, AppState, Plain};
 use anyhow::Context;
 use kara_core::fuzzy::{best_first, Fuzzy};
+use kara_core::ingest;
 use kara_core::ingest::link::{self, LinkVerdict};
 use kara_core::ingest::preview::{self, LinkPreview};
 use kara_core::ingest::ytdlp;
 use kara_core::library::{CollectionKind, Library, Track};
 use serde::Serialize;
+use std::path::Path;
 use tauri::ipc::Channel;
 use tauri::State;
 
@@ -70,6 +72,36 @@ pub async fn link_preview(state: State<'_, AppState>, url: String, on_update: Ch
     .await
     .map_err(AppError::from)?
     .plain()
+}
+
+/// Puts a dropped file in Imported; `start_adding` then gets it ready.
+#[tauri::command]
+pub fn add_file(state: State<'_, AppState>, path: String) -> Result<Track, AppError> {
+    let lib = state.lib.lock().unwrap();
+    let added = ingest::add_file(&lib, Path::new(&path)).plain()?;
+    lib.track(added.track_id).plain()
+}
+
+/// Puts a pasted link in Imported; `start_adding` then downloads it.
+#[tauri::command]
+pub fn add_link(state: State<'_, AppState>, url: String) -> Result<Track, AppError> {
+    let url = link::parse_link(&url).context(kara_core::problem::Problem::NotALink).plain()?;
+    let lib = state.lib.lock().unwrap();
+    let added = ingest::add_link(&lib, &url).plain()?;
+    lib.track(added.track_id).plain()
+}
+
+/// Gets a newly added song's audio and lyrics in the background; false when the song
+/// already has its audio or is queued (the worker gets it then).
+#[tauri::command]
+pub fn start_adding(state: State<'_, AppState>, track_id: i64) -> Result<bool, AppError> {
+    let queued = state.player.lock().unwrap().upcoming().contains(&track_id);
+    let has_audio = state.lib.lock().unwrap().selected_source(track_id).plain()?.is_some_and(|s| s.audio_hash.is_some());
+    if queued || has_audio {
+        return Ok(false);
+    }
+    state.adder.add(track_id);
+    Ok(true)
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { ui } from "$lib/state/ui.svelte";
   import { player } from "$lib/state/player.svelte";
+  import { adding } from "$lib/state/adding.svelte";
   import { cardName } from "$lib/state/library.svelte";
   import { fade, fadeAway } from "$lib/motion";
   import Cover from "./Cover.svelte";
@@ -34,7 +35,7 @@
     {#if view.tracks.length}
       <h2 class="sec"><MusicNotesIcon size={18} />{t("search.songs")}</h2>
       {#each view.tracks.slice(0, 8) as song (song.id)}
-        <SongRow track={song} playing={player.track?.id === song.id} onTap={() => player.enqueue(song.id)} onNext={() => player.enqueue(song.id, true)} />
+        <SongRow track={adding.shown(song)} busy={adding.ids.has(song.id)} playing={player.track?.id === song.id} onTap={() => player.enqueue(song.id)} onNext={() => player.enqueue(song.id, true)} />
       {/each}
     {/if}
     {#each groups as g (g.kind)}

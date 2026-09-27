@@ -9,12 +9,14 @@
   import Karaoke from "$lib/components/Karaoke.svelte";
   import PlayerBar from "$lib/components/PlayerBar.svelte";
   import QueuePanel from "$lib/components/QueuePanel.svelte";
+  import DropOverlay from "$lib/components/DropOverlay.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
   import { engine } from "$lib/state/engine.svelte";
   import { library } from "$lib/state/library.svelte";
   import { player } from "$lib/state/player.svelte";
+  import { adding } from "$lib/state/adding.svelte";
   import { ui } from "$lib/state/ui.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SearchResults from "$lib/components/SearchResults.svelte";
@@ -31,18 +33,19 @@
   onMount(() => {
     engine.start();
     player.init();
+    adding.init();
   });
 </script>
 
 <div class="app">
   <Sidebar />
   <main class="main" class:q-open={ui.queueOpen}>
-    <header class="top"><SearchBar bind:this={searchBar} /></header>
+    <header class="top"><SearchBar bind:this={searchBar} onSubmitLink={(url, title) => adding.link(url, "", title)} /></header>
     <div class="view">
       {#if ui.search.kind === "text"}
         <SearchResults onOpen={openFromSearch} />
       {:else if ui.search.kind === "link"}
-        <LinkResult />
+        <LinkResult onAdd={(url, then, title) => { ui.clearSearch(); void adding.link(url, then, title); }} />
       {:else if library.error}
         <Empty icon={WarningIcon} title={t("problem.libraryOpen")} />
       {:else if library.page}
@@ -59,6 +62,7 @@
 <PlayerBar />
 <QueuePanel />
 <GettingReady />
+<DropOverlay />
 <Toasts />
 <Tooltip />
 

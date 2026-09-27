@@ -5,6 +5,7 @@ mod player;
 mod settings;
 mod state;
 
+use kara_core::jobs::{Event, Stage};
 use tauri::{Emitter, Manager};
 
 pub fn run() {
@@ -15,6 +16,9 @@ pub fn run() {
             std::thread::spawn(move || {
                 for e in rx {
                     let _ = handle.emit("engine", &e);
+                    if let Event::Added { track_id } | Event::Ready { track_id } | Event::Stage { track_id, stage: Stage::Separating } = e {
+                        player::refresh_if_queued(&handle, track_id);
+                    }
                 }
             });
             app.manage(engine::Startup(events));
@@ -27,6 +31,10 @@ pub fn run() {
             engine::setup_engine,
             adding::search,
             adding::link_preview,
+            adding::add_file,
+            adding::add_link,
+            adding::start_adding,
+            library::delete_track,
             library::list_collections,
             library::open_collection,
             library::get_track,

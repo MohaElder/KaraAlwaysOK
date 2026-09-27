@@ -113,6 +113,16 @@ const es: Record<Key, string> = {
   "queue.emptyBody": "Toca una canción para añadirla aquí. Usa Reproducir a continuación para ponerla primero.",
   "queue.drag": "Arrastra para reordenar",
   "queue.remove": "Quitar",
+  "adding.started": "Añadiendo «{title}»",
+  "adding.reading": "Añadiendo «{title}» · Leyendo el archivo",
+  "adding.downloading": "Añadiendo «{title}» · Descargando",
+  "adding.preparing": "Añadiendo «{title}» · Preparando el audio",
+  "adding.lyrics": "Añadiendo «{title}» · Buscando la letra",
+  "adding.done": "«{title}» se añadió a tu biblioteca",
+  "adding.fromHost": "Canción de {host}",
+  "adding.already": "«{title}» ya está en tu biblioteca",
+  "drop.title": "Suelta para cantar",
+  "drop.body": "Irá a Importadas.",
 };
 
 export default es;

@@ -113,6 +113,16 @@ const zhHant: Record<Key, string> = {
   "queue.emptyBody": "點一首歌即可加到這裡。用「接下來播放」把它排到最前。",
   "queue.drag": "拖曳以重新排序",
   "queue.remove": "移除",
+  "adding.started": "正在加入「{title}」",
+  "adding.reading": "正在加入「{title}」 · 正在讀取檔案",
+  "adding.downloading": "正在加入「{title}」 · 正在下載",
+  "adding.preparing": "正在加入「{title}」 · 正在準備音訊",
+  "adding.lyrics": "正在加入「{title}」 · 正在尋找歌詞",
+  "adding.done": "已將「{title}」加入資料庫",
+  "adding.fromHost": "來自 {host} 的歌曲",
+  "adding.already": "「{title}」已在資料庫中",
+  "drop.title": "拖放即可開唱",
+  "drop.body": "它會放進「已匯入」。",
 };
 
 export default zhHant;

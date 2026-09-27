@@ -113,6 +113,16 @@ const ko: Record<Key, string> = {
   "queue.emptyBody": "노래를 탭하면 여기에 추가됩니다. ‘다음에 재생’으로 맨 앞에 넣을 수 있습니다.",
   "queue.drag": "드래그하여 순서 변경",
   "queue.remove": "제거",
+  "adding.started": "‘{title}’ 추가 중",
+  "adding.reading": "‘{title}’ 추가 중 · 파일을 읽는 중",
+  "adding.downloading": "‘{title}’ 추가 중 · 다운로드 중",
+  "adding.preparing": "‘{title}’ 추가 중 · 오디오 준비 중",
+  "adding.lyrics": "‘{title}’ 추가 중 · 가사를 찾는 중",
+  "adding.done": "‘{title}’을(를) 보관함에 추가했습니다",
+  "adding.fromHost": "{host}의 노래",
+  "adding.already": "‘{title}’은(는) 이미 보관함에 있습니다",
+  "drop.title": "놓아서 부르기",
+  "drop.body": "‘가져온 노래’에 들어갑니다.",
 };
 
 export default ko;

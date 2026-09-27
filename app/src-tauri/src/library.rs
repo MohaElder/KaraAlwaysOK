@@ -1,8 +1,9 @@
 use crate::state::{AppError, AppState, Plain};
+use kara_core::cache;
 use kara_core::library::{CollectionKind, CollectionRow, Library, LyricsSource, Track};
 use kara_core::lyrics::Line;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +72,16 @@ pub fn track_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<Lyrics,
         Some(r) => Lyrics { source: Some(r.source), lines: r.lines },
         None => Lyrics { source: None, lines: Vec::new() },
     })
+}
+
+/// Deletes a song: it leaves the queue (so the worker stops on it) before it leaves the library and its audio is freed.
+#[tauri::command]
+pub fn delete_track(app: AppHandle, state: State<'_, AppState>, track_id: i64) -> Result<(), AppError> {
+    crate::player::update(&app, state.inner(), |p, _| {
+        p.remove_track(track_id);
+        Ok(())
+    })?;
+    cache::delete_track(&state.store, &state.lib.lock().unwrap(), track_id).plain()
 }
 
 #[cfg(test)]

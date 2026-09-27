@@ -113,6 +113,16 @@ const zhHans: Record<Key, string> = {
   "queue.emptyBody": "点一首歌即可加到这里。用“接下来播放”把它排到最前。",
   "queue.drag": "拖动以重新排序",
   "queue.remove": "移除",
+  "adding.started": "正在添加“{title}”",
+  "adding.reading": "正在添加“{title}” · 正在读取文件",
+  "adding.downloading": "正在添加“{title}” · 正在下载",
+  "adding.preparing": "正在添加“{title}” · 正在准备音频",
+  "adding.lyrics": "正在添加“{title}” · 正在查找歌词",
+  "adding.done": "已将“{title}”添加到资料库",
+  "adding.fromHost": "来自 {host} 的歌曲",
+  "adding.already": "“{title}”已在资料库中",
+  "drop.title": "拖放即可开唱",
+  "drop.body": "它会放进“已导入”。",
 };
 
 export default zhHans;

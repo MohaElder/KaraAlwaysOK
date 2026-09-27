@@ -111,6 +111,16 @@ const en = {
   "queue.emptyBody": "Tap a song to add it here. Use Play next to put it first.",
   "queue.drag": "Drag to reorder",
   "queue.remove": "Remove",
+  "adding.started": "Adding “{title}”",
+  "adding.reading": "Adding “{title}” · Reading the file",
+  "adding.downloading": "Adding “{title}” · Downloading",
+  "adding.preparing": "Adding “{title}” · Preparing the audio",
+  "adding.lyrics": "Adding “{title}” · Finding the lyrics",
+  "adding.done": "Added “{title}” to your library",
+  "adding.fromHost": "Song from {host}",
+  "adding.already": "“{title}” is already in your library",
+  "drop.title": "Drop to sing",
+  "drop.body": "It goes into Imported.",
 };
 
 export default en;

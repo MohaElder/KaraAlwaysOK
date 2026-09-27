@@ -113,6 +113,16 @@ const ja: Record<Key, string> = {
   "queue.emptyBody": "曲をタップするとここに追加されます。「次に再生」で先頭に入れられます。",
   "queue.drag": "ドラッグして並べ替え",
   "queue.remove": "削除",
+  "adding.started": "「{title}」を追加中",
+  "adding.reading": "「{title}」を追加中 · ファイルを読み込んでいます",
+  "adding.downloading": "「{title}」を追加中 · ダウンロード中",
+  "adding.preparing": "「{title}」を追加中 · 音声を準備しています",
+  "adding.lyrics": "「{title}」を追加中 · 歌詞を探しています",
+  "adding.done": "「{title}」をライブラリに追加しました",
+  "adding.fromHost": "{host} の曲",
+  "adding.already": "「{title}」はすでにライブラリにあります",
+  "drop.title": "ドロップして歌う",
+  "drop.body": "「読み込んだ曲」に入ります。",
 };
 
 export default ja;

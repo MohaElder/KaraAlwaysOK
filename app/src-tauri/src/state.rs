@@ -9,7 +9,6 @@ use kara_core::store::{DataLock, Store};
 use serde::Serialize;
 use std::sync::{mpsc, Arc, Mutex};
 
-#[expect(dead_code, reason = "read by the audio and adding commands")]
 pub struct AppState {
     pub store: Store,
     pub lib: Mutex<Library>,

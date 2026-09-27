@@ -32,8 +32,8 @@
   role="button"
   tabindex="0"
   aria-label={t("song.addToQueueLabel", { title: track.title })}
-  onclick={() => onTap?.()}
-  onkeydown={(e) => e.key === "Enter" && onTap?.()}
+  onclick={() => !busy && onTap?.()}
+  onkeydown={(e) => e.key === "Enter" && !busy && onTap?.()}
   oncontextmenu={(e) => {
     e.preventDefault();
     onMenu?.(e.clientX, e.clientY);
@@ -47,7 +47,7 @@
     <div class="t ell">{track.title}</div>
     <div class="a ell">{[track.artist, track.album].filter(Boolean).join(" – ")}</div>
   </span>
-  <button class="ib nx" use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); onNext?.(); }}><ArrowBendDownRightIcon size={18} /></button>
+  <button class="ib nx" use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); if (!busy) onNext?.(); }}><ArrowBendDownRightIcon size={18} /></button>
   <button
     class="ib nx"
     use:tip={t("common.more")}

@@ -105,3 +105,8 @@ export async function linkPreview(url: string, onUpdate: (p: LinkPreview) => voi
   channel.onmessage = onUpdate;
   await invoke("link_preview", { url, onUpdate: channel });
 }
+
+export const addFile = (path: string) => invoke<Track>("add_file", { path });
+export const addLink = (url: string) => invoke<Track>("add_link", { url });
+export const startAdding = (trackId: number) => invoke<boolean>("start_adding", { trackId });
+export const deleteTrack = (trackId: number) => invoke<void>("delete_track", { trackId });

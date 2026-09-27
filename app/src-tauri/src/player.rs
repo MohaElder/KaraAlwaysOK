@@ -6,7 +6,7 @@ use kara_core::problem::Problem;
 use kara_core::separate::{CHUNK_LEN, DEFAULT_MODEL};
 use serde::Serialize;
 use tauri::ipc::Response;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct Entry {
     pub key: u64,
@@ -102,7 +102,6 @@ impl Player {
     }
 
     /// Drops every entry of a deleted song; if it was playing, the next song takes its place.
-    #[cfg_attr(not(test), expect(dead_code, reason = "called when a song is deleted"))]
     pub fn remove_track(&mut self, track_id: i64) {
         let Some(c) = self.current else {
             self.entries.retain(|e| e.track_id != track_id);
@@ -163,6 +162,17 @@ pub(crate) fn update(
     let snap = snapshot(&lib, &p).plain()?;
     let _ = app.emit("player", &snap);
     Ok(snap)
+}
+
+/// Broadcasts the queue again when the engine changed a song in it, so its details are never stale.
+pub fn refresh_if_queued(app: &AppHandle, track_id: i64) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let p = state.player.lock().unwrap();
+    if p.entries.iter().any(|e| e.track_id == track_id) {
+        if let Ok(snap) = snapshot(&state.lib.lock().unwrap(), &p) {
+            let _ = app.emit("player", &snap);
+        }
+    }
 }
 
 /// Queues a song, refusing one that is no longer in the library.
