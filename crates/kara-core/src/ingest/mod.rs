@@ -2,6 +2,7 @@
 
 pub mod link;
 pub mod preview;
+pub mod youtube;
 pub mod ytdlp;
 
 use crate::audio;
@@ -158,8 +159,9 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
             match link::verdict(&url) {
                 LinkVerdict::AudioFile => download_file(&url, &store.tmp_dir()).context(Problem::Download),
                 LinkVerdict::Extractable => {
-                    let bin = ytdlp::ensure(&store.bin_dir()).context(Problem::DownloaderSetup)?;
-                    let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir())
+                    let bin_dir = store.bin_dir();
+                    let bin = ytdlp::ensure(&bin_dir).context(Problem::DownloaderSetup)?;
+                    let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir(), || ytdlp::update(&bin_dir))
                         .context(Problem::Download)?;
                     lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
                     let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];

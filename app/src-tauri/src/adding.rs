@@ -5,7 +5,7 @@ use kara_core::fuzzy::{best_first, Fuzzy};
 use kara_core::ingest;
 use kara_core::ingest::link::{self, LinkVerdict};
 use kara_core::ingest::preview::{self, LinkPreview, SearchHit};
-use kara_core::ingest::ytdlp;
+use kara_core::ingest::{youtube, ytdlp};
 use kara_core::library::{CollectionKind, Library, Track};
 use serde::Serialize;
 use std::path::Path;
@@ -74,16 +74,24 @@ pub async fn link_preview(state: State<'_, AppState>, url: String, on_update: Ch
     .plain()
 }
 
-/// The top YouTube videos for the search bar's words.
+/// The top YouTube videos for the search bar's words, from YouTube's web search, else yt-dlp's.
 #[tauri::command]
 pub async fn youtube_search(state: State<'_, AppState>, query: String) -> Result<Vec<SearchHit>, AppError> {
     let bin_dir = state.store.bin_dir();
     tauri::async_runtime::spawn_blocking(move || {
-        ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query)).map_err(|e| coded(e, kara_core::problem::Problem::NoSongAtLink))
+        youtube::search(&query)
+            .or_else(|_| ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query)))
+            .map_err(|e| coded(e, kara_core::problem::Problem::NoSongAtLink))
     })
     .await
     .map_err(AppError::from)?
     .plain()
+}
+
+/// YouTube's suggestions for the search bar's words; none when YouTube can't be reached.
+#[tauri::command]
+pub async fn youtube_suggestions(query: String) -> Result<Vec<String>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || youtube::suggestions(&query).unwrap_or_default()).await.map_err(AppError::from)
 }
 
 /// Puts a dropped file in Imported; `start_adding` then gets it ready.

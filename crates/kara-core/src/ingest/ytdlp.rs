@@ -7,9 +7,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 
-const BIN_NAME: &str = "yt-dlp_macos";
-const BIN_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
+const ZIP_NAME: &str = "yt-dlp_macos.zip";
+const ZIP_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip";
 const SUMS_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
+const EXE_NAME: &str = "yt-dlp_macos";
+/// Holds the checksum of the zip an install came from, inside the install folder.
+const SHA_FILE: &str = ".sha256";
+
+static INSTALL: Mutex<()> = Mutex::new(());
 
 pub fn sha_from_sums(sums: &str, name: &str) -> Option<String> {
     sums.lines().find_map(|l| {
@@ -18,24 +23,57 @@ pub fn sha_from_sums(sums: &str, name: &str) -> Option<String> {
     })
 }
 
-/// Path to a verified yt-dlp in `bin_dir`, installing it on first use (one install at a time).
-pub fn ensure(bin_dir: &Path) -> Result<PathBuf> {
-    static INSTALL: Mutex<()> = Mutex::new(());
-    let _one = INSTALL.lock().unwrap_or_else(|e| e.into_inner());
-    let path = bin_dir.join("yt-dlp");
-    if path.exists() {
-        return Ok(path);
-    }
-    let get = |url: &str| -> Result<Vec<u8>> {
-        Ok(reqwest::blocking::get(url)?.error_for_status()?.bytes()?.to_vec())
-    };
+fn get(url: &str) -> Result<Vec<u8>> {
+    Ok(reqwest::blocking::get(url)?.error_for_status()?.bytes()?.to_vec())
+}
+
+fn latest_sha() -> Result<String> {
     let sums = String::from_utf8(get(SUMS_URL)?)?;
-    let want = sha_from_sums(&sums, BIN_NAME).context("yt-dlp checksum not published")?;
-    let bytes = get(BIN_URL)?;
-    let path = install_verified(bin_dir, "yt-dlp", &bytes, &want)?;
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
-    Ok(path)
+    sha_from_sums(&sums, ZIP_NAME).context("yt-dlp checksum not published")
+}
+
+/// Path to a verified yt-dlp in `bin_dir`, installing its fast-starting (unpacked) form on first use.
+pub fn ensure(bin_dir: &Path) -> Result<PathBuf> {
+    let _one = INSTALL.lock().unwrap_or_else(|e| e.into_inner());
+    let exe = bin_dir.join("yt-dlp").join(EXE_NAME);
+    if exe.exists() {
+        return Ok(exe);
+    }
+    unpack(bin_dir, &get(ZIP_URL)?, &latest_sha()?)
+}
+
+/// Reinstalls yt-dlp when a newer release is out; true when it did.
+pub fn update(bin_dir: &Path) -> Result<bool> {
+    let _one = INSTALL.lock().unwrap_or_else(|e| e.into_inner());
+    let want = latest_sha()?;
+    if std::fs::read_to_string(bin_dir.join("yt-dlp").join(SHA_FILE)).is_ok_and(|have| have == want) {
+        return Ok(false);
+    }
+    unpack(bin_dir, &get(ZIP_URL)?, &want)?;
+    Ok(true)
+}
+
+/// Verifies the release zip against `sha`, unpacks it and swaps it in for any earlier install
+/// (the old single-file one included); returns the executable's path.
+fn unpack(bin_dir: &Path, zip: &[u8], sha: &str) -> Result<PathBuf> {
+    std::fs::create_dir_all(bin_dir)?;
+    let zip_path = install_verified(bin_dir, ZIP_NAME, zip, sha)?;
+    let staging = bin_dir.join("yt-dlp.new");
+    let _ = std::fs::remove_dir_all(&staging);
+    let status = Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(&zip_path).arg(&staging).status();
+    std::fs::remove_file(&zip_path)?;
+    if !status?.success() {
+        bail!("couldn't unpack yt-dlp");
+    }
+    std::fs::write(staging.join(SHA_FILE), sha)?;
+    let dir = bin_dir.join("yt-dlp");
+    match std::fs::remove_dir_all(&dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotADirectory => std::fs::remove_file(&dir)?,
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+        _ => {}
+    }
+    std::fs::rename(&staging, &dir)?;
+    Ok(dir.join(EXE_NAME))
 }
 
 const NOISE: &[&str] = &["official", "lyric", "lyrics", "audio", "video", "mv", "hd", "4k", "visualizer"];
@@ -89,11 +127,10 @@ struct Info {
 }
 
 /// Downloads the best audio we can decode (M4A, else MP3, else whatever is best).
-/// If that fails, updates yt-dlp and tries once more.
-pub fn download(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
+/// If that fails and `update` brings a newer yt-dlp, tries once more.
+pub fn download(bin: &Path, url: &str, out_dir: &Path, update: impl FnOnce() -> Result<bool>) -> Result<Fetched> {
     download_once(bin, url, out_dir).or_else(|e| {
-        let updated = Command::new(bin).arg("-U").output().is_ok_and(|o| o.status.success());
-        if updated {
+        if update().unwrap_or(false) {
             download_once(bin, url, out_dir)
         } else {
             Err(e)
@@ -135,14 +172,12 @@ mod tests {
         assert_eq!(sha_from_sums(sums, "nope"), None);
     }
 
-    /// A stand-in yt-dlp: `-U` runs `update`; a download succeeds only once a file named "updated" exists.
-    fn fake_ytdlp(dir: &Path, update: &str) -> PathBuf {
+    /// A stand-in yt-dlp whose download succeeds only once a file named "updated" exists.
+    fn fake_ytdlp(dir: &Path) -> PathBuf {
         let bin = dir.join("yt-dlp");
-        let script = format!(
-            "#!/bin/sh\ncd \"$(dirname \"$0\")\"\nif [ \"$1\" = -U ]; then {update}; fi\necho x >> attempts\n\
-             [ -f updated ] || {{ echo 'ERROR: site changed' >&2; exit 1; }}\n\
-             echo '{{\"filepath\":\"/made/up.m4a\",\"title\":\"Made Up Song\",\"uploader\":\"Made Up Channel\",\"tags\":[\"made up tag\"]}}'\n"
-        );
+        let script = "#!/bin/sh\ncd \"$(dirname \"$0\")\"\necho x >> attempts\n\
+             [ -f updated ] || { echo 'ERROR: site changed' >&2; exit 1; }\n\
+             echo '{\"filepath\":\"/made/up.m4a\",\"title\":\"Made Up Song\",\"uploader\":\"Made Up Channel\",\"tags\":[\"made up tag\"]}'\n";
         std::fs::write(&bin, script).unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -150,17 +185,58 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_download_updates_ytdlp_and_retries_once() {
+    fn a_failed_download_retries_once_when_an_update_brings_a_newer_ytdlp() {
         let dir = tempfile::tempdir().unwrap();
-        let bin = fake_ytdlp(dir.path(), "touch updated; exit 0");
-        let f = download(&bin, "https://youtu.be/x", dir.path()).unwrap();
+        let bin = fake_ytdlp(dir.path());
+        let f = download(&bin, "https://youtu.be/x", dir.path(), || Ok(std::fs::write(dir.path().join("updated"), "").is_ok())).unwrap();
         assert_eq!((f.title.as_str(), f.artist.as_deref()), ("Made Up Song", Some("Made Up Channel")));
         assert_eq!(f.tags, vec!["made up tag".to_string()]);
 
         let dir = tempfile::tempdir().unwrap();
-        let bin = fake_ytdlp(dir.path(), "exit 0");
-        assert!(download(&bin, "https://youtu.be/x", dir.path()).is_err());
-        assert_eq!(std::fs::read_to_string(dir.path().join("attempts")).unwrap().lines().count(), 2);
+        let bin = fake_ytdlp(dir.path());
+        assert!(download(&bin, "https://youtu.be/x", dir.path(), || Ok(false)).is_err());
+        assert_eq!(std::fs::read_to_string(dir.path().join("attempts")).unwrap().lines().count(), 1);
+    }
+
+    #[test]
+    fn unpacks_a_verified_zip_over_the_old_single_file_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("_internal")).unwrap();
+        std::fs::write(src.join("_internal/lib.txt"), "made up").unwrap();
+        std::fs::write(src.join(EXE_NAME), "#!/bin/sh\necho 2099.01.01\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(src.join(EXE_NAME), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let zip_path = dir.path().join("fixture.zip");
+        assert!(Command::new("/usr/bin/ditto").args(["-c", "-k"]).arg(&src).arg(&zip_path).status().unwrap().success());
+        let zip = std::fs::read(&zip_path).unwrap();
+        let sha = crate::assets::sha256_hex(&zip);
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::write(bin_dir.join("yt-dlp"), "old single file").unwrap();
+
+        assert!(unpack(&bin_dir, &zip, "0000").is_err());
+        assert_eq!(std::fs::read_to_string(bin_dir.join("yt-dlp")).unwrap(), "old single file");
+
+        let exe = unpack(&bin_dir, &zip, &sha).unwrap();
+        assert_eq!(exe, bin_dir.join("yt-dlp").join(EXE_NAME));
+        assert_eq!(String::from_utf8(Command::new(&exe).output().unwrap().stdout).unwrap(), "2099.01.01\n");
+        assert!(bin_dir.join("yt-dlp/_internal/lib.txt").exists());
+        assert_eq!(std::fs::read_to_string(bin_dir.join("yt-dlp").join(SHA_FILE)).unwrap(), sha);
+        let mut left: Vec<_> = std::fs::read_dir(&bin_dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        left.sort();
+        assert_eq!(left, ["yt-dlp"]);
+        assert_eq!(unpack(&bin_dir, &zip, &sha).unwrap(), exe);
+    }
+
+    #[test]
+    #[ignore = "network"]
+    fn installs_the_fast_starting_ytdlp_and_runs_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = ensure(dir.path()).unwrap();
+        let out = Command::new(&exe).arg("--version").output().unwrap();
+        assert!(out.status.success() && !out.stdout.is_empty());
+        assert!(!update(dir.path()).unwrap());
     }
 
     #[test]

@@ -16,7 +16,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long `search` waits for yt-dlp before giving up.
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// How many videos `search` asks for.
-const SEARCH_RESULTS: usize = 8;
+pub(crate) const SEARCH_RESULTS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

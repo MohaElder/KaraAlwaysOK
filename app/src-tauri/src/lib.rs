@@ -38,6 +38,7 @@ pub fn run() {
             adding::search,
             adding::link_preview,
             adding::youtube_search,
+            adding::youtube_suggestions,
             adding::add_file,
             adding::add_link,
             adding::start_adding,

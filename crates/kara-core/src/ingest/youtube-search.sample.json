@@ -1,0 +1,48 @@
+{
+  "responseContext": {"visitorData": "made-up"},
+  "estimatedResults": "1234",
+  "contents": {"twoColumnSearchResultsRenderer": {"primaryContents": {"sectionListRenderer": {"contents": [
+    {"itemSectionRenderer": {"contents": [
+      {"videoRenderer": {
+        "videoId": "aaaaaaaaaaa",
+        "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/aaaaaaaaaaa/small.jpg", "width": 360, "height": 202}, {"url": "https://i.ytimg.com/vi/aaaaaaaaaaa/big.jpg", "width": 720, "height": 404}]},
+        "title": {"runs": [{"text": "Paper Boats "}, {"text": "(Made Up Video)"}]},
+        "ownerText": {"runs": [{"text": "Juniper Row", "navigationEndpoint": {"browseEndpoint": {"browseId": "UCmadeup"}}}]},
+        "lengthText": {"accessibility": {"accessibilityData": {"label": "3 minutes, 25 seconds"}}, "simpleText": "3:25"},
+        "badges": [{"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_SIMPLE", "label": "4K"}}]
+      }},
+      {"adSlotRenderer": {"slotId": "made-up"}},
+      {"videoRenderer": {
+        "videoId": "bbbbbbbbbbb",
+        "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/bbbbbbbbbbb/small.jpg", "width": 360, "height": 202}]},
+        "title": {"runs": [{"text": "Overpass Karaoke Mix"}]},
+        "longBylineText": {"runs": [{"text": "Dani Sato - Topic"}]},
+        "lengthText": {"simpleText": "1:02:03"}
+      }},
+      {"videoRenderer": {
+        "videoId": "ccccccccccc",
+        "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/ccccccccccc/small.jpg"}]},
+        "title": {"runs": [{"text": "Made Up Radio 24/7"}]},
+        "ownerText": {"runs": [{"text": "Made Up Channel"}]},
+        "badges": [{"metadataBadgeRenderer": {"icon": {"iconType": "LIVE"}, "style": "BADGE_STYLE_TYPE_LIVE_NOW", "label": "LIVE"}}]
+      }},
+      {"videoRenderer": {
+        "videoId": "ddddddddddd",
+        "title": {"runs": [{"text": "Made Up Premiere"}]},
+        "ownerText": {"runs": [{"text": "Made Up Channel"}]},
+        "upcomingEventData": {"startTime": "4102444800", "isReminderSet": false}
+      }},
+      {"videoRenderer": {
+        "videoId": "eeeeeeeeeee",
+        "title": {"runs": [{"text": "Old Made Up Stream"}]},
+        "ownerText": {"runs": [{"text": "Someone"}]}
+      }},
+      {"videoRenderer": {
+        "videoId": "aaaaaaaaaaa",
+        "title": {"runs": [{"text": "Paper Boats (Made Up Video)"}]},
+        "lengthText": {"simpleText": "3:25"}
+      }}
+    ]}},
+    {"continuationItemRenderer": {"continuationEndpoint": {"continuationCommand": {"token": "made-up"}}}}
+  ]}}}}
+}
