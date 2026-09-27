@@ -130,20 +130,21 @@ struct LrclibHit {
     duration: f64,
 }
 
-/// The synced lyrics of the hit closest in length to `duration_s`, at most 2 s off.
-fn closest_synced(hits: Vec<LrclibHit>, duration_s: u64) -> Option<String> {
-    let off = |h: &LrclibHit| (h.duration - duration_s as f64).abs();
-    hits.into_iter()
-        .filter(|h| off(h) <= 2.0 && h.synced_lyrics.as_deref().is_some_and(is_synced))
-        .min_by(|a, b| off(a).total_cmp(&off(b)))
-        .and_then(|h| h.synced_lyrics)
+/// The synced lyrics of the only hit within 1 s of `duration_s`; none if zero or several match.
+fn sole_synced_match(hits: Vec<LrclibHit>, duration_s: u64) -> Option<String> {
+    let mut near = hits
+        .into_iter()
+        .filter(|h| (h.duration - duration_s as f64).abs() <= 1.0)
+        .filter_map(|h| h.synced_lyrics.filter(|s| is_synced(s)));
+    let only = near.next()?;
+    near.next().is_none().then_some(only)
 }
 
 impl LyricsFetcher for Lrclib {
     fn fetch(&self, title: &str, artist: Option<&str>, album: Option<&str>, duration_s: u64) -> Result<Option<String>> {
         let Some(artist) = artist else {
             let resp = self.client.get("https://lrclib.net/api/search").query(&[("track_name", title)]).send()?;
-            return Ok(closest_synced(resp.error_for_status()?.json()?, duration_s));
+            return Ok(sole_synced_match(resp.error_for_status()?.json()?, duration_s));
         };
         let mut q = vec![("track_name", title.to_string()), ("artist_name", artist.to_string()), ("duration", duration_s.to_string())];
         if let Some(a) = album {
@@ -250,19 +251,21 @@ mod tests {
     }
 
     #[test]
-    fn title_only_search_takes_the_closest_synced_hit_within_two_seconds() {
+    fn title_only_search_needs_exactly_one_synced_hit_within_a_second() {
         let hit = |duration, lyrics: Option<&str>| LrclibHit { duration, synced_lyrics: lyrics.map(String::from) };
         let hits = || {
             vec![
                 hit(180.0, None),
-                hit(181.5, Some("[00:01.00]near")),
-                hit(179.0, Some("[00:01.00]nearest")),
                 hit(179.5, Some("plain, not synced")),
-                hit(200.0, Some("[00:01.00]far")),
+                hit(181.0, Some("[00:01.00]only")),
+                hit(182.5, Some("[00:01.00]too far")),
             ]
         };
-        assert_eq!(closest_synced(hits(), 180).as_deref(), Some("[00:01.00]nearest"));
-        assert_eq!(closest_synced(hits(), 190), None);
+        assert_eq!(sole_synced_match(hits(), 180).as_deref(), Some("[00:01.00]only"));
+        assert_eq!(sole_synced_match(hits(), 190), None);
+        let mut two = hits();
+        two.push(hit(179.2, Some("[00:01.00]another")));
+        assert_eq!(sole_synced_match(two, 180), None);
     }
 
     #[test]
