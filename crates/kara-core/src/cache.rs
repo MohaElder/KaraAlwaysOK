@@ -279,7 +279,8 @@ mod tests {
             for (k, (v, n)) in pcm.vocals.iter().zip(&pcm.inst).enumerate() {
                 let m = if k % 2 == 0 { want.left[k / 2] } else { want.right[k / 2] };
                 assert!((v + n - m).abs() <= 1.0 / 32767.0, "chunk {i} sample {k}");
-                assert!((v + 1.5 * m).abs() <= 1.0 / 32767.0, "vocals changed at chunk {i} sample {k}");
+                // Vocals are stored at half level in 16 bits.
+                assert!((v + 1.5 * m).abs() <= 3.0 / 32767.0, "vocals changed at chunk {i} sample {k}");
                 peak = peak.max(n.abs());
             }
         }

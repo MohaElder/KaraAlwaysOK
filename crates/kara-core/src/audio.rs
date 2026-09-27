@@ -1,5 +1,5 @@
 //! Everything becomes one standard format: 44.1 kHz stereo f32 in memory,
-//! 24-bit FLAC for stored vocals. Also tag reading and content hashing.
+//! 16-bit FLAC for stored vocals. Also tag reading and content hashing.
 
 use anyhow::{anyhow, Context, Result};
 use rubato::{FftFixedIn, Resampler};
@@ -281,19 +281,15 @@ fn to_i16(x: f32) -> i16 {
     (x.clamp(-1.0, 1.0) * 32767.0).round() as i16
 }
 
-fn to_i24(x: f32) -> i32 {
-    (x.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32
-}
-
-/// 24-bit stereo FLAC bytes.
+/// 16-bit stereo FLAC bytes.
 pub fn encode_flac(a: &Stereo) -> Result<Vec<u8>> {
     use flacenc::component::BitRepr;
     use flacenc::error::Verify;
-    let samples: Vec<i32> = a.left.iter().zip(&a.right).flat_map(|(l, r)| [to_i24(*l), to_i24(*r)]).collect();
+    let samples: Vec<i32> = a.left.iter().zip(&a.right).flat_map(|(l, r)| [to_i16(*l) as i32, to_i16(*r) as i32]).collect();
     let config = flacenc::config::Encoder::default()
         .into_verified()
         .map_err(|(_, e)| anyhow!("flac config: {e:?}"))?;
-    let source = flacenc::source::MemSource::from_samples(&samples, 2, 24, SAMPLE_RATE as usize);
+    let source = flacenc::source::MemSource::from_samples(&samples, 2, 16, SAMPLE_RATE as usize);
     let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
         .map_err(|e| anyhow!("flac encode: {e:?}"))?;
     let mut sink = flacenc::bitsink::ByteSink::new();
@@ -404,16 +400,18 @@ mod tests {
     }
 
     #[test]
-    fn flac_roundtrip_is_within_one_24_bit_step() {
+    fn flac_is_16_bit_and_roundtrips_within_one_step() {
         let dir = tempfile::tempdir().unwrap();
         let a = sine(44_100);
         let p = dir.path().join("x.flac");
         std::fs::write(&p, encode_flac(&a).unwrap()).unwrap();
+        let (format, _) = open(&p).unwrap();
+        assert_eq!(audio_track(format.as_ref()).unwrap().codec_params.bits_per_sample, Some(16));
         let b = read_flac(&p).unwrap();
         assert_eq!(b.len(), a.len());
         let max = a.left.iter().zip(&b.left).chain(a.right.iter().zip(&b.right))
             .fold(0f32, |m, (x, y)| m.max((x - y).abs()));
-        assert!(max <= 1.0 / 8_388_607.0 + 1e-7, "max diff {max}");
+        assert!(max <= 1.0 / 32_767.0, "max diff {max}");
     }
 
     #[test]
