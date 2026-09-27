@@ -231,6 +231,7 @@ const ko: Record<Key, string> = {
   "phone.blockedAndroid": "Android: 주소 왼쪽의 아이콘을 탭하고 권한에서 마이크를 켜세요.",
   "phone.endedTitle": "호스트가 세션을 종료했습니다",
   "phone.endedLead": "{name} 님, 노래해 줘서 고마워요!",
+  "phone.lostTitle": "컴퓨터와의 연결이 끊겼습니다",
   "phone.joinAgain": "다시 참여",
   "phone.leave": "나가기",
   "phone.tabMic": "마이크",

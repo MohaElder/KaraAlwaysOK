@@ -231,6 +231,7 @@ const es: Record<Key, string> = {
   "phone.blockedAndroid": "Android: toca el icono a la izquierda de la dirección, luego Permisos y activa Micrófono.",
   "phone.endedTitle": "El anfitrión terminó la sesión",
   "phone.endedLead": "¡Gracias por cantar, {name}!",
+  "phone.lostTitle": "Se perdió la conexión con el ordenador",
   "phone.joinAgain": "Volver a unirse",
   "phone.leave": "Salir",
   "phone.tabMic": "Micro",

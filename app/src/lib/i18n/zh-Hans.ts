@@ -231,6 +231,7 @@ const zhHans: Record<Key, string> = {
   "phone.blockedAndroid": "Android：轻点地址左侧的图标，然后“权限”，开启“麦克风”。",
   "phone.endedTitle": "主持人结束了本次活动",
   "phone.endedLead": "谢谢你的演唱，{name}！",
+  "phone.lostTitle": "与电脑的连接已断开",
   "phone.joinAgain": "重新加入",
   "phone.leave": "离开",
   "phone.tabMic": "麦克风",

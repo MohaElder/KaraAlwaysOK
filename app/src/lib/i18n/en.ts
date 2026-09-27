@@ -229,6 +229,7 @@ const en = {
   "phone.blockedAndroid": "Android: tap the icon left of the address, then Permissions, then turn on Microphone.",
   "phone.endedTitle": "The host ended the session",
   "phone.endedLead": "Thanks for singing, {name}!",
+  "phone.lostTitle": "Lost the connection to the computer",
   "phone.joinAgain": "Join again",
   "phone.leave": "Leave",
   "phone.tabMic": "Mic",

@@ -231,6 +231,7 @@ const ja: Record<Key, string> = {
   "phone.blockedAndroid": "Android：アドレスの左のアイコンをタップし、「権限」で「マイク」をオンにします。",
   "phone.endedTitle": "ホストがセッションを終了しました",
   "phone.endedLead": "{name} さん、歌ってくれてありがとう！",
+  "phone.lostTitle": "コンピュータとの接続が切れました",
   "phone.joinAgain": "もう一度参加",
   "phone.leave": "退出",
   "phone.tabMic": "マイク",

@@ -13,7 +13,7 @@
   class:muted={!link.live}
   disabled={link.reconnecting}
   aria-label={link.live ? t("phone.mute") : t("phone.unmute")}
-  style:--lv={link.live ? loudness(link.level) : 0}
+  style:--lv={link.live && !link.reconnecting ? loudness(link.level) : 0}
   onclick={() => link.toggleLive()}
 >
   <span class="ring"></span>

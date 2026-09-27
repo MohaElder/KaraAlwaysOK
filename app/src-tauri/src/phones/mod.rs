@@ -280,7 +280,7 @@ pub fn phones_close(app: AppHandle) {
 #[tauri::command]
 pub fn phone_remove(app: AppHandle, id: String) {
     with(&app, |s| {
-        if let Some(g) = s.room.remove(&id) {
+        if let Some(g) = s.room.kick(&id) {
             g.send(Out::Close(ENDED));
         }
         let gone = s.mixer.lock().unwrap().remove(&id);

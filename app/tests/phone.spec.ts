@@ -72,7 +72,7 @@ test("when Wi-Fi drops it rejoins as the same phone, sends no late sound, and gi
   });
   await expect(page.getByText("Wi-Fi dropped. Reconnecting…")).toBeVisible();
   await page.clock.fastForward(121_000);
-  await expect(page.getByRole("heading", { name: "The host ended the session" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lost the connection to the computer" })).toBeVisible();
 });
 
 test("when the host ends the session the guest sees it and can join again", async ({ page }) => {

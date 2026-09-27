@@ -40,8 +40,9 @@
           <p class="pnote"><AndroidLogoIcon size={18} /><span>{t("phone.blockedAndroid")}</span></p>
           {#snippet action()}<button class="btn accent pbtn" onclick={() => link.allowMic()}><ArrowClockwiseIcon size={20} />{t("common.tryAgain")}</button>{/snippet}
         </Center>
-      {:else if link.screen === "ended"}
-        <Center icon={HandWavingIcon} title={t("phone.endedTitle")} lead={t("phone.endedLead", { name: link.name })}>
+      {:else if link.screen === "ended" || link.screen === "lost"}
+        {@const lost = link.screen === "lost"}
+        <Center icon={lost ? WifiSlashIcon : HandWavingIcon} title={t(lost ? "phone.lostTitle" : "phone.endedTitle")} lead={t("phone.endedLead", { name: link.name })}>
           {#snippet action()}<button class="btn accent pbtn" onclick={() => link.again()}><ArrowClockwiseIcon size={20} />{t("phone.joinAgain")}</button>{/snippet}
         </Center>
       {:else}

@@ -231,6 +231,7 @@ const zhHant: Record<Key, string> = {
   "phone.blockedAndroid": "Android：點一下網址左側的圖示，然後「權限」，開啟「麥克風」。",
   "phone.endedTitle": "主持人結束了這次活動",
   "phone.endedLead": "謝謝你的演唱，{name}！",
+  "phone.lostTitle": "與電腦的連線已中斷",
   "phone.joinAgain": "重新加入",
   "phone.leave": "離開",
   "phone.tabMic": "麥克風",

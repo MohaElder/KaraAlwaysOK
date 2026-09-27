@@ -41,6 +41,7 @@ impl Guest {
 pub enum Refusal {
     WrongCode,
     Full,
+    Removed,
 }
 
 impl Refusal {
@@ -48,6 +49,7 @@ impl Refusal {
         match self {
             Self::Full => 4002,
             Self::WrongCode => 4003,
+            Self::Removed => ENDED,
         }
     }
 }
@@ -55,18 +57,22 @@ impl Refusal {
 pub struct Room {
     pub code: String,
     pub guests: Vec<Guest>,
+    removed: Vec<String>,
     misses: u32,
     locked_until: i64,
 }
 
 impl Room {
     pub fn new(code: &str) -> Self {
-        Self { code: digits(code), guests: Vec::new(), misses: 0, locked_until: 0 }
+        Self { code: digits(code), guests: Vec::new(), removed: Vec::new(), misses: 0, locked_until: 0 }
     }
 
     /// Lets a phone in with the right code at `now` (ms): back into its own row if it was here (false), or a new row while there
-    /// is room (true). After five wrong codes only phones already here get in, for ten seconds.
+    /// is room (true). After five wrong codes only phones already here get in, for ten seconds. A phone the Mac removed stays out.
     pub fn admit(&mut self, code: &str, id: &str, name: &str, conn: u64, tx: UnboundedSender<Out>, now: i64) -> Result<bool, Refusal> {
+        if self.removed.iter().any(|r| r == id) {
+            return Err(Refusal::Removed);
+        }
         let right = digits(code) == self.code;
         if id.len() > MAX_ID || (now < self.locked_until && !(right && self.guests.iter().any(|g| g.id == id))) {
             return Err(Refusal::WrongCode);
@@ -115,6 +121,12 @@ impl Room {
     pub fn remove(&mut self, id: &str) -> Option<Guest> {
         let i = self.guests.iter().position(|g| g.id == id)?;
         Some(self.guests.remove(i))
+    }
+
+    /// Removes phone `id` for the rest of the session.
+    pub fn kick(&mut self, id: &str) -> Option<Guest> {
+        self.removed.push(id.to_string());
+        self.remove(id)
     }
 }
 
@@ -176,6 +188,9 @@ mod tests {
         room.dropped("a", 1, Instant::now());
         let a = &room.guests[0];
         assert_eq!((room.guests.len(), a.name.as_str(), a.tx.is_some()), (4, "Aiko", true), "a late close of the old connection changes nothing");
+        room.dropped("a", 3, Instant::now());
+        room.kick("a");
+        assert_eq!(room.admit("4827", "a", "Aiko", 4, tx(), 0), Err(Refusal::Removed), "a removed phone stays out");
     }
 
     #[test]

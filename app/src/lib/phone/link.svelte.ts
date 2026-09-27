@@ -4,7 +4,7 @@ import { toasts } from "$lib/state/toasts.svelte";
 import { openMic, type Mic } from "./mic";
 import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
-export type Screen = "join" | "connecting" | "perm" | "mic" | "ended" | "blocked";
+export type Screen = "join" | "connecting" | "perm" | "mic" | "ended" | "lost" | "blocked";
 export type Refusal = "wrongCode" | "full" | "unreachable";
 
 const ENDED = 4001;
@@ -164,13 +164,13 @@ class PhoneLink {
       this.reconnecting = true;
       this.lostAt = Date.now();
     }
-    if (Date.now() - this.lostAt >= GIVE_UP_MS) return this.end();
+    if (Date.now() - this.lostAt >= GIVE_UP_MS) return this.end("lost");
     this.retry = setTimeout(() => this.connect(), RETRY_MS);
   }
 
-  private end() {
+  private end(screen: "ended" | "lost" = "ended") {
     this.stop();
-    this.screen = "ended";
+    this.screen = screen;
   }
 
   private stop() {
@@ -195,7 +195,7 @@ class PhoneLink {
     if (this.mic) this.send({ t: "live", on: this.live, rate: this.mic.rate });
   }
 
-  /** Sends what the computer keeps for this phone's row, after every join: a fresh row (after Leave or two minutes away) starts from its defaults. */
+  /** Sends what the computer keeps for this phone's row; called after every join. */
   private sendSettings() {
     this.sendLive();
   }
@@ -213,9 +213,9 @@ class PhoneLink {
 
   /** Back on screen: keeps the screen awake again, and a mic the lock screen stopped waits for a tap. */
   private shown() {
-    if (document.visibilityState !== "visible" || this.screen !== "mic") return;
+    if (document.visibilityState !== "visible" || !this.joined) return;
     void this.keepAwake();
-    if (this.live && this.mic && !this.mic.running()) {
+    if (this.screen === "mic" && this.live && this.mic && !this.mic.running()) {
       this.live = false;
       this.sendLive();
     }
