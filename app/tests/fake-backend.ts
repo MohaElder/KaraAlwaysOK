@@ -146,6 +146,7 @@ const commands: Record<string, (a: any) => unknown> = {
   reduce_transparency: () => false,
   "plugin:app|version": () => "0.1.0",
   "plugin:updater|check": () => null,
+  "plugin:window|set_title": () => null,
   list_collections: ({ kind }) => collections(kind).map((c) => c.card),
   open_collection: ({ id }) => need(allCollections().find((c) => c.card.id === id)),
   get_track: ({ trackId }) => need(tracks.get(trackId)),

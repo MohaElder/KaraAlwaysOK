@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, row } from "./app";
+import { test, expect, row, calls } from "./app";
 
 const openSettings = async (page: Page) => {
   await page.getByRole("button", { name: "Settings" }).click();
@@ -30,6 +30,8 @@ test("picking a language changes the text at once, but not song titles", async (
   await expect(page.getByRole("dialog", { name: "設定" })).toBeVisible();
   await expect(page.getByRole("button", { name: "プレイリスト", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /東京の夜空/ })).toBeVisible();
+  await expect(page).toHaveTitle("カラ永遠OK");
+  await expect.poll(async () => (await calls(page, "plugin:window|set_title")).at(-1)).toEqual({ label: "main", value: "カラ永遠OK" });
 });
 
 test("the sidebar tabs fit on one line at a readable size in every language", async ({ page }) => {

@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type ProblemCode =
   | "newerLibrary" | "dataFolder" | "inUse" | "libraryOpen" | "engineDownload" | "engineStart" | "fileMoved" | "fileNotAllowed"
@@ -133,3 +134,4 @@ export const storageInfo = () => invoke<StorageInfo>("storage_info");
 export const setStorageLimit = (bytes: number) => invoke<void>("set_storage_limit", { bytes });
 export const clearStorage = () => invoke<StorageInfo>("clear_storage");
 export const reduceTransparency = () => invoke<boolean>("reduce_transparency");
+export const setWindowTitle = async (title: string) => getCurrentWindow().setTitle(title);

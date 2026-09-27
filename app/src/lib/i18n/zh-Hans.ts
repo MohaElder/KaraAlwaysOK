@@ -1,16 +1,16 @@
 import type { Key } from "./en";
 
 const zhHans: Record<Key, string> = {
-  "app.name": "KaraAlwaysOK",
+  "app.name": "卡拉永远OK",
   "common.tryAgain": "重试",
-  "problem.newerLibrary": "这个资料库由更新版本的 KaraAlwaysOK 创建。请更新 KaraAlwaysOK 后再打开。",
-  "problem.dataFolder": "无法打开 KaraAlwaysOK 的数据文件夹。",
-  "problem.inUse": "另一个 KaraAlwaysOK 正在使用你的资料库。请关闭后重试。",
+  "problem.newerLibrary": "这个资料库由更新版本的卡拉永远OK创建。请更新卡拉永远OK后再打开。",
+  "problem.dataFolder": "无法打开卡拉永远OK的数据文件夹。",
+  "problem.inUse": "另一个卡拉永远OK正在使用你的资料库。请关闭后重试。",
   "problem.libraryOpen": "无法打开你的资料库。",
   "problem.engineDownload": "无法下载演唱引擎。请检查网络连接。",
   "problem.engineStart": "无法启动演唱引擎。",
   "problem.fileMoved": "文件已被移动或删除。",
-  "problem.fileNotAllowed": "KaraAlwaysOK 没有读取此文件的权限。",
+  "problem.fileNotAllowed": "卡拉永远OK没有读取此文件的权限。",
   "problem.notAudio": "这个文件不是可播放的音频。",
   "problem.songGone": "这首歌已不在你的资料库中。",
   "problem.noAudio": "这首歌没有可播放的音频。",

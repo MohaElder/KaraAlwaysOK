@@ -1,16 +1,16 @@
 import type { Key } from "./en";
 
 const ja: Record<Key, string> = {
-  "app.name": "KaraAlwaysOK",
+  "app.name": "カラ永遠OK",
   "common.tryAgain": "もう一度試す",
-  "problem.newerLibrary": "このライブラリは新しいバージョンの KaraAlwaysOK で作られています。開くには KaraAlwaysOK をアップデートしてください。",
-  "problem.dataFolder": "KaraAlwaysOK のデータフォルダを開けませんでした。",
-  "problem.inUse": "別の KaraAlwaysOK がライブラリを使用中です。閉じてからもう一度お試しください。",
+  "problem.newerLibrary": "このライブラリは新しいバージョンのカラ永遠OKで作られています。開くにはカラ永遠OKをアップデートしてください。",
+  "problem.dataFolder": "カラ永遠OKのデータフォルダを開けませんでした。",
+  "problem.inUse": "別のカラ永遠OKがライブラリを使用中です。閉じてからもう一度お試しください。",
   "problem.libraryOpen": "ライブラリを開けませんでした。",
   "problem.engineDownload": "歌唱エンジンをダウンロードできませんでした。接続を確認してください。",
   "problem.engineStart": "歌唱エンジンを起動できませんでした。",
   "problem.fileMoved": "ファイルが移動または削除されました。",
-  "problem.fileNotAllowed": "KaraAlwaysOK にはこのファイルを読み込む許可がありません。",
+  "problem.fileNotAllowed": "カラ永遠OKにはこのファイルを読み込む許可がありません。",
   "problem.notAudio": "このファイルは再生できる音声ではありません。",
   "problem.songGone": "この曲はライブラリにありません。",
   "problem.noAudio": "この曲には再生できる音声がありません。",
