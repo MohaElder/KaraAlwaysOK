@@ -30,7 +30,7 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 - In All, each collection shows small provider dots. Artists with the same name merge across providers.
 - A disconnected provider shows a *Connect* prompt in its view.
 
-**Search bar** — "Search anything, or paste a link".
+**Search bar** — "Search anything, or paste a link". It is the app's main entry point: large and prominent at the top center.
 - Text → search across all connected providers (songs, plus matching playlists/albums/artists).
 - Link → accepted only if an open-source tool can pull audio from it (yt-dlp–supported sites such as YouTube, SoundCloud, Bandcamp, Vimeo, archive.org, Mixcloud) or it points directly to an audio file. Enter processes it.
 - Spotify / Apple Music / other streaming links are rejected with a plain explanation and a nudge to search instead.
