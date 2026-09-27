@@ -184,7 +184,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn adding_a_file_we_are_not_allowed_to_read_says_so() {
+    fn adding_a_file_says_whether_it_cannot_be_read_or_is_not_audio() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("a.wav");
@@ -193,6 +193,11 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         let err = add_file(&lib, &p).err().unwrap();
         assert_eq!(err.to_string(), "KaraAlwaysOK isn't allowed to read this file.");
+
+        let text = dir.path().join("x.mp3");
+        std::fs::write(&text, "not audio").unwrap();
+        let err = add_file(&lib, &text).err().unwrap();
+        assert_eq!(err.to_string(), "This file isn't audio we can play.");
     }
 
     #[test]
