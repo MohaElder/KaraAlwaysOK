@@ -105,6 +105,16 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     put_atomic(path, |part| std::fs::write(part, bytes))
 }
 
+/// Writes `bytes` to `path` through a `.part` file only this user can read, from the start.
+pub fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    put_atomic(path, |part| {
+        let _ = std::fs::remove_file(part);
+        std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(part)?.write_all(bytes)
+    })
+}
+
 /// Copies `src`'s bytes, without its file flags, to `path` through a `.part` file.
 pub fn copy_atomic(src: &Path, path: &Path) -> Result<()> {
     put_atomic(path, |part| std::io::copy(&mut File::open(src)?, &mut File::create(part)?).map(drop))

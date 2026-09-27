@@ -6,9 +6,9 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface Phone { ws: WebSocket; got: { t: string; [k: string]: unknown }[]; closed: Promise<number> }
 
-/** Joins as phone `id` and keeps the connection alive with a ping every second, as the phone page does. */
+/** Joins as phone `id` from the phone page's origin and keeps the connection alive with a ping every second, as the phone page does. */
 function phone(origin: string, id: string, joinCode = code): Promise<Phone> {
-  const ws = new WebSocket(`${origin.replace("https", "wss")}/ws`);
+  const ws = new WebSocket(`${origin.replace("https", "wss")}/ws`, { headers: { origin } });
   ws.binaryType = "arraybuffer";
   const got: Phone["got"] = [];
   const ping = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ t: "ping" })), 1000);

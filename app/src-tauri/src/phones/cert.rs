@@ -1,9 +1,10 @@
 //! The server's self-signed certificate, made once and kept, and the Mac's addresses on the local network.
 
 use anyhow::Result;
-use kara_core::store::write_atomic;
+use kara_core::store::write_private;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 const DAY: i64 = 86_400;
@@ -45,7 +46,8 @@ pub fn ensure(dir: &Path, name: &str, ips: &[IpAddr], now: i64) -> Result<(Vec<u
     let cert = params.self_signed(&key)?;
     let k = Kept { name: name.to_string(), ips: all, made_at: now, cert: cert.pem(), key: key.serialize_pem() };
     std::fs::create_dir_all(dir)?;
-    write_atomic(&file, &serde_json::to_vec(&k)?)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    write_private(&file, &serde_json::to_vec(&k)?)?;
     Ok((k.cert.into_bytes(), k.key.into_bytes()))
 }
 
@@ -90,6 +92,8 @@ mod tests {
         let office: IpAddr = "10.0.4.7".parse().unwrap();
         let now = 1_790_000_000;
         let first = ensure(dir.path(), "mac.local", &[home], now).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!((mode(dir.path()), mode(&dir.path().join("certificate.json"))), (0o700, 0o600), "only this user reads the key");
         assert_eq!(ensure(dir.path(), "mac.local", &[home], now + 30 * DAY).unwrap(), first);
         let moved = ensure(dir.path(), "mac.local", &[office], now + 31 * DAY).unwrap();
         assert_ne!(moved, first);

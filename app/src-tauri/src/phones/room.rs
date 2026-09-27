@@ -4,6 +4,9 @@ use tokio::sync::mpsc::UnboundedSender;
 
 pub const MAX_PHONES: usize = 4;
 pub const ENDED: u16 = 4001;
+const MAX_NAME: usize = 40;
+const TRIES: u32 = 5;
+const LOCKOUT_MS: i64 = 10_000;
 
 /// What goes out on a phone's connection.
 pub enum Out {
@@ -44,20 +47,33 @@ impl Refusal {
 pub struct Room {
     pub code: String,
     pub guests: Vec<Guest>,
+    misses: u32,
+    locked_until: i64,
 }
 
 impl Room {
     pub fn new(code: &str) -> Self {
-        Self { code: digits(code), guests: Vec::new() }
+        Self { code: digits(code), guests: Vec::new(), misses: 0, locked_until: 0 }
     }
 
-    /// Lets a phone in with the right code: back into its own row if it was here (false), or a new row while there is room (true).
-    pub fn admit(&mut self, code: &str, id: &str, name: &str, conn: u64, tx: UnboundedSender<Out>) -> Result<bool, Refusal> {
-        if digits(code) != self.code {
+    /// Lets a phone in with the right code at `now` (ms): back into its own row if it was here (false), or a new row while there
+    /// is room (true). After five wrong codes every join is refused for ten seconds.
+    pub fn admit(&mut self, code: &str, id: &str, name: &str, conn: u64, tx: UnboundedSender<Out>, now: i64) -> Result<bool, Refusal> {
+        if now < self.locked_until {
             return Err(Refusal::WrongCode);
         }
+        if digits(code) != self.code {
+            self.misses += 1;
+            if self.misses >= TRIES {
+                self.misses = 0;
+                self.locked_until = now + LOCKOUT_MS;
+            }
+            return Err(Refusal::WrongCode);
+        }
+        self.misses = 0;
+        let name: String = name.trim().chars().take(MAX_NAME).collect();
         if let Some(g) = self.guest(id) {
-            g.name = name.to_string();
+            g.name = name;
             g.conn = conn;
             g.tx = Some(tx);
             return Ok(false);
@@ -65,7 +81,7 @@ impl Room {
         if self.guests.len() >= MAX_PHONES {
             return Err(Refusal::Full);
         }
-        self.guests.push(Guest { id: id.to_string(), name: name.to_string(), conn, tx: Some(tx) });
+        self.guests.push(Guest { id: id.to_string(), name, conn, tx: Some(tx) });
         Ok(true)
     }
 
@@ -92,10 +108,10 @@ pub fn digits(code: &str) -> String {
 }
 
 /// Four random digits.
-pub fn new_code() -> String {
+pub fn new_code() -> Result<String, getrandom::Error> {
     let mut b = [0u8; 2];
-    let _ = getrandom::fill(&mut b);
-    format!("{:04}", u16::from_le_bytes(b) % 10_000)
+    getrandom::fill(&mut b)?;
+    Ok(format!("{:04}", u16::from_le_bytes(b) % 10_000))
 }
 
 #[cfg(test)]
@@ -109,24 +125,35 @@ mod tests {
     #[test]
     fn a_phone_needs_the_code_and_the_fifth_is_refused() {
         let mut room = Room::new("4827");
-        assert_eq!(room.admit("1234", "a", "Aiko", 1, tx()), Err(Refusal::WrongCode));
-        assert_eq!(room.admit("oki-4827", "a", "Aiko", 1, tx()), Ok(true));
+        assert_eq!(room.admit("1234", "a", "Aiko", 1, tx(), 0), Err(Refusal::WrongCode));
+        assert_eq!(room.admit("oki-4827", "a", "Aiko", 1, tx(), 0), Ok(true));
         for id in ["b", "c", "d"] {
-            assert_eq!(room.admit("4827", id, id, 2, tx()), Ok(true));
+            assert_eq!(room.admit("4827", id, id, 2, tx(), 0), Ok(true));
         }
-        assert_eq!(room.admit("4827", "e", "Emi", 3, tx()), Err(Refusal::Full));
+        assert_eq!(room.admit("4827", "e", "Emi", 3, tx(), 0), Err(Refusal::Full));
+    }
+
+    #[test]
+    fn five_wrong_codes_shut_the_door_for_ten_seconds() {
+        let mut room = Room::new("4827");
+        for _ in 0..5 {
+            assert_eq!(room.admit("0000", "x", "X", 1, tx(), 0), Err(Refusal::WrongCode));
+        }
+        assert_eq!(room.admit("4827", "a", "Aiko", 2, tx(), 9_999), Err(Refusal::WrongCode), "even the right code waits");
+        assert_eq!(room.admit("4827", "a", "  Aiko  ", 3, tx(), 10_000), Ok(true));
+        assert_eq!(room.guests[0].name, "Aiko");
     }
 
     #[test]
     fn a_phone_that_drops_gets_its_own_row_back() {
         let mut room = Room::new("4827");
         for id in ["a", "b", "c", "d"] {
-            room.admit("4827", id, id, 1, tx()).unwrap();
+            room.admit("4827", id, id, 1, tx(), 0).unwrap();
         }
         room.dropped("a", 1);
         assert!(room.guests[0].tx.is_none(), "greyed, not gone");
-        assert_eq!(room.admit("4827", "e", "Emi", 2, tx()), Err(Refusal::Full), "its row is kept for it");
-        assert_eq!(room.admit("4827", "a", "Aiko", 3, tx()), Ok(false), "back in its own row");
+        assert_eq!(room.admit("4827", "e", "Emi", 2, tx(), 0), Err(Refusal::Full), "its row is kept for it");
+        assert_eq!(room.admit("4827", "a", "Aiko", 3, tx(), 0), Ok(false), "back in its own row");
         room.dropped("a", 1);
         let a = &room.guests[0];
         assert_eq!((room.guests.len(), a.name.as_str(), a.tx.is_some()), (4, "Aiko", true), "a late close of the old connection changes nothing");

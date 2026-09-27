@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 const SILENT: Duration = Duration::from_secs(5);
+const MAX_MESSAGE: usize = 64 * 1024;
 
 /// What a phone tells the Mac.
 #[derive(Deserialize)]
@@ -55,7 +56,8 @@ pub fn serve(app: AppHandle, tls: RustlsConfig, handle: axum_server::Handle) -> 
         let port = if port == 443 { String::new() } else { format!(":{port}") };
         Redirect::temporary(&format!("https://{host}{port}/phone"))
     };
-    tauri::async_runtime::spawn(axum_server::from_tcp(plain).handle(handle).serve(Router::new().fallback(to_https).into_make_service()));
+    let redirect = Router::new().fallback(to_https).layer(middleware::from_fn(lan_only));
+    tauri::async_runtime::spawn(axum_server::from_tcp(plain).handle(handle).serve(redirect.into_make_service_with_connect_info::<SocketAddr>()));
     Ok((port, true))
 }
 
@@ -73,9 +75,9 @@ async fn page(State(app): State<AppHandle>, method: Method, uri: Uri) -> Respons
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
     if tauri::is_dev() {
-        let Some(base) = app.config().build.dev_url.clone() else { return StatusCode::NOT_FOUND.into_response() };
-        let Ok(url) = base.join(uri.path_and_query().map_or("/", |p| p.as_str())) else { return StatusCode::BAD_REQUEST.into_response() };
-        let Ok(r) = reqwest::get(url).await else { return StatusCode::BAD_GATEWAY.into_response() };
+        let path = uri.path_and_query().map_or("/", |p| p.as_str());
+        let Some(base) = app.config().build.dev_url.clone().filter(|_| dev_path(path)) else { return StatusCode::NOT_FOUND.into_response() };
+        let Ok(r) = reqwest::get(format!("{}{path}", base.origin().ascii_serialization())).await else { return StatusCode::BAD_GATEWAY.into_response() };
         let status = StatusCode::from_u16(r.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
         let kind = r.headers().get(header::CONTENT_TYPE).cloned();
         let mut res = (status, r.bytes().await.unwrap_or_default()).into_response();
@@ -90,16 +92,27 @@ async fn page(State(app): State<AppHandle>, method: Method, uri: Uri) -> Respons
     }
 }
 
-/// A song picture from the artwork folder.
-async fn art(State(app): State<AppHandle>, Path(name): Path<String>) -> Response {
+/// Whether the dev server may be asked for `path`: one of its own page files, never another host or a file outside the project.
+fn dev_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    path.starts_with('/') && !path.starts_with("//") && !lower.starts_with("/@fs") && !lower.starts_with("/%40fs")
+}
+
+/// The type of a song picture named `name`, or None when the name could reach outside the artwork folder.
+fn picture_kind(name: &str) -> Option<&'static str> {
     if name.contains(['/', '\\']) || name.starts_with('.') {
-        return StatusCode::NOT_FOUND.into_response();
+        return None;
     }
-    let kind = match name.rsplit('.').next() {
+    Some(match name.rsplit('.').next() {
         Some("png") => "image/png",
         Some("webp") => "image/webp",
         _ => "image/jpeg",
-    };
+    })
+}
+
+/// A song picture from the artwork folder.
+async fn art(State(app): State<AppHandle>, Path(name): Path<String>) -> Response {
+    let Some(kind) = picture_kind(&name) else { return StatusCode::NOT_FOUND.into_response() };
     let dir = app.state::<crate::state::AppState>().store.artwork_dir();
     match std::fs::read(dir.join(&name)) {
         Ok(bytes) => ([(header::CONTENT_TYPE, kind)], bytes).into_response(),
@@ -107,8 +120,22 @@ async fn art(State(app): State<AppHandle>, Path(name): Path<String>) -> Response
     }
 }
 
-async fn socket(State(app): State<AppHandle>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |ws| phone(app, ws))
+/// Opens a phone's connection, only for the phone page served here.
+async fn socket(State(app): State<AppHandle>, headers: HeaderMap, uri: Uri, upgrade: WebSocketUpgrade) -> Response {
+    if !same_origin(&headers, &uri) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    upgrade.max_message_size(MAX_MESSAGE).max_frame_size(MAX_MESSAGE).on_upgrade(move |ws| phone(app, ws))
+}
+
+/// Whether the request's `Origin` is this server's own address, as the browser reached it.
+fn same_origin(headers: &HeaderMap, uri: &Uri) -> bool {
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).or(uri.authority().map(|a| a.as_str()));
+    match (origin.and_then(|o| o.strip_prefix("https://")), host) {
+        (Some(origin), Some(host)) => origin.eq_ignore_ascii_case(host),
+        _ => false,
+    }
 }
 
 /// One phone's connection: it joins first, then messages flow both ways until either side closes or the phone goes silent.
@@ -149,4 +176,35 @@ async fn phone(app: AppHandle, mut ws: WebSocket) {
 
 async fn close_with(ws: &mut WebSocket, code: u16) {
     let _ = ws.send(Message::Close(Some(CloseFrame { code, reason: Utf8Bytes::from_static("") }))).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_plain_picture_names_are_served() {
+        assert_eq!(picture_kind("ab12.png"), Some("image/png"));
+        for name in ["../kara.db", "a/b.jpg", "..\\kara.db", ".hidden.jpg"] {
+            assert_eq!(picture_kind(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_phone_connection_must_come_from_the_page_served_here() {
+        let headers = |origin: &str| HeaderMap::from_iter([(header::HOST, "192.168.1.20".parse().unwrap()), (header::ORIGIN, origin.parse().unwrap())]);
+        let uri = Uri::from_static("/ws");
+        assert!(same_origin(&headers("https://192.168.1.20"), &uri));
+        assert!(!same_origin(&headers("https://evil.example"), &uri));
+        assert!(!same_origin(&headers("http://192.168.1.20"), &uri));
+        assert!(!same_origin(&HeaderMap::new(), &uri));
+    }
+
+    #[test]
+    fn the_dev_server_is_asked_only_for_its_own_page_files() {
+        assert!(dev_path("/phone?code=4827"));
+        for path in ["//evil.example/x", "/@fs/etc/passwd", "/%40FS/etc/passwd", "http://evil.example/"] {
+            assert!(!dev_path(path), "{path}");
+        }
+    }
 }

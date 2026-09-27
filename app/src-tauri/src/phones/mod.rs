@@ -35,23 +35,25 @@ struct Session {
     window_open: bool,
     join: JoinInfo,
     server: axum_server::Handle,
+    /// The view the Mac window last heard.
+    shown: Option<PhonesView>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct JoinInfo {
     qr: String,
     code: String,
     host: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct PhoneRow {
     id: String,
     name: String,
     connected: bool,
 }
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Default, PartialEq, Serialize)]
 pub struct PhonesView {
     join: Option<JoinInfo>,
     phones: Vec<PhoneRow>,
@@ -92,7 +94,7 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
     let (port, redirect) = server::serve(app.clone(), tls, server.clone()).context(Problem::PhonesStart)?;
     let room = Room::new(code);
     let join = join_info(&host, ip, port, redirect, &room.code).context(Problem::PhonesStart)?;
-    Ok(Session { room, window_open: false, join, server })
+    Ok(Session { room, window_open: false, join, server, shown: None })
 }
 
 /// What the Mac window shows to join: a QR code of the address with the code, the code, and the address to type
@@ -130,9 +132,13 @@ fn with<T>(app: &AppHandle, f: impl FnOnce(&mut Session) -> T) -> Option<T> {
     slot.as_mut().map(f)
 }
 
-/// Tells the Mac window who is here now.
+/// Tells the Mac window who is here now, if that changed.
 fn changed(app: &AppHandle) {
-    if let Some(view) = with(app, |s| s.view()) {
+    let view = with(app, |s| {
+        let view = s.view();
+        (s.shown.as_ref() != Some(&view)).then(|| s.shown.insert(view).clone())
+    });
+    if let Some(Some(view)) = view {
         let _ = app.emit("phones", view);
     }
 }
@@ -159,7 +165,8 @@ pub async fn open(app: &AppHandle, code: String) -> anyhow::Result<PhonesView> {
 
 #[tauri::command]
 pub async fn phones_open(app: AppHandle) -> Result<PhonesView, AppError> {
-    open(&app, room::new_code()).await.plain()
+    let code = room::new_code().context(Problem::PhonesStart).plain()?;
+    open(&app, code).await.plain()
 }
 
 #[tauri::command]
@@ -186,12 +193,16 @@ pub fn phone_remove(app: AppHandle, id: String) {
 /// Lets a phone in or names the close code refusing it; a phone let in hears it joined and what's playing.
 pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<u64, u16> {
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
-    let joined = with(app, |s| s.room.admit(code, id, name, conn, tx.clone()).map(|new| new.then_some(s.room.guests.len())))
-        .ok_or(ENDED)?
-        .map_err(|r| r.close_code())?;
+    let joined = with(app, |s| {
+        let new = s.room.admit(code, id, name, conn, tx.clone(), kara_core::now_ms())?;
+        let g = &s.room.guests;
+        Ok(new.then(|| (g.len(), g[g.len() - 1].name.clone())))
+    })
+    .ok_or(ENDED)?
+    .map_err(|r: room::Refusal| r.close_code())?;
     changed(app);
-    if let Some(mic) = joined {
-        let _ = app.emit("phone-news", News::Joined { name: name.to_string(), mic });
+    if let Some((mic, name)) = joined {
+        let _ = app.emit("phone-news", News::Joined { name, mic });
     }
     let _ = tx.send(Out::Text(encode(&ToPhone::Joined)));
     if let Ok(snapshot) = crate::player::player_state(app.state()) {
