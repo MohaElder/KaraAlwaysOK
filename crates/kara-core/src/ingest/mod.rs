@@ -41,7 +41,7 @@ pub fn link_collections(lib: &Library, track_id: i64, artist: Option<&str>, albu
 
 /// Adds a local file; a file that is already in the library returns its existing track.
 pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
-    let path = &path.canonicalize().context("The file was moved or deleted.")?;
+    let path = &path.canonicalize().map_err(|e| audio::describe_read_failure(e.into(), "This file isn't audio we can play."))?;
     let uri = path.display().to_string();
     if let Some(s) = lib.source_by_uri(SourceKind::File, &uri)? {
         return Ok(Ingested { track_id: s.track_id, source_id: s.id });
@@ -91,13 +91,7 @@ fn download_file(url: &Url, dir: &Path) -> Result<PathBuf> {
 /// Error messages are shown to the user as-is.
 pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSource) -> Result<PathBuf> {
     match source.kind {
-        SourceKind::File => {
-            let p = PathBuf::from(&source.uri);
-            if !p.exists() {
-                bail!("The file was moved or deleted.");
-            }
-            Ok(p)
-        }
+        SourceKind::File => Ok(PathBuf::from(&source.uri)),
         SourceKind::Link => {
             let url = Url::parse(&source.uri)?;
             match link::verdict(&url) {
@@ -184,7 +178,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn adding_a_file_says_whether_it_cannot_be_read_or_is_not_audio() {
+    fn adding_a_file_we_are_not_allowed_to_read_says_so() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("a.wav");
@@ -193,24 +187,31 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         let err = add_file(&lib, &p).err().unwrap();
         assert_eq!(err.to_string(), "KaraAlwaysOK isn't allowed to read this file.");
+    }
 
-        let text = dir.path().join("x.mp3");
-        std::fs::write(&text, "not audio").unwrap();
-        let err = add_file(&lib, &text).err().unwrap();
-        assert_eq!(err.to_string(), "This file isn't audio we can play.");
+    #[cfg(unix)]
+    #[test]
+    fn adding_a_file_behind_an_unsearchable_folder_says_so() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("locked");
+        std::fs::create_dir(&sub).unwrap();
+        let p = sub.join("a.wav");
+        write_sine_wav(&p, 44_100, 2, 0.2, 440.0);
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let lib = Library::open_in_memory().unwrap();
+        let result = add_file(&lib, &p);
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(result.err().unwrap().to_string(), "KaraAlwaysOK isn't allowed to read this file.");
     }
 
     #[test]
-    fn fetching_a_moved_file_says_so() {
+    fn adding_a_non_audio_file_says_so() {
         let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("gone.wav");
-        write_sine_wav(&p, 44_100, 2, 0.2, 440.0);
+        let text = dir.path().join("x.mp3");
+        std::fs::write(&text, "not audio").unwrap();
         let lib = Library::open_in_memory().unwrap();
-        let ing = add_file(&lib, &p).unwrap();
-        std::fs::remove_file(&p).unwrap();
-        let t = lib.track(ing.track_id).unwrap();
-        let s = lib.selected_source(ing.track_id).unwrap().unwrap();
-        let err = fetch_audio(&lib, &Store::new(dir.path()), &t, &s).unwrap_err();
-        assert_eq!(err.to_string(), "The file was moved or deleted.");
+        let err = add_file(&lib, &text).err().unwrap();
+        assert_eq!(err.to_string(), "This file isn't audio we can play.");
     }
 }
