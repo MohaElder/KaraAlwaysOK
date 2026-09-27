@@ -117,6 +117,7 @@
 
   function submit(e: SubmitEvent) {
     e.preventDefault();
+    hideSuggestions();
     if (ui.search.kind !== "link") return;
     const { url, preview } = ui.search;
     clear();
