@@ -49,7 +49,7 @@
       </div>
       <div class="rows">
         {#each tracks as song (song.id)}
-          <SongRow track={adding.shown(song)} busy={adding.ids.has(song.id)} playing={player.track?.id === song.id} flash={ui.flash === song.id} onTap={() => player.enqueue(song.id)} onNext={() => player.enqueue(song.id, true)} />
+          <SongRow track={adding.shown(song)} busy={adding.ids.has(song.id)} playing={player.track?.id === song.id} flash={ui.flash === song.id} onTap={() => player.enqueue(song.id)} onNext={() => player.enqueue(song.id, true)} onMenu={(x, y, alignRight) => (ui.menu = { kind: "song", track: song, playlistId: null, x, y, alignRight: !!alignRight })} />
         {:else}
           <p class="hstack muted none-yet"><PlaylistIcon />{t("library.emptyPlaylist")}</p>
         {/each}

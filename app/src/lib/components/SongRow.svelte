@@ -18,7 +18,7 @@
     grip?: Snippet;
     onTap?: () => void;
     onNext?: () => void;
-    onMenu?: (x: number, y: number) => void;
+    onMenu?: (x: number, y: number, alignRight?: boolean) => void;
   } = $props();
 </script>
 
@@ -55,7 +55,7 @@
     onclick={(e) => {
       e.stopPropagation();
       const r = e.currentTarget.getBoundingClientRect();
-      onMenu?.(r.right, r.bottom);
+      onMenu?.(r.right, r.bottom, true);
     }}><DotsThreeIcon size={18} /></button>
   <span class="num">{duration(track.durationMs)}</span>
 </div>

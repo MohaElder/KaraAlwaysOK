@@ -123,6 +123,17 @@ const zhHans: Record<Key, string> = {
   "adding.already": "“{title}”已在资料库中",
   "drop.title": "拖放即可开唱",
   "drop.body": "它会放进“已导入”。",
+  "menu.editInfo": "编辑信息",
+  "menu.deleteSong": "从资料库删除",
+  "confirm.deleteSongTitle": "删除“{title}”？",
+  "confirm.deleteSongBody": "它会从资料库中移除，并释放占用的空间。",
+  "common.cancel": "取消",
+  "common.delete": "删除",
+  "common.save": "保存",
+  "common.undo": "撤销",
+  "toast.deleted": "已删除“{name}”",
+  "toast.saved": "已保存",
+  "edit.title": "标题",
 };
 
 export default zhHans;

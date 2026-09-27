@@ -94,6 +94,15 @@ class PlayerState {
     );
     await onPlayer((s) => this.apply(s));
     await onEngine((e) => this.onEngine(e));
+    await this.refresh();
+  }
+
+  /** Lets audio start; call it first thing in a click that will play. */
+  unlock() {
+    this.streamer.resume();
+  }
+
+  async refresh() {
     this.apply(await playerState());
   }
 

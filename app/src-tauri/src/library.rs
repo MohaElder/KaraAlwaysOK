@@ -1,5 +1,6 @@
 use crate::state::{AppError, AppState, Plain};
 use kara_core::cache;
+use kara_core::ingest;
 use kara_core::library::{CollectionKind, CollectionRow, Library, LyricsSource, Track};
 use kara_core::lyrics::Line;
 use serde::Serialize;
@@ -82,6 +83,22 @@ pub fn delete_track(app: AppHandle, state: State<'_, AppState>, track_id: i64) -
         Ok(())
     })?;
     cache::delete_track(&state.store, &state.lib.lock().unwrap(), track_id).plain()
+}
+
+fn blank_to_none(s: &str) -> Option<&str> {
+    Some(s.trim()).filter(|s| !s.is_empty())
+}
+
+/// Saves a local song's title, artist and album.
+#[tauri::command]
+pub fn edit_track(state: State<'_, AppState>, track_id: i64, title: String, artist: String, album: String) -> Result<Track, AppError> {
+    let lib = state.lib.lock().unwrap();
+    let title = match blank_to_none(&title) {
+        Some(t) => t.to_string(),
+        None => lib.track(track_id).plain()?.title,
+    };
+    ingest::edit_info(&lib, track_id, &title, blank_to_none(&artist), blank_to_none(&album)).plain()?;
+    lib.track(track_id).plain()
 }
 
 #[cfg(test)]

@@ -123,6 +123,17 @@ const zhHant: Record<Key, string> = {
   "adding.already": "「{title}」已在資料庫中",
   "drop.title": "拖放即可開唱",
   "drop.body": "它會放進「已匯入」。",
+  "menu.editInfo": "編輯資訊",
+  "menu.deleteSong": "從資料庫刪除",
+  "confirm.deleteSongTitle": "刪除「{title}」？",
+  "confirm.deleteSongBody": "它會從資料庫中移除，並釋放佔用的空間。",
+  "common.cancel": "取消",
+  "common.delete": "刪除",
+  "common.save": "儲存",
+  "common.undo": "復原",
+  "toast.deleted": "已刪除「{name}」",
+  "toast.saved": "已儲存",
+  "edit.title": "標題",
 };
 
 export default zhHant;

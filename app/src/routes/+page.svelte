@@ -10,6 +10,8 @@
   import PlayerBar from "$lib/components/PlayerBar.svelte";
   import QueuePanel from "$lib/components/QueuePanel.svelte";
   import DropOverlay from "$lib/components/DropOverlay.svelte";
+  import SongMenu from "$lib/components/SongMenu.svelte";
+  import EditSheet from "$lib/components/EditSheet.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
@@ -62,6 +64,8 @@
 <PlayerBar />
 <QueuePanel />
 <GettingReady />
+<SongMenu />
+<EditSheet />
 <DropOverlay />
 <Toasts />
 <Tooltip />

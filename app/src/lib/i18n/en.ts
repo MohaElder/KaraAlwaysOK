@@ -121,6 +121,17 @@ const en = {
   "adding.already": "“{title}” is already in your library",
   "drop.title": "Drop to sing",
   "drop.body": "It goes into Imported.",
+  "menu.editInfo": "Edit info",
+  "menu.deleteSong": "Delete from library",
+  "confirm.deleteSongTitle": "Delete “{title}”?",
+  "confirm.deleteSongBody": "It leaves your library and frees its storage.",
+  "common.cancel": "Cancel",
+  "common.delete": "Delete",
+  "common.save": "Save",
+  "common.undo": "Undo",
+  "toast.deleted": "Deleted “{name}”",
+  "toast.saved": "Saved",
+  "edit.title": "Title",
 };
 
 export default en;

@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { linkPreview, search } from "$lib/api";
   import { fromOutcome, previewFailed, withPreview } from "$lib/search";
   import { ui } from "$lib/state/ui.svelte";
+  import { library } from "$lib/state/library.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { tip } from "$lib/tooltip.svelte";
   import { fade, slide } from "$lib/motion";
@@ -35,6 +37,11 @@
       linkPreview(url, (p) => (ui.search = withPreview(ui.search, url, p))).catch(() => (ui.search = previewFailed(ui.search, url)));
     }
   }
+
+  $effect(() => {
+    void library.cards;
+    if (untrack(() => ui.search.kind === "text")) untrack(run);
+  });
 
   export function clear() {
     seq++;

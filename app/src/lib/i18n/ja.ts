@@ -123,6 +123,17 @@ const ja: Record<Key, string> = {
   "adding.already": "「{title}」はすでにライブラリにあります",
   "drop.title": "ドロップして歌う",
   "drop.body": "「読み込んだ曲」に入ります。",
+  "menu.editInfo": "情報を編集",
+  "menu.deleteSong": "ライブラリから削除",
+  "confirm.deleteSongTitle": "「{title}」を削除しますか？",
+  "confirm.deleteSongBody": "ライブラリから外れ、使っていた容量が空きます。",
+  "common.cancel": "キャンセル",
+  "common.delete": "削除",
+  "common.save": "保存",
+  "common.undo": "取り消す",
+  "toast.deleted": "「{name}」を削除しました",
+  "toast.saved": "保存しました",
+  "edit.title": "タイトル",
 };
 
 export default ja;

@@ -58,6 +58,7 @@ export interface Lyrics { source: "lrclib" | "embedded" | "none" | null; lines: 
 export const listCollections = (kind: Kind) => invoke<CollectionCard[]>("list_collections", { kind });
 export const openCollection = (id: number) => invoke<CollectionPage>("open_collection", { id });
 export const getTrack = (trackId: number) => invoke<Track>("get_track", { trackId });
+export const editTrack = (trackId: number, title: string, artist: string, album: string) => invoke<Track>("edit_track", { trackId, title, artist, album });
 export const trackLyrics = (trackId: number) => invoke<Lyrics>("track_lyrics", { trackId });
 
 export interface QueueEntry { key: number; track: Track }

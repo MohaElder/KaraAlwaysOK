@@ -123,6 +123,17 @@ const ko: Record<Key, string> = {
   "adding.already": "‘{title}’은(는) 이미 보관함에 있습니다",
   "drop.title": "놓아서 부르기",
   "drop.body": "‘가져온 노래’에 들어갑니다.",
+  "menu.editInfo": "정보 편집",
+  "menu.deleteSong": "보관함에서 삭제",
+  "confirm.deleteSongTitle": "‘{title}’을(를) 삭제할까요?",
+  "confirm.deleteSongBody": "보관함에서 빠지고 사용하던 저장 공간이 비워집니다.",
+  "common.cancel": "취소",
+  "common.delete": "삭제",
+  "common.save": "저장",
+  "common.undo": "실행 취소",
+  "toast.deleted": "‘{name}’을(를) 삭제했습니다",
+  "toast.saved": "저장했습니다",
+  "edit.title": "제목",
 };
 
 export default ko;

@@ -123,6 +123,17 @@ const es: Record<Key, string> = {
   "adding.already": "«{title}» ya está en tu biblioteca",
   "drop.title": "Suelta para cantar",
   "drop.body": "Irá a Importadas.",
+  "menu.editInfo": "Editar información",
+  "menu.deleteSong": "Eliminar de la biblioteca",
+  "confirm.deleteSongTitle": "¿Eliminar «{title}»?",
+  "confirm.deleteSongBody": "Sale de tu biblioteca y libera su espacio.",
+  "common.cancel": "Cancelar",
+  "common.delete": "Eliminar",
+  "common.save": "Guardar",
+  "common.undo": "Deshacer",
+  "toast.deleted": "Se eliminó «{name}»",
+  "toast.saved": "Guardado",
+  "edit.title": "Título",
 };
 
 export default es;

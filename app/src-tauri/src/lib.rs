@@ -35,6 +35,7 @@ pub fn run() {
             adding::add_link,
             adding::start_adding,
             library::delete_track,
+            library::edit_track,
             library::list_collections,
             library::open_collection,
             library::get_track,
