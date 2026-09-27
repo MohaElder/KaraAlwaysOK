@@ -102,5 +102,10 @@ Do these once, after the app is built and the GitHub repo exists:
 4. Put the public key in `plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json`
    (replacing `REPLACE-WITH-UPDATER-PUBLIC-KEY`), and the repo owner in the updater
    endpoint URL (replacing `GITHUB-OWNER`).
-5. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
+5. Add a CI workflow that gates every push and pull request on: the Rust unit tests
+   (`cargo test --workspace`) and `cargo clippy --workspace --all-targets -- -D warnings`;
+   the app's unit tests (`npm test`) and browser tests; the type check (`npm run check`,
+   which runs svelte-check and TypeScript); and the language check (every locale has
+   exactly the English keys). Make the release workflow require it.
+6. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
    `latest.json`; publish it so the app's update check can find it.
