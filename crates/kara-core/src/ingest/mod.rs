@@ -22,6 +22,17 @@ pub fn title_from_file_name(name: &str) -> String {
     stem.split(['-', '_']).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ").trim().to_string()
 }
 
+const INSTRUMENTAL_WORDS: &[&str] = &["instrumental", "karaoke", "offvocal", "伴奏", "カラオケ"];
+
+/// Whether a song's title, album or tags say it is already instrumental.
+pub fn looks_instrumental(texts: &[&str]) -> bool {
+    texts.iter().any(|t| {
+        let t = t.to_lowercase();
+        let squashed: String = t.chars().filter(|c| !matches!(c, ' ' | '-' | '_')).collect();
+        INSTRUMENTAL_WORDS.iter().any(|w| squashed.contains(w)) || t.split(|c: char| !c.is_alphanumeric()).any(|w| w == "inst")
+    })
+}
+
 /// Puts a local track in Local › Imported, plus its album and artist collections.
 pub fn link_collections(lib: &Library, track_id: i64, artist: Option<&str>, album: Option<&str>) -> Result<()> {
     let imported = lib.upsert_collection(ProviderId::Local, CollectionKind::Playlist, "imported", "Imported", None)?;
@@ -57,6 +68,9 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
         album: tags.album.as_deref(),
         duration_ms,
     })?;
+    if looks_instrumental(&[title.as_str(), tags.album.as_deref().unwrap_or_default()]) {
+        lib.mark_instrumental(track_id)?;
+    }
     let source_id = lib.add_source(track_id, SourceKind::File, &uri, Some(name))?;
     link_collections(lib, track_id, tags.artist.as_deref(), tags.album.as_deref())?;
     Ok(Ingested { track_id, source_id })
@@ -101,6 +115,11 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                     let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir())
                         .context("Couldn't download this song. Check the link and your connection.")?;
                     lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
+                    let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
+                    texts.extend(f.tags.iter().map(String::as_str));
+                    if looks_instrumental(&texts) {
+                        lib.mark_instrumental(track.id)?;
+                    }
                     link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     Ok(f.path)
                 }
@@ -213,5 +232,26 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         let err = add_file(&lib, &text).err().unwrap();
         assert_eq!(err.to_string(), "This file isn't audio we can play.");
+    }
+
+    #[test]
+    fn recognizes_already_instrumental_titles() {
+        for yes in ["Rooftop Static (Instrumental)", "Salt & Static - Karaoke", "Neon Tidewater (Off Vocal)", "Neon Tidewater off-vocal", "Paper Boats [Inst.]", "紙の船 (伴奏)", "紙の船 カラオケ"] {
+            assert!(looks_instrumental(&[yes]), "{yes}");
+        }
+        for no in ["Instinct", "Institute of Static", "Vocal Warmup"] {
+            assert!(!looks_instrumental(&[no]), "{no}");
+        }
+        assert!(looks_instrumental(&["Rooftop Static", "Demos (Instrumentals)"]));
+    }
+
+    #[test]
+    fn an_instrumental_file_starts_with_the_singer_left_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("rooftop-static-instrumental.wav");
+        write_sine_wav(&p, 44_100, 2, 0.2, 440.0);
+        let lib = Library::open_in_memory().unwrap();
+        let t = lib.track(add_file(&lib, &p).unwrap().track_id).unwrap();
+        assert_eq!((t.instrumental, t.vocal_removal), (true, 0));
     }
 }

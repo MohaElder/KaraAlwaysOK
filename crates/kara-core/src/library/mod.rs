@@ -28,6 +28,11 @@ macro_rules! str_enum {
                 v.as_str()?.parse().map_err(|e: anyhow::Error| rusqlite::types::FromSqlError::Other(e.into()))
             }
         }
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+                s.serialize_str(self.as_str())
+            }
+        }
     };
 }
 
@@ -47,7 +52,8 @@ pub struct NewTrack<'a> {
     pub duration_ms: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Track {
     pub id: i64,
     pub provider: ProviderId,
@@ -57,6 +63,7 @@ pub struct Track {
     pub duration_ms: Option<i64>,
     pub vocal_removal: u8,
     pub key_semitones: i8,
+    pub instrumental: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -99,7 +106,7 @@ pub struct LyricsRow {
     pub fetched_at: i64,
 }
 
-const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones";
+const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental";
 const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, status, error";
 const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
 
@@ -113,6 +120,7 @@ fn track_row(r: &Row) -> rusqlite::Result<Track> {
         duration_ms: r.get(5)?,
         vocal_removal: r.get(6)?,
         key_semitones: r.get(7)?,
+        instrumental: r.get(8)?,
     })
 }
 
@@ -167,7 +175,10 @@ fn no_foreign_key_violations(conn: &Connection) -> Result<bool> {
 type Step = fn(&Transaction) -> Result<()>;
 
 /// The upgrade steps in order; after step `i` the library is at version `i + 1`.
-const STEPS: &[Step] = &[|tx| Ok(tx.execute_batch(include_str!("schema.sql"))?)];
+const STEPS: &[Step] = &[
+    |tx| Ok(tx.execute_batch(include_str!("schema.sql"))?),
+    |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN instrumental INTEGER NOT NULL DEFAULT 0")?),
+];
 
 pub struct Library {
     conn: Connection,
@@ -224,6 +235,12 @@ impl Library {
 
     pub fn set_track_settings(&self, id: i64, vocal_removal: u8, key_semitones: i8) -> Result<()> {
         self.conn.execute("UPDATE track SET vocal_removal = ?2, key_semitones = ?3 WHERE id = ?1", params![id, vocal_removal, key_semitones])?;
+        Ok(())
+    }
+
+    /// Flags a song as already instrumental; the first time, its singer slider moves to original.
+    pub fn mark_instrumental(&self, id: i64) -> Result<()> {
+        self.conn.execute("UPDATE track SET instrumental = 1, vocal_removal = 0 WHERE id = ?1 AND instrumental = 0", [id])?;
         Ok(())
     }
 
@@ -562,7 +579,7 @@ mod tests {
         let lib = Library::init(Connection::open(&p).unwrap(), &steps).unwrap();
         assert_eq!(lib.track(id).unwrap().title, "A");
         let version: usize = lib.conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, STEPS.len() + 1);
         lib.conn.execute("INSERT INTO added (x) VALUES (1)", []).unwrap();
         let fk: i64 = lib.conn.pragma_query_value(None, "foreign_keys", |r| r.get(0)).unwrap();
         assert_eq!(fk, 1);
@@ -622,5 +639,40 @@ mod tests {
         Connection::open(&p).unwrap().pragma_update(None, "user_version", STEPS.len() + 1).unwrap();
         let err = Library::open(&p).err().unwrap();
         assert_eq!(err.to_string(), "This library was made by a newer version of KaraAlwaysOK. Update KaraAlwaysOK to open it.");
+    }
+
+    #[test]
+    fn instrumental_songs_start_at_original_and_keep_later_changes() {
+        let l = lib();
+        let id = l.add_track(&local("Rooftop Static (Instrumental)", None)).unwrap();
+        l.mark_instrumental(id).unwrap();
+        let t = l.track(id).unwrap();
+        assert_eq!((t.instrumental, t.vocal_removal), (true, 0));
+        l.set_track_settings(id, 60, 0).unwrap();
+        l.mark_instrumental(id).unwrap();
+        assert_eq!(l.track(id).unwrap().vocal_removal, 60);
+    }
+
+    #[test]
+    fn a_version_1_database_gains_the_instrumental_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("kara.db");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(include_str!("schema.sql")).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute("INSERT INTO track (provider, title, added_at) VALUES ('local', 'Old Song', 0)", []).unwrap();
+        drop(conn);
+        let l = Library::open(&p).unwrap();
+        assert!(!l.search("old", 1).unwrap()[0].instrumental);
+    }
+
+    #[test]
+    fn tracks_serialize_for_the_app() {
+        let l = lib();
+        let id = l.add_track(&local("Paper Satellites", Some("Mina Okada"))).unwrap();
+        let json = serde_json::to_value(l.track(id).unwrap()).unwrap();
+        assert_eq!(json["provider"], "local");
+        assert_eq!(json["vocalRemoval"], 100);
+        assert_eq!(json["durationMs"], 1000);
     }
 }
