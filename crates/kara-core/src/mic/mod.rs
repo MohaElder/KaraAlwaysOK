@@ -138,7 +138,7 @@ impl Mixer {
             v.effects.process(&mut v.scratch);
             let gain = v.gain * v.howl.gain();
             for (o, s) in out.iter_mut().zip(&v.scratch) {
-                let x = s * gain;
+                let x = if s.is_finite() { s * gain } else { 0.0 };
                 v.peak = v.peak.max(x.abs());
                 *o += x;
             }

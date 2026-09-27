@@ -1,6 +1,6 @@
 //! A phone's voice effect before the mix: none, a karaoke mix (short echo and warm reverb), or auto-tune (pulled to the nearest semitone).
 
-use super::Reverb;
+use super::{flush, Reverb};
 use serde::Deserialize;
 use std::collections::VecDeque;
 
@@ -86,22 +86,24 @@ impl Effects {
                 self.tune.set(self.amount);
             }
             let dry = *x;
+            let room = self.karaoke(dry);
             let wet = match self.active {
                 Effect::AutoTune => self.tune.next(dry),
                 other => {
                     self.tune.hear(dry);
-                    if other == Effect::KaraokeMix { self.karaoke(dry) } else { dry }
+                    if other == Effect::KaraokeMix { room } else { dry }
                 }
             };
             *x = dry + self.wet * (wet - dry);
         }
     }
 
+    /// The voice with its echo and warm room; runs whatever the effect, so turning karaoke on replays nothing old.
     fn karaoke(&mut self, x: f32) -> f32 {
         let echoed = self.echo[self.echo_i];
-        self.echo[self.echo_i] = x + echoed * ECHO_FEEDBACK;
+        self.echo[self.echo_i] = flush(x + echoed * ECHO_FEEDBACK);
         self.echo_i = (self.echo_i + 1) % self.echo.len();
-        self.warm += (self.room.process(x) - self.warm) * self.warm_k;
+        self.warm = flush(self.warm + (self.room.process(x) - self.warm) * self.warm_k);
         x + self.amount * (ECHO_WET * echoed + ROOM_WET * self.warm)
     }
 }
@@ -235,9 +237,12 @@ impl Tune {
         while tau + 1 < self.high_tau && self.cmnd[tau + 1] < self.cmnd[tau] {
             tau += 1;
         }
+        if tau + 1 >= self.high_tau {
+            return None;
+        }
         let (a, b, c) = (self.cmnd[tau - 1], self.cmnd[tau], self.cmnd[tau + 1]);
         let bend = a - 2.0 * b + c;
-        let shift = if bend.abs() > 1e-9 { 0.5 * (a - c) / bend } else { 0.0 };
+        let shift = if bend.abs() > 1e-9 { (0.5 * (a - c) / bend).clamp(-0.5, 0.5) } else { 0.0 };
         Some(self.rate / DECIMATE as f32 / (tau as f32 + shift))
     }
 
@@ -264,7 +269,7 @@ impl Tune {
         y
     }
 
-    /// Starts tap `i` again the fewest whole periods from the other that keep it clear of zero delay for its whole life.
+    /// Starts tap `i` again at the shortest delay, a whole number of periods from the other, that stays clear of zero for its life.
     fn restart(&mut self, i: usize) {
         let (other, s) = (self.delay[1 - i], self.spacing);
         let least = 0.1 * s;
@@ -387,6 +392,17 @@ mod tests {
     }
 
     #[test]
+    fn bass_notes_at_the_floor_stay_finite_and_notes_below_it_are_left_alone() {
+        for tenth in 760..=800 {
+            let out = with(Effect::AutoTune, 100, voice(tenth as f32 / 10.0, 2.0));
+            assert!(out.iter().all(|x| x.is_finite()), "{} Hz", tenth as f32 / 10.0);
+        }
+        let sung = 76.0 * 2f32.powf(-40.0 / 1200.0);
+        let out = hz(&with(Effect::AutoTune, 100, sine(sung, 2.5))[(0.4 * RATE) as usize..]);
+        assert!(cents(out, sung).abs() < 1.0, "76 Hz sung 40 cents flat moved {:.1} cents", cents(out, sung));
+    }
+
+    #[test]
     fn karaoke_mix_is_dry_at_zero_and_adds_a_room_and_an_echo_when_up() {
         let mut click = vec![0.0; 48_000];
         click[0] = 1.0;
@@ -400,6 +416,11 @@ mod tests {
         let room = wet[(0.03 * RATE) as usize..(0.1 * RATE) as usize].iter().map(|x| x * x).sum::<f32>();
         assert!(room > 1e-4, "the room answers before the first echo");
         assert!(wet[(ECHO_MS / 1000.0 * RATE) as usize].abs() > 0.2, "an echo after {ECHO_MS} ms");
+        run(&mut fx, voice(220.0, 1.0));
+        fx.set(Effect::None, 100);
+        run(&mut fx, vec![0.0; 480_000]);
+        fx.set(Effect::KaraokeMix, 100);
+        assert!(run(&mut fx, vec![0.0; 48_000]).iter().all(|x| x.abs() < 1e-3), "turning it back on replays nothing old");
     }
 
     #[test]
