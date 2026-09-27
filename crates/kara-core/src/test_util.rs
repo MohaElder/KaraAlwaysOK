@@ -1,3 +1,5 @@
+use crate::separate::mdx::{MdxParams, VocalModel};
+use ndarray::Array4;
 use std::path::Path;
 
 /// Writes a 16-bit PCM WAV sine at half amplitude, the same sample on every channel.
@@ -18,4 +20,25 @@ pub(crate) fn write_sine_wav(path: &Path, rate: u32, channels: u16, secs: f32, f
         }
     }
     w.finalize().unwrap();
+}
+
+/// Tiny MDX shape so tests run in milliseconds: chunk 240, trim 32, gen 176.
+pub(crate) fn test_params() -> MdxParams {
+    MdxParams { n_fft: 64, hop: 16, dim_f: 33, dim_t: 16, compensate: 1.0 }
+}
+
+/// Says there are no vocals.
+pub(crate) struct Silence;
+impl VocalModel for Silence {
+    fn infer(&mut self, input: Array4<f32>) -> anyhow::Result<Array4<f32>> {
+        Ok(Array4::zeros(input.dim()))
+    }
+}
+
+/// Says everything is vocals.
+pub(crate) struct Passthrough;
+impl VocalModel for Passthrough {
+    fn infer(&mut self, input: Array4<f32>) -> anyhow::Result<Array4<f32>> {
+        Ok(input)
+    }
 }
