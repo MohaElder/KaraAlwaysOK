@@ -22,8 +22,8 @@
   let timer: ReturnType<typeof setTimeout> | undefined;
   let youtubeTimer: ReturnType<typeof setTimeout> | undefined;
   let youtubeAsked: string | null = null;
-  let phraseTimer: ReturnType<typeof setTimeout> | undefined;
   let phraseSeq = 0;
+  let phrasesAsked: string | null = null;
   let phrases = $state<string[]>([]);
   let suggesting = $state(false);
   let active = $state(-1);
@@ -46,14 +46,13 @@
     timer = setTimeout(run, 120);
     suggesting = true;
     active = -1;
-    clearTimeout(phraseTimer);
-    phraseTimer = setTimeout(suggest, 150);
   }
 
-  async function suggest() {
+  async function suggest(query: string) {
+    if (query === phrasesAsked) return;
+    phrasesAsked = query;
     const mine = ++phraseSeq;
-    const query = ui.query.trim();
-    const found = query && ui.search.kind === "text" ? await phrasesFor(query) : [];
+    const found = await phrasesFor(query);
     if (mine === phraseSeq) phrases = found;
   }
 
@@ -81,6 +80,7 @@
     if (mine !== seq) return;
     const before = ui.search;
     ui.search = fromOutcome(before, value, outcome);
+    if (suggesting && ui.search.kind === "text") suggest(ui.search.query);
     if (ui.search.kind === "link" && ui.search !== before) {
       const url = ui.search.url;
       linkPreview(url, (p) => (ui.search = withPreview(ui.search, url, p))).catch(() => (ui.search = previewFailed(ui.search, url)));
@@ -107,9 +107,9 @@
   export function clear() {
     seq++;
     phraseSeq++;
+    phrasesAsked = null;
     clearTimeout(timer);
     clearTimeout(youtubeTimer);
-    clearTimeout(phraseTimer);
     phrases = [];
     hideSuggestions();
     ui.clearSearch();
@@ -150,6 +150,8 @@
       }}
       placeholder={t("search.placeholder")}
       aria-label={t("search.placeholder")}
+      role="combobox"
+      aria-autocomplete="list"
       aria-expanded={open}
       aria-controls={open ? "suggestions" : undefined}
       aria-activedescendant={open && active >= 0 ? `suggestion-${active}` : undefined}

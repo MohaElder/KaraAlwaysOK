@@ -233,6 +233,7 @@ pub fn startup_cleanup(store: &Store, lib: &Library, _lock: &DataLock) -> Result
     let _ = std::fs::remove_dir_all(store.tmp_dir());
     std::fs::create_dir_all(store.tmp_dir())?;
     remove_stale_files(&store.audio_root());
+    crate::ingest::ytdlp::remove_old_installs(&store.bin_dir());
     for mut row in lib.separations()? {
         let done = count_complete_chunks(store, &row.audio_hash, &row.model_id);
         if done >= row.chunks_total {

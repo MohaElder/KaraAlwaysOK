@@ -109,7 +109,6 @@ fn clock_ms(clock: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ingest::preview::LinkPreview;
 
     #[test]
     fn search_lists_videos_once_each_skipping_live_and_upcoming_ones() {

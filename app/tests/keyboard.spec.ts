@@ -8,7 +8,7 @@ test("Space plays and pauses, but not while typing", async ({ page }) => {
   await expect(bar.getByRole("button", { name: "Play", exact: true })).toBeVisible();
   await page.keyboard.press(" ");
   await expect(bar.getByRole("button", { name: "Pause" })).toBeVisible();
-  const search = page.getByRole("textbox", { name: "Search anything, or paste a link" });
+  const search = page.getByRole("combobox", { name: "Search anything, or paste a link" });
   await search.focus();
   await page.keyboard.type(" /");
   await expect(search).toHaveValue(" /");
@@ -19,7 +19,7 @@ test("/ leaves karaoke and focuses search", async ({ page }) => {
   const karaoke = await sing(page, "Paper Boats");
   await page.keyboard.press("/");
   await expect(karaoke).toBeHidden();
-  await expect(page.getByRole("textbox", { name: "Search anything, or paste a link" })).toBeFocused();
+  await expect(page.getByRole("combobox", { name: "Search anything, or paste a link" })).toBeFocused();
 });
 
 test("Escape closes the menu, then the queue, then karaoke", async ({ page }) => {

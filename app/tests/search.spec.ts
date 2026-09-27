@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect, calls, composingEnter } from "./app";
 
-const box = (page: Page) => page.getByRole("textbox", { name: "Search anything, or paste a link" });
+const box = (page: Page) => page.getByRole("combobox", { name: "Search anything, or paste a link" });
 
 test("typing shows matching songs, also by part of a CJK title", async ({ page }) => {
   await box(page).fill("lemon");
