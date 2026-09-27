@@ -33,6 +33,12 @@ const ja: Record<Key, string> = {
   "problem.notALink": "リンクではありません。",
   "problem.unknown": "問題が発生しました。",
   "problem.noSongAtLink": "このリンクに曲が見つかりませんでした。",
+  "setup.title": "準備中",
+  "setup.body": "歌唱エンジンをダウンロードしています。これは最初の一度だけです。",
+  "setup.progress": "{done} / {total} MB",
+  "setup.doneTitle": "準備完了",
+  "setup.doneBody": "曲を選んで歌いましょう。",
+  "setup.failedTitle": "準備できませんでした",
 };
 
 export default ja;

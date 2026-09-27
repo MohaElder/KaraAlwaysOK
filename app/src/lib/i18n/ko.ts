@@ -33,6 +33,12 @@ const ko: Record<Key, string> = {
   "problem.notALink": "링크가 아닙니다.",
   "problem.unknown": "문제가 발생했습니다.",
   "problem.noSongAtLink": "이 링크에서 노래를 찾을 수 없습니다.",
+  "setup.title": "준비 중",
+  "setup.body": "노래 엔진을 다운로드하고 있습니다. 처음 한 번만 진행됩니다.",
+  "setup.progress": "{done} / {total} MB",
+  "setup.doneTitle": "준비 완료",
+  "setup.doneBody": "노래를 골라 불러 보세요.",
+  "setup.failedTitle": "준비하지 못했습니다",
 };
 
 export default ko;

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type ProblemCode =
   | "newerLibrary" | "dataFolder" | "inUse" | "libraryOpen" | "engineDownload" | "engineStart" | "fileMoved" | "fileNotAllowed"
@@ -10,3 +10,13 @@ export type ProblemCode =
 export interface AppError { problem: ProblemCode | null; message: string }
 
 export const systemLocale = () => invoke<string | null>("system_locale");
+
+export interface SetupProgress { step: number; steps: number; done: number; total: number | null }
+
+export async function setupEngine(onProgress: (p: SetupProgress) => void): Promise<void> {
+  const channel = new Channel<SetupProgress>();
+  channel.onmessage = onProgress;
+  await invoke("setup_engine", { onProgress: channel });
+}
+
+export const startupProblem = () => invoke<AppError | null>("startup_problem");

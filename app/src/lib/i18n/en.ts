@@ -31,6 +31,12 @@ const en = {
   "problem.notALink": "That's not a link.",
   "problem.unknown": "Something went wrong.",
   "problem.noSongAtLink": "Couldn't find a song at this link.",
+  "setup.title": "Getting ready",
+  "setup.body": "Downloading the singing engine. This only happens once.",
+  "setup.progress": "{done} of {total} MB",
+  "setup.doneTitle": "All set",
+  "setup.doneBody": "Pick a song and sing.",
+  "setup.failedTitle": "Couldn't get ready",
 };
 
 export default en;

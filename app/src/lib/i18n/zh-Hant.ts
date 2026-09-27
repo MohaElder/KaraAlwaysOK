@@ -33,6 +33,12 @@ const zhHant: Record<Key, string> = {
   "problem.notALink": "這不是連結。",
   "problem.unknown": "發生了一些問題。",
   "problem.noSongAtLink": "在這個連結中找不到歌曲。",
+  "setup.title": "正在準備",
+  "setup.body": "正在下載演唱引擎。只需下載一次。",
+  "setup.progress": "{done} / {total} MB",
+  "setup.doneTitle": "準備就緒",
+  "setup.doneBody": "選一首歌開唱吧。",
+  "setup.failedTitle": "未能準備好",
 };
 
 export default zhHant;

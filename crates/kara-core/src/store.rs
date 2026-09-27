@@ -19,9 +19,11 @@ impl Store {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
-    /// `~/Library/Application Support/kara-always-oki`
+    /// `~/Library/Application Support/kara-always-oki`, or `$KARA_DATA` when set (for development).
     pub fn default_root() -> PathBuf {
-        dirs::data_dir().expect("no user data directory").join("kara-always-oki")
+        std::env::var_os("KARA_DATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| dirs::data_dir().expect("no user data directory").join("kara-always-oki"))
     }
     pub fn root(&self) -> &Path {
         &self.root

@@ -1,5 +1,12 @@
 <script lang="ts">
   import Tooltip from "$lib/components/Tooltip.svelte";
+  import { onMount } from "svelte";
+  import GettingReady from "$lib/components/GettingReady.svelte";
+  import { engine } from "$lib/state/engine.svelte";
+
+  onMount(() => {
+    engine.start();
+  });
 </script>
 
 <div class="app">
@@ -8,6 +15,7 @@
     <header class="top"></header>
   </main>
 </div>
+<GettingReady />
 <Tooltip />
 
 <style>

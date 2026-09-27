@@ -33,6 +33,12 @@ const es: Record<Key, string> = {
   "problem.notALink": "Eso no es un enlace.",
   "problem.unknown": "Algo salió mal.",
   "problem.noSongAtLink": "No se encontró ninguna canción en este enlace.",
+  "setup.title": "Preparando",
+  "setup.body": "Descargando el motor de canto. Solo ocurre una vez.",
+  "setup.progress": "{done} de {total} MB",
+  "setup.doneTitle": "Todo listo",
+  "setup.doneBody": "Elige una canción y canta.",
+  "setup.failedTitle": "No se pudo preparar",
 };
 
 export default es;

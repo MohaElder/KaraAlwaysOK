@@ -33,6 +33,12 @@ const zhHans: Record<Key, string> = {
   "problem.notALink": "这不是链接。",
   "problem.unknown": "出了点问题。",
   "problem.noSongAtLink": "在这个链接中找不到歌曲。",
+  "setup.title": "正在准备",
+  "setup.body": "正在下载演唱引擎。只需下载一次。",
+  "setup.progress": "{done} / {total} MB",
+  "setup.doneTitle": "准备就绪",
+  "setup.doneBody": "选一首歌开唱吧。",
+  "setup.failedTitle": "未能准备好",
 };
 
 export default zhHans;
