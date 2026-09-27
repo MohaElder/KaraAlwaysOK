@@ -144,6 +144,21 @@ fn sep_row(r: &Row) -> rusqlite::Result<SeparationRow> {
     })
 }
 
+/// Turns on write-ahead logging, retrying while another connection is switching it.
+fn enable_wal(conn: &Connection) -> Result<()> {
+    // journal_mode returns a row, so it can't go through pragma_update.
+    let switch = || conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()));
+    for _ in 0..100 {
+        match switch() {
+            Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::DatabaseBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(10))
+            }
+            r => return Ok(r?),
+        }
+    }
+    Ok(switch()?)
+}
+
 pub struct Library {
     conn: Connection,
 }
@@ -160,15 +175,16 @@ impl Library {
         Self::init(Connection::open_in_memory()?)
     }
 
-    fn init(conn: Connection) -> Result<Self> {
-        // journal_mode returns a row, so it can't go through pragma_update.
-        conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
+    fn init(mut conn: Connection) -> Result<Self> {
+        enable_wal(&conn)?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let version: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version == 0 {
-            conn.execute_batch(include_str!("schema.sql"))?;
-            conn.pragma_update(None, "user_version", 1)?;
+            tx.execute_batch(include_str!("schema.sql"))?;
+            tx.pragma_update(None, "user_version", 1)?;
         }
+        tx.commit()?;
         Ok(Self { conn })
     }
 
@@ -507,6 +523,20 @@ mod tests {
         assert_eq!(l.setting("cache_budget_bytes").unwrap(), None);
         l.set_setting("cache_budget_bytes", "123").unwrap();
         assert_eq!(l.setting("cache_budget_bytes").unwrap().as_deref(), Some("123"));
+    }
+
+    #[test]
+    fn concurrent_first_opens_of_a_new_database_all_succeed() {
+        for _ in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let p = dir.path().join("kara.db");
+            std::thread::scope(|s| {
+                let opens: Vec<_> = (0..6).map(|_| s.spawn(|| Library::open(&p).map(|_| ()))).collect();
+                for o in opens {
+                    o.join().unwrap().unwrap();
+                }
+            });
+        }
     }
 
     #[test]
