@@ -22,6 +22,18 @@ test("typing also shows YouTube videos after the library's songs, and tapping on
   await expect(page.getByRole("region", { name: "Player" })).toBeHidden();
 });
 
+test("typing suggests your songs, then YouTube's phrases, and ↓ + Enter runs a phrase's search", async ({ page }) => {
+  await box(page).pressSequentially("lemon");
+  const suggestions = page.getByRole("listbox", { name: "Suggestions" });
+  await expect(suggestions.getByRole("option")).toHaveText(["Lemon Skies", "lemon karaoke", "lemon live"]);
+  await box(page).press("ArrowDown");
+  await box(page).press("ArrowDown");
+  await box(page).press("Enter");
+  await expect(suggestions).toBeHidden();
+  await expect(box(page)).toHaveValue("lemon karaoke");
+  await expect.poll(() => calls(page, "youtube_search")).toContainEqual({ query: "lemon karaoke" });
+});
+
 test("a pasted link shows its preview, and Enter adds it only once composing is done", async ({ page }) => {
   await box(page).fill("https://youtu.be/abc123");
   await expect(page.getByRole("heading", { name: "From this link" })).toBeVisible();

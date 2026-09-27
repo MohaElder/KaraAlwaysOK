@@ -111,6 +111,7 @@ export async function linkPreview(url: string, onUpdate: (p: LinkPreview) => voi
 }
 
 export const youtubeSearch = (query: string) => invoke<SearchHit[]>("youtube_search", { query });
+export const youtubeSuggestions = (query: string) => invoke<string[]>("youtube_suggestions", { query });
 
 export const addFile = (path: string) => invoke<Track>("add_file", { path });
 export const addLink = (url: string) => invoke<Track>("add_link", { url });

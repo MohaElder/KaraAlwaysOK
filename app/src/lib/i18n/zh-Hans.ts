@@ -63,6 +63,7 @@ const zhHans: Record<Key, string> = {
   "search.noMatchBody": "检查拼写，或粘贴歌曲链接。",
   "search.fromLink": "来自这个链接",
   "search.youtube": "YouTube",
+  "search.suggestions": "搜索建议",
   "search.addToLibraryLabel": "将 {title} 添加到资料库",
   "search.streamingTitle": "无法下载 {host} 链接",
   "search.streamingTip": "请改为搜索这首歌。",
