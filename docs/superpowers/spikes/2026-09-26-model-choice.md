@@ -90,17 +90,118 @@ Mean gain-matched SDR: Kim_Vocal_2 = 5.12 dB, Voc_FT = 5.15 dB (both ≈ 0.03 dB
 
 Ear-checking is still pending for the user. The bench WAVs (`vocals.wav`/`instrumental.wav` per model per song) are at `~/Library/Application Support/kara-always-oki/bench/<model>/<song>/` for that: `bench/kim-vocal-2/{to-infinity,to-nara}/`, `bench/voc-ft/{to-infinity,to-nara}/`.
 
-## Gate and decision
+## Round 1 gate check (superseded — see "Memory investigation" below)
 
-Gate: ≥ 2x real time **and** ≤ 1500 MB peak, CoreML or CPU, recorded both ways.
+Gate (as originally stated): ≥ 2x real time **and** ≤ 1500 MB peak, CoreML or CPU, recorded both ways.
 
 - Speed: both models pass comfortably in both modes.
 - Memory: both models fail badly in both modes — CoreML ~5.8–7.0 GB, CPU ~9.8 GB, vs. a 1500 MB budget.
 
-**Decision: BLOCKED.** Neither `Kim_Vocal_2` nor `UVR-MDX-NET-Voc_FT` passes the gate, so no `DEFAULT_MODEL` was added and Task 6 does not proceed. The two candidates are effectively tied on quality (mean gain-matched SDR 5.12 vs. 5.15 dB) and on speed, so this is not a close call decided in either model's favor — it's a memory-budget problem shared by both, at these fixed model parameters (`dim_f=3072`, `dim_t=256`).
+Round 1's conclusion was BLOCKED on memory. The controller ruling for round 2 was that "most likely activation memory" was an unprobed guess, and directed a real memory investigation (probe over reasoning) before accepting that. That investigation, below, found and fixed the actual cause without touching the model or its parameters.
 
-Options for the user, in the order the brief raised them:
-1. **CPU vs. CoreML** — already recorded above; CPU is worse on memory (9.8 GB vs. 5.8 GB) though somewhat better on model-load latency. Neither gets close to 1500 MB.
-2. **Smaller `dim_t`** — UVR's inference code treats `dim_t` (the model's temporal window) as a runtime knob independent of the model file; a smaller `dim_t` (e.g. 128 or 64 instead of 256) shrinks the per-segment tensor `[1, 4, 3072, dim_t]` and its intermediate activations, which is the most likely lever on the ~5.7 GB fixed cost — at some cost to speed (more, smaller segments) and untested effect on quality, since these models were trained/tuned around `dim_t=256`.
-3. **HTDemucs** — not benchmarked. It needs a different, heavier pipeline that doesn't exist in this codebase yet (no HTDemucs runner, no `kara bench` support for it), so standing it up was out of scope for this spike; the controller's ruling was to stop and report the numbers rather than open a second, unimplemented pipeline mid-spike.
-4. **ONNX Runtime session limits** — not tried here (`separate/onnx.rs` uses default `SessionBuilder` options): capping intra-op thread count and/or the CPU arena's memory limit could reduce the ~5.7 GB fixed overhead without touching the model itself, but this needs its own probe and is a code change, not a benchmark knob.
+## Memory investigation (round 2)
+
+### Locating the cost
+
+Instrumented a scratch probe (`crates/kara-cli/examples/memprobe.rs`, deleted after use — not committed) that prints RSS after decode, after session creation, after the first inference, and at intervals through the rest of the song. Kim_Vocal_2, "To Infinity N Beyond":
+
+| Stage | CoreML (default NeuralNetwork format) | CPU |
+|---|---|---|
+| After decode | 78 MB | 78 MB |
+| After session load | 295 MB | 210 MB |
+| After first chunk (first inference) | 5615 MB | 5602 MB |
+| Chunk 5 | 5637 MB | 8343 MB |
+| Chunk 10 | 5643 MB | 10949 MB |
+| Chunk 15 / final (chunk 18) | 5643 MB | 11247 MB |
+
+Answer to "fixed at load, fixed at first inference, or growing per segment": **CoreML jumps to ~5.6 GB at the very first inference call and then stays flat** (+28 MB over the rest of the song — not a leak, and not present at session load, so it's compiled/allocated lazily on first `Run()`). **CPU jumps similarly at first inference but then keeps growing** for about 15 segments before plateauing at ~11.2 GB — consistent with ONNX Runtime's CPU arena allocator repeatedly growing its high-water mark rather than reusing buffers, on a model whose per-segment tensor (`dim_f=3072 x dim_t=256`) is unusually large.
+
+### Levers tried
+
+All runs: Kim_Vocal_2, "To Infinity N Beyond", via the same probe, `RESULT peak_mb=... x_real_time=...`.
+
+**CPU:** none of the standard levers help — every combination stays in the 10.9–12.7 GB range (noise-level differences from run to run):
+
+| Config | Peak MB | x real time |
+|---|---|---|
+| default | 10873 | 5.15 |
+| `--no-arena` (CPU EP `with_arena_allocator(false)`) | 12131 | 4.99 |
+| `--intra 4` | 12468 | 4.86 |
+| `--intra 4 --no-arena` | 12167 | 4.87 |
+| `--intra 2` | 12147 | 3.65 |
+| `--no-mem-pattern` | 12659 | 4.76 |
+| `--inter 1 --intra 2` | 12249 | 3.20 |
+
+CPU is not viable under any tried configuration.
+
+**CoreML:**
+
+| Config | Peak MB | x real time | Notes |
+|---|---|---|---|
+| default (`NeuralNetwork` format, `ComputeUnits::All`) | 5629 | 14.43 | round 1 baseline |
+| `--compute-units ane` (`CPUAndNeuralEngine`) | 5159 | 9.82 | slower, barely less memory |
+| `--compute-units cpu` (`CPUOnly`) | 7333 | 5.30 | worse on both axes |
+| `--static-shapes` (`RequireStaticInputShapes(true)`) | 14738 | 5.10 | the model's input has a symbolic `batch_size` dim, so this disqualifies CoreML entirely and silently falls back to plain CPU (confirmed: session-load RSS and speed both match the CPU baseline, not CoreML's) |
+| **`--mlprogram` (`ModelFormat::MLProgram`)** | **735–1000** (short songs) | **44–46** | **the winner — see below** |
+| `--mlprogram --compute-units ane` | 1359 | 5.74 | passes the gate too, but worse than plain MLProgram on both axes |
+
+`ModelFormat::MLProgram` (Core ML 5+/macOS 12+ model format, vs. the EP's default legacy `NeuralNetwork` format) cuts CoreML's peak memory by roughly 7x and, unexpectedly, makes it 3x *faster* — both improvements together, no tradeoff found.
+
+One wrinkle: MLProgram mode prints `E5RT encountered an STL exception. msg = Input: input has unbounded dimension which is not supported...` to stdout after every run. Confirmed this is benign teardown noise, not a correctness problem: it appears strictly after the program's own final "wrote ..." line (i.e. after all inference and file-writing completed, during process exit / session teardown), the process still exits 0, and — most importantly — the actual separated audio was cross-checked and is correct (next section).
+
+### Quality cross-check (MLProgram vs. the original NeuralNetwork output)
+
+Before trusting the low-memory, high-speed MLProgram numbers, scored its output against (a) the real instrumental and (b) the exact WAV produced by the unmodified `NeuralNetwork`-format CoreML run from round 1, using the same SDR scorer:
+
+| Comparison | SDR | Gain-matched SDR |
+|---|---|---|
+| Kim_Vocal_2/MLProgram vs. real instrumental, Infinity | 0.07 dB | 0.39 dB |
+| Kim_Vocal_2/MLProgram vs. round-1 NeuralNetwork output, Infinity | 56.33 dB | 56.33 dB (gain 1.0000) |
+| Kim_Vocal_2/MLProgram vs. real instrumental, Nara | 9.76 dB | 9.85 dB |
+| Kim_Vocal_2/MLProgram vs. round-1 NeuralNetwork output, Nara | 61.82 dB | 61.82 dB (gain 1.0000) |
+| Voc_FT/MLProgram vs. real instrumental, Nara | 9.81 dB | 9.90 dB |
+| Voc_FT/MLProgram vs. round-1 NeuralNetwork output, Nara | 63.09 dB | 63.09 dB (gain 1.0000) |
+
+MLProgram's output matches the original NeuralNetwork output to 56–63 dB SDR (i.e. essentially bit-identical, modulo different compiled kernels) and reproduces round 1's real-instrumental scores to within 0.01 dB. **The memory and speed wins are real, not a broken or partial fallback.**
+
+### `dim_t` (the third lever): confirmed not viable, by probe
+
+Per the brief, only worth trying if the model's time axis is dynamic. Read the input shape straight from the loaded ONNX session: `Tensor<f32>(batch_size, 4, 3072, 256)` — the batch dim is symbolic, but the `dim_t` axis is a fixed literal `256`, not dynamic. Confirmed by actually trying `dim_t=128` (a smaller `MdxParams.dim_t`, producing a `[1,4,3072,128]` input): ONNX Runtime rejects it outright —
+```
+Error: Got invalid dimensions for input: input for the following indices
+ index: 3 Got: 128 Expected: 256
+ Please fix either the inputs/outputs or the model.
+```
+So this lever is closed: `dim_t` would require re-exporting the model, not a runtime option, and per the ruling's own gate note this makes MLProgram's "stay at dim_t 256" outcome the preferred one anyway.
+
+### Gate check with `ModelFormat::MLProgram`
+
+Revised gate: target ≤ 1500 MB peak, acceptable ≤ 3000 MB, ≥ 2x real time.
+
+| Model | Song | Length | x real time | Peak MB |
+|---|---|---|---|---|
+| Kim_Vocal_2 | To Infinity N Beyond | 184.3 s | 43.91x | 847 |
+| Kim_Vocal_2 | To Nara From Eurasia | 332.9 s | 45.97x | 996 |
+| Kim_Vocal_2 | DiscA (speed/mem only) | 1101.0 s | 46.02x | 1572 |
+| Voc_FT | To Infinity N Beyond | 184.3 s | 45.00x | 850 |
+| Voc_FT | To Nara From Eurasia | 332.9 s | 46.07x | 979 |
+
+(Numbers via the real `kara bench` binary after the `onnx.rs` change, not just the scratch probe, except DiscA which used the probe since `kara bench` and the probe agree to within noise elsewhere.) All comfortably clear ≥ 2x real time. All clear the 1500 MB target on realistic song lengths (3–5.5 min); the 18-minute DiscA run lands at 1572 MB — just over the strict target but well inside the 3000 MB acceptable ceiling. Note `kara bench` (and the probe) both hold the whole song's separated audio in RAM to write the listening WAVs at the end, which is not what the real chunked pipeline does (it writes each 10 s chunk to disk as it goes) — so production peak memory on long songs should be lower than this harness reports, not higher.
+
+Quality still ties (mean gain-matched SDR essentially unchanged from round 1: Kim_Vocal_2 5.12 dB, Voc_FT ~5.15 dB), so per the ruling, prefer **Kim_Vocal_2**.
+
+### Final decision
+
+**Kim_Vocal_2, CoreML with `ModelFormat::MLProgram`.** Changed `crates/kara-core/src/separate/onnx.rs` to set `.with_model_format(ModelFormat::MLProgram)` on the CoreML execution provider (nothing else — no thread/arena/compute-unit overrides, since none of those helped and MLProgram alone already clears the gate with margin). `DEFAULT_MODEL` added to `crates/kara-core/src/separate/mod.rs`:
+
+```
+id: "kim-vocal-2"
+asset.file_name: "Kim_Vocal_2.onnx"
+asset.url: https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Vocal_2.onnx
+asset.sha256: ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b
+params: n_fft 7680, hop 1024, dim_f 3072, dim_t 256, compensate 1.009
+```
+
+Ear-checking is still pending for the user. Bench WAVs are at `~/Library/Application Support/kara-always-oki/bench/{kim-vocal-2,voc-ft}/{to-infinity,to-nara}/` (round 1, `NeuralNetwork` format) and `~/Library/Application Support/kara-always-oki/bench/kim-vocal-2-mlprogram/{to-infinity,to-nara}/` (round 2, `MLProgram` format, quality-confirmed equivalent to round 1's).
+
+License finding from round 1 stands: the model weight files' license is effectively unstated — still worth raising with the user before shipping a model download in the app.

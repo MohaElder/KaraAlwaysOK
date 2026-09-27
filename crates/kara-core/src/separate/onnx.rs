@@ -27,10 +27,12 @@ impl OnnxModel {
             .map_err(|e| anyhow!("{e}"))?;
         #[cfg(target_os = "macos")]
         if use_coreml {
+            use ort::execution_providers::coreml::ModelFormat;
             use ort::execution_providers::CoreMLExecutionProvider;
-            builder = builder
-                .with_execution_providers([CoreMLExecutionProvider::default().build()])
-                .map_err(|e| anyhow!("{e}"))?;
+            // MLProgram cuts CoreML's peak memory by ~7x over the default NeuralNetwork
+            // format for this model (see docs/superpowers/spikes/2026-09-26-model-choice.md).
+            let ep = CoreMLExecutionProvider::default().with_model_format(ModelFormat::MLProgram);
+            builder = builder.with_execution_providers([ep.build()]).map_err(|e| anyhow!("{e}"))?;
         }
         #[cfg(not(target_os = "macos"))]
         let _ = use_coreml;
