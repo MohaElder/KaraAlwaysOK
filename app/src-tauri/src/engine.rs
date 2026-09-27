@@ -59,6 +59,8 @@ pub async fn setup_engine(state: State<'_, AppState>, on_progress: Channel<Setup
         *state.lock.lock().unwrap() = state.store.lock().ok();
         AppError::from(coded(e, Problem::EngineStart))
     })?;
+    let player = state.player.lock().unwrap();
+    worker.play(player.upcoming());
     *state.worker.lock().unwrap() = Some(worker);
     Ok(())
 }

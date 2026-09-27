@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export type ProblemCode =
   | "newerLibrary" | "dataFolder" | "inUse" | "libraryOpen" | "engineDownload" | "engineStart" | "fileMoved" | "fileNotAllowed"
@@ -58,3 +59,19 @@ export const listCollections = (kind: Kind) => invoke<CollectionCard[]>("list_co
 export const openCollection = (id: number) => invoke<CollectionPage>("open_collection", { id });
 export const getTrack = (trackId: number) => invoke<Track>("get_track", { trackId });
 export const trackLyrics = (trackId: number) => invoke<Lyrics>("track_lyrics", { trackId });
+
+export interface QueueEntry { key: number; track: Track }
+export interface PlayerSnapshot { entries: QueueEntry[]; current: number | null; ended: boolean; lyricOffsetMs: number }
+
+export const playerState = () => invoke<PlayerSnapshot>("player_state");
+export const queueAdd = (trackId: number, next: boolean) => invoke<PlayerSnapshot>("queue_add", { trackId, next });
+export const playTracks = (trackIds: number[], start: number) => invoke<PlayerSnapshot>("play_tracks", { trackIds, start });
+export const skipSong = (delta: number) => invoke<PlayerSnapshot>("skip", { delta });
+export const songEnded = () => invoke<PlayerSnapshot>("song_ended");
+export const queueMove = (key: number, to: number) => invoke<PlayerSnapshot>("queue_move", { key, to });
+export const queueRemove = (key: number) => invoke<PlayerSnapshot>("queue_remove", { key });
+export const setSinger = (value: number) => invoke<PlayerSnapshot>("set_singer", { value });
+export const setKey = (semitones: number) => invoke<PlayerSnapshot>("set_key", { semitones });
+export const setLyricOffset = (ms: number) => invoke<PlayerSnapshot>("set_lyric_offset", { ms });
+export const retryPrepare = () => invoke<void>("retry_prepare");
+export const onPlayer = (cb: (s: PlayerSnapshot) => void) => listen<PlayerSnapshot>("player", (e) => cb(e.payload));

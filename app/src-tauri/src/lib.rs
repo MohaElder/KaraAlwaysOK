@@ -1,5 +1,6 @@
 mod engine;
 mod library;
+mod player;
 mod settings;
 mod state;
 
@@ -27,6 +28,17 @@ pub fn run() {
             library::open_collection,
             library::get_track,
             library::track_lyrics,
+            player::player_state,
+            player::queue_add,
+            player::play_tracks,
+            player::skip,
+            player::song_ended,
+            player::queue_move,
+            player::queue_remove,
+            player::set_singer,
+            player::set_key,
+            player::set_lyric_offset,
+            player::retry_prepare,
         ])
         .build(tauri::generate_context!())
         .expect("error while running KaraAlwaysOK")

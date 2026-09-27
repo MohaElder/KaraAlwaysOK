@@ -1,3 +1,4 @@
+use crate::player::Player;
 use kara_core::cache;
 use kara_core::jobs::{Adder, Ctx, Event, Worker};
 use kara_core::library::Library;
@@ -8,12 +9,13 @@ use kara_core::store::{DataLock, Store};
 use serde::Serialize;
 use std::sync::{mpsc, Arc, Mutex};
 
-#[expect(dead_code, reason = "read by the library, adding and player commands")]
+#[expect(dead_code, reason = "read by the audio and adding commands")]
 pub struct AppState {
     pub store: Store,
     pub lib: Mutex<Library>,
     /// Reads song audio.
     pub reader: Arc<Mutex<Library>>,
+    pub player: Mutex<Player>,
     /// The data folder lock, until the worker holds it.
     pub lock: Mutex<Option<DataLock>>,
     pub worker: Mutex<Option<Worker>>,
@@ -36,7 +38,7 @@ impl AppState {
         cache::startup_cleanup(&store, &lib, &lock)?;
         let reader = Arc::new(Mutex::new(Library::open(&store.db_path())?));
         let adder = Adder::spawn(ctx(&store), Box::new(Lrclib::new()?), events.clone())?;
-        Ok(Self { store, lib: Mutex::new(lib), reader, lock: Mutex::new(Some(lock)), worker: Mutex::new(None), setup: Default::default(), adder, events })
+        Ok(Self { store, lib: Mutex::new(lib), reader, player: Mutex::default(), lock: Mutex::new(Some(lock)), worker: Mutex::new(None), setup: Default::default(), adder, events })
     }
 }
 
