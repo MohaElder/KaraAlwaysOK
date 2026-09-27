@@ -161,6 +161,16 @@ const en = {
   "settings.language": "Language",
   "settings.systemLanguage": "Same as the system",
   "settings.version": "Version {v}",
+  "update.title": "Software update",
+  "update.available": "Version {version} is ready to install.",
+  "update.install": "Install and restart",
+  "update.later": "Later",
+  "update.skip": "Skip this version",
+  "update.downloading": "Downloading the update…",
+  "update.upToDate": "You have the latest version.",
+  "update.failed": "Couldn't check for updates. Try again later.",
+  "update.ok": "OK",
+  "update.check": "Check for updates",
 };
 
 export default en;

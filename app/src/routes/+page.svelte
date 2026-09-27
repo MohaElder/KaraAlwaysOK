@@ -14,6 +14,8 @@
   import PlaylistMenu from "$lib/components/PlaylistMenu.svelte";
   import EditSheet from "$lib/components/EditSheet.svelte";
   import SettingsSheet from "$lib/components/SettingsSheet.svelte";
+  import UpdatePrompt from "$lib/update/UpdatePrompt.svelte";
+  import { updater } from "$lib/update/updater.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
@@ -67,6 +69,7 @@
     engine.start();
     player.init();
     adding.init();
+    void updater.autoCheck();
   });
 </script>
 
@@ -101,6 +104,7 @@
 <PlaylistMenu />
 <EditSheet />
 <SettingsSheet />
+<UpdatePrompt />
 <DropOverlay />
 <Toasts />
 <Tooltip />

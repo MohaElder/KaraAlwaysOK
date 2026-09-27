@@ -163,6 +163,16 @@ const ja: Record<Key, string> = {
   "settings.language": "言語",
   "settings.systemLanguage": "システムと同じ",
   "settings.version": "バージョン {v}",
+  "update.title": "ソフトウェアアップデート",
+  "update.available": "バージョン {version} をインストールできます。",
+  "update.install": "インストールして再起動",
+  "update.later": "後で",
+  "update.skip": "このバージョンをスキップ",
+  "update.downloading": "アップデートをダウンロード中…",
+  "update.upToDate": "最新バージョンです。",
+  "update.failed": "アップデートを確認できませんでした。後でもう一度お試しください。",
+  "update.ok": "OK",
+  "update.check": "アップデートを確認",
 };
 
 export default ja;

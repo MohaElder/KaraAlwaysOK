@@ -163,6 +163,16 @@ const zhHans: Record<Key, string> = {
   "settings.language": "语言",
   "settings.systemLanguage": "跟随系统",
   "settings.version": "版本 {v}",
+  "update.title": "软件更新",
+  "update.available": "可以安装版本 {version}。",
+  "update.install": "安装并重新启动",
+  "update.later": "稍后",
+  "update.skip": "跳过此版本",
+  "update.downloading": "正在下载更新…",
+  "update.upToDate": "已是最新版本。",
+  "update.failed": "无法检查更新。请稍后再试。",
+  "update.ok": "好",
+  "update.check": "检查更新",
 };
 
 export default zhHans;

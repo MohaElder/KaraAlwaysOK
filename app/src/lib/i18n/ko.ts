@@ -163,6 +163,16 @@ const ko: Record<Key, string> = {
   "settings.language": "언어",
   "settings.systemLanguage": "시스템과 같게",
   "settings.version": "버전 {v}",
+  "update.title": "소프트웨어 업데이트",
+  "update.available": "버전 {version}을(를) 설치할 수 있습니다.",
+  "update.install": "설치 후 재시작",
+  "update.later": "나중에",
+  "update.skip": "이 버전 건너뛰기",
+  "update.downloading": "업데이트를 다운로드하는 중…",
+  "update.upToDate": "최신 버전입니다.",
+  "update.failed": "업데이트를 확인할 수 없습니다. 나중에 다시 시도하세요.",
+  "update.ok": "확인",
+  "update.check": "업데이트 확인",
 };
 
 export default ko;

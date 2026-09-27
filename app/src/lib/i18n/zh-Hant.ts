@@ -163,6 +163,16 @@ const zhHant: Record<Key, string> = {
   "settings.language": "語言",
   "settings.systemLanguage": "跟隨系統",
   "settings.version": "版本 {v}",
+  "update.title": "軟體更新",
+  "update.available": "可以安裝版本 {version}。",
+  "update.install": "安裝並重新啟動",
+  "update.later": "稍後",
+  "update.skip": "略過此版本",
+  "update.downloading": "正在下載更新…",
+  "update.upToDate": "已是最新版本。",
+  "update.failed": "無法檢查更新。請稍後再試。",
+  "update.ok": "好",
+  "update.check": "檢查更新",
 };
 
 export default zhHant;

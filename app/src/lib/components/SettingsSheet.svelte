@@ -8,6 +8,7 @@
   import { adding } from "$lib/state/adding.svelte";
   import { fade } from "$lib/motion";
   import { tip } from "$lib/tooltip.svelte";
+  import { updater } from "$lib/update/updater.svelte";
   import Sheet from "./Sheet.svelte";
   import GearIcon from "phosphor-svelte/lib/GearIcon";
   import HardDrivesIcon from "phosphor-svelte/lib/HardDrivesIcon";
@@ -17,6 +18,7 @@
   import TrashIcon from "phosphor-svelte/lib/TrashIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import TranslateIcon from "phosphor-svelte/lib/TranslateIcon";
+  import ArrowsClockwiseIcon from "phosphor-svelte/lib/ArrowsClockwiseIcon";
 
   const GB = 1024 ** 3;
   const LIMITS = [1, 2, 5, 10, 20, 50];
@@ -102,6 +104,7 @@
         <b>{t("app.name")}</b>
         <span class="muted num">{t("settings.version", { v: version })}</span>
       </div>
+      <button class="btn" onclick={() => { ui.sheet = null; void updater.manualCheck(); }}><ArrowsClockwiseIcon />{t("update.check")}</button>
     </section>
   </Sheet>
 {/if}

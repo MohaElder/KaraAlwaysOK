@@ -163,6 +163,16 @@ const es: Record<Key, string> = {
   "settings.language": "Idioma",
   "settings.systemLanguage": "Igual que el sistema",
   "settings.version": "Versión {v}",
+  "update.title": "Actualización",
+  "update.available": "La versión {version} está lista para instalar.",
+  "update.install": "Instalar y reiniciar",
+  "update.later": "Más tarde",
+  "update.skip": "Omitir esta versión",
+  "update.downloading": "Descargando la actualización…",
+  "update.upToDate": "Tienes la versión más reciente.",
+  "update.failed": "No se pudo buscar actualizaciones. Inténtalo más tarde.",
+  "update.ok": "Aceptar",
+  "update.check": "Buscar actualizaciones",
 };
 
 export default es;
