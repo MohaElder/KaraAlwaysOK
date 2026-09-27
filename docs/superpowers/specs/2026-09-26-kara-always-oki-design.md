@@ -52,6 +52,8 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Karaoke view, details** — lyrics are centered. Before every sung part (the intro and each instrumental gap longer than ~3 s) show a 3-dot countdown, like Apple Music. The background is an animated gradient built from the album artwork's colors, slowly moving, like Apple Music. Duets: when the lyrics mark who sings a line (e.g. male / female / together, from LRC or TTML voice tags), show the parts distinctly (different alignment and tint); without such marks, lines show normally.
 
+**Glass rule** — anything that floats on top of other content is glass (translucent, backdrop blur, hairline edge, no heavy shadow): the player bar and its buttons, the karaoke top controls, the sticky search bar and mic pill, menus, the queue panel, toasts, tooltips, and the phone's bottom bar and banners. Windows/sheets and plain surfaces (the sidebar, tabs) are not glass. Fall back to an opaque fill when the system asks for reduced transparency.
+
 **Selection style** — selected items (sidebar, lists) use a plain tinted overlay with no shadow, like Apple Music.
 
 **Mic pill** — top-right in both library and karaoke view. Handheld-karaoke-mic icon + number of joined phones, or a **+** when none. Opens the connect window: QR code, join code, a short tutorial for the one-time browser warning (iPhone: *Show Details → visit this website*; Android: *Advanced → Proceed*), and the list of joined phones with a level meter, volume and Remove.
