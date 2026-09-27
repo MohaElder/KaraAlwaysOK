@@ -31,6 +31,12 @@ class Draft {
     if (!this.saving) void this.flush();
   }
 
+  /** Drops the unsaved value, including one still waiting to be saved. */
+  reset() {
+    this.value = null;
+    this.pending = null;
+  }
+
   /** Lets the saved value show again once no save is running. */
   settle() {
     if (!this.saving) this.value = null;
@@ -102,7 +108,7 @@ class PlayerState {
     const same = (cur?.key ?? null) === this.loadedKey;
     for (const d of Object.values(this.drafts)) {
       if (same) d.settle();
-      else d.value = null;
+      else d.reset();
     }
     if (cur) this.hearSettings();
     if (same) return;
