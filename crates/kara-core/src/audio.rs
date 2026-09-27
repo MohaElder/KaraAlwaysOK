@@ -23,9 +23,6 @@ pub struct Stereo {
 }
 
 impl Stereo {
-    pub fn silence(len: usize) -> Self {
-        Self { left: vec![0.0; len], right: vec![0.0; len] }
-    }
     pub fn len(&self) -> usize {
         self.left.len()
     }
@@ -34,6 +31,13 @@ impl Stereo {
     }
     pub fn duration_ms(&self) -> i64 {
         self.len() as i64 * 1000 / SAMPLE_RATE as i64
+    }
+}
+
+#[cfg(test)]
+impl Stereo {
+    pub fn silence(len: usize) -> Self {
+        Self { left: vec![0.0; len], right: vec![0.0; len] }
     }
     pub fn slice(&self, start: usize, end: usize) -> Stereo {
         Stereo { left: self.left[start..end].to_vec(), right: self.right[start..end].to_vec() }
@@ -340,7 +344,7 @@ mod tests {
         let p = dir.path().join("mono48.wav");
         write_sine_wav(&p, 48_000, 1, 2.0, 440.0);
         let d = decode_file(&p).unwrap();
-        assert_eq!(d.audio.len(), 88_200);
+        assert_eq!((d.audio.len(), d.audio.duration_ms()), (88_200, 2000));
         assert_eq!(d.audio.left, d.audio.right);
         let peak = d.audio.left[20_000..60_000].iter().fold(0f32, |m, x| m.max(x.abs()));
         assert!((0.45..0.55).contains(&peak), "peak {peak}");
@@ -430,14 +434,5 @@ mod tests {
         let p = dir.path().join("notes.txt");
         std::fs::write(&p, "hello").unwrap();
         assert!(decode_file(&p).is_err());
-    }
-
-    #[test]
-    fn stereo_helpers() {
-        let mut a = Stereo::silence(10);
-        a.append(&Stereo::silence(5));
-        assert_eq!(a.len(), 15);
-        assert_eq!(a.slice(2, 7).len(), 5);
-        assert_eq!(Stereo::silence(44_100).duration_ms(), 1000);
     }
 }
