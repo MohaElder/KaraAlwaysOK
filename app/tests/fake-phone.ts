@@ -1,4 +1,4 @@
-import type { PlayerSnapshot, Track } from "$lib/api";
+import type { LyricLine, Lyrics, PlayerSnapshot, Track } from "$lib/api";
 
 declare global {
   interface Window {
@@ -11,6 +11,23 @@ const song = (id: number, title: string, artist: string | null): Track => ({
 });
 
 const songs = [song(1, "Paper Boats", "Juniper Row"), song(2, "Kettle Duet", "Juniper Row"), song(3, "Lemon Skies", "The Porchlights")];
+
+const line = (voice: LyricLine["voice"], ...words: [string, number, number][]): LyricLine => ({
+  start_ms: words[0][1], end_ms: words.at(-1)![2], text: words.map((w) => w[0]).join(" "), voice, words: words.map(([text, start_ms, end_ms]) => ({ text, start_ms, end_ms })),
+});
+
+const lyrics: Record<number, Lyrics> = {
+  1: { source: "lrclib", lines: [
+    line(undefined, ["Fold", 5000, 5500], ["the", 5500, 6000], ["morning", 6000, 7000], ["paper", 7000, 8000]),
+    line(undefined, ["Send", 8500, 9000], ["it", 9000, 9500], ["down", 9500, 10000], ["the", 10000, 10500], ["drain", 10500, 11000]),
+    line(undefined, ["Wave", 20000, 20500], ["from", 20500, 21000], ["the", 21000, 21500], ["bridge", 21500, 22000]),
+  ] },
+  2: { source: "embedded", lines: [
+    line("m", ["Who", 1000, 1500], ["boiled", 1500, 2000], ["the", 2000, 2500], ["water", 2500, 3000]),
+    line("f", ["I", 3000, 3500], ["did,", 3500, 4000], ["of", 4000, 4500], ["course", 4500, 5000]),
+    line("both", ["Tea", 5000, 5500], ["for", 5500, 6000], ["two", 6000, 7000]),
+  ] },
+};
 
 let socket: FakeSocket | null = null;
 let worklet: { port: { onmessage: ((e: MessageEvent) => void) | null } } | null = null;
@@ -44,6 +61,13 @@ const fakePhone = {
   /** The computer ends the session. */
   end() {
     socket?.shut(4001);
+  },
+  /** The computer plays song `id` alone; returns its queue key. */
+  play(id: number) {
+    const track = songs.find((s) => s.id === id)!;
+    fakePhone.snapshot = { entries: [{ key: id * 10, track, by: null }], current: 0, ended: false, lyricOffsetMs: 0 };
+    socket?.deliver({ t: "player", snapshot: fakePhone.snapshot });
+    return id * 10;
   },
   /** The mic makes one frame of sound. */
   frame() {
@@ -80,6 +104,7 @@ class FakeSocket {
 
   /** The computer's answers. */
   reply(m: Record<string, unknown>) {
+    if (m.t === "lyrics") return this.deliver({ t: "lyrics", trackId: m.trackId, lyrics: lyrics[Number(m.trackId)] ?? { source: "none", lines: [] } });
     if (m.t !== "join") return;
     if (m.code !== "4827") return this.shut(4003);
     if (fakePhone.full) return this.shut(4002);

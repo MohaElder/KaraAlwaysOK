@@ -1,4 +1,4 @@
-import { test, expect, sent, frames, joinAs } from "./phone";
+import { test, expect, sent, frames, joinAs, server } from "./phone";
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -110,4 +110,39 @@ test.describe("on a phone set to Japanese", () => {
     await page.goto("/phone?code=4827");
     await expect(page.getByRole("heading", { name: "カラオケに参加" })).toBeVisible();
   });
+});
+
+test("the Mic tab shows the song, what's next and the lyrics in time with the computer", async ({ page }) => {
+  await joinAs(page);
+  await expect(page.locator(".psong")).toContainText("Paper Boats");
+  await expect(page.locator(".pnext")).toContainText("Up next: Lemon Skies · The Porchlights");
+  expect(await sent(page)).toContainEqual({ t: "lyrics", trackId: 1 });
+  await server(page, { t: "clock", key: 1, positionMs: 6_000, playing: false });
+  await expect(page.locator(".plyr .now")).toHaveText("Fold the morning paper");
+  await server(page, { t: "clock", key: 1, positionMs: 9_000, playing: false });
+  await expect(page.locator(".plyr .now")).toHaveText("Send it down the drain");
+  await expect(page.locator(".plyr .next")).toHaveText("Wave from the bridge");
+  const key = await page.evaluate(() => window.fakePhone.play(2));
+  await server(page, { t: "clock", key, positionMs: 1_200, playing: false });
+  await expect(page.getByText("Male part")).toBeVisible();
+  await page.evaluate(() => window.fakePhone.play(3));
+  await expect(page.getByText("No lyrics found, sing it your way.")).toBeVisible();
+  await server(page, { t: "player", snapshot: { entries: [], current: null, ended: false, lyricOffsetMs: 0 } });
+  await expect(page.getByText("Waiting for a song")).toBeVisible();
+});
+
+test("Voice and Singer each open their own slider and send its value", async ({ page }) => {
+  await joinAs(page);
+  await page.getByRole("button", { name: "Voice" }).click();
+  await page.getByRole("slider", { name: "Your voice volume" }).fill("55");
+  await page.getByRole("button", { name: "Singer" }).click();
+  await expect(page.getByRole("slider", { name: "Your voice volume" })).toBeHidden();
+  const singer = page.getByRole("slider", { name: "Singer: left is the original, right removes the singer" });
+  await expect(singer).toHaveValue("100");
+  await singer.fill("30");
+  await expect.poll(async () => (await sent(page)).filter((m) => m.t === "singer").at(-1)).toEqual({ t: "singer", v: 30 });
+  expect(await sent(page)).toContainEqual({ t: "voice", v: 55 });
+  await page.reload();
+  await joinAs(page);
+  expect(await sent(page)).toContainEqual({ t: "voice", v: 55 });
 });

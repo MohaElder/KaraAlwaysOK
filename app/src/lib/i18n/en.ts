@@ -239,6 +239,15 @@ const en = {
   "phone.mute": "Mute",
   "phone.unmute": "Unmute",
   "phone.reconnecting": "Wi-Fi dropped. Reconnecting…",
+  "phone.waitingSong": "Waiting for a song",
+  "phone.addFromSongs": "Add a song from Songs.",
+  "phone.upNext": "Up next: {song}",
+  "phone.voice": "Voice",
+  "phone.voiceAria": "Your voice volume",
+  "phone.singer": "Singer",
+  "phone.partM": "Male part",
+  "phone.partF": "Female part",
+  "phone.partBoth": "Together",
 };
 
 export default en;

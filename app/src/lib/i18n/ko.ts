@@ -241,6 +241,15 @@ const ko: Record<Key, string> = {
   "phone.mute": "음소거",
   "phone.unmute": "음소거 해제",
   "phone.reconnecting": "Wi-Fi 연결이 끊겼습니다. 다시 연결하는 중…",
+  "phone.waitingSong": "노래를 기다리는 중",
+  "phone.addFromSongs": "노래 탭에서 노래를 추가하세요.",
+  "phone.upNext": "다음 곡: {song}",
+  "phone.voice": "목소리",
+  "phone.voiceAria": "내 목소리 볼륨",
+  "phone.singer": "가수",
+  "phone.partM": "남성 파트",
+  "phone.partF": "여성 파트",
+  "phone.partBoth": "함께",
 };
 
 export default ko;

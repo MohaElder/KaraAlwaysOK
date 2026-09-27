@@ -241,6 +241,15 @@ const zhHant: Record<Key, string> = {
   "phone.mute": "靜音",
   "phone.unmute": "取消靜音",
   "phone.reconnecting": "Wi-Fi 斷線了。正在重新連線…",
+  "phone.waitingSong": "正在等待歌曲",
+  "phone.addFromSongs": "從「歌曲」新增一首歌。",
+  "phone.upNext": "下一首：{song}",
+  "phone.voice": "人聲",
+  "phone.voiceAria": "你的人聲音量",
+  "phone.singer": "原唱",
+  "phone.partM": "男聲部分",
+  "phone.partF": "女聲部分",
+  "phone.partBoth": "合唱",
 };
 
 export default zhHant;

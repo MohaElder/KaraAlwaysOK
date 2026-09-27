@@ -241,6 +241,15 @@ const ja: Record<Key, string> = {
   "phone.mute": "ミュート",
   "phone.unmute": "ミュート解除",
   "phone.reconnecting": "Wi-Fiが切れました。再接続しています…",
+  "phone.waitingSong": "曲を待っています",
+  "phone.addFromSongs": "「曲」から曲を追加してください。",
+  "phone.upNext": "次の曲：{song}",
+  "phone.voice": "声",
+  "phone.voiceAria": "あなたの声の音量",
+  "phone.singer": "歌手",
+  "phone.partM": "男性パート",
+  "phone.partF": "女性パート",
+  "phone.partBoth": "一緒に",
 };
 
 export default ja;

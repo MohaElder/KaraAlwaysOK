@@ -1,4 +1,4 @@
-import type { PlayerSnapshot, ProblemCode } from "$lib/api";
+import type { Lyrics, PlayerSnapshot, ProblemCode } from "$lib/api";
 import { say } from "$lib/i18n/engine";
 import { toasts } from "$lib/state/toasts.svelte";
 import { openMic, type Mic } from "./mic";
@@ -17,6 +17,9 @@ const SILENT_MS = 3_000;
 type FromMac =
   | { t: "joined" }
   | { t: "player"; snapshot: PlayerSnapshot }
+  | { t: "clock"; key: number | null; positionMs: number; playing: boolean }
+  | { t: "lyrics"; trackId: number; lyrics: Lyrics }
+  | { t: "lyricsChanged"; trackId: number }
   | { t: "level"; v: number }
   | { t: "refused"; problem: ProblemCode | null };
 
@@ -47,6 +50,11 @@ class PhoneLink {
   live = $state(false);
   level = $state(0);
   snapshot = $state<PlayerSnapshot | null>(null);
+  clock = $state({ key: null as number | null, positionMs: 0, playing: false, at: 0 });
+  lyrics = $state<{ trackId: number; lyrics: Lyrics } | null>(null);
+  voice = $state(Number(recall(() => localStorage, "phone.voice") ?? 80));
+  current = $derived(this.entryAt(0));
+  next = $derived(this.entryAt(1));
 
   private readonly id = recall(() => localStorage, "phone.id") ?? crypto.randomUUID();
   private socket: WebSocket | null = null;
@@ -56,6 +64,9 @@ class PhoneLink {
   private lostAt = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private asking = false;
+  private asked: number | null = null;
+  private sentAt = new Map<string, number>();
+  private later = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     keep(() => localStorage, "phone.id", this.id);
@@ -144,10 +155,21 @@ class PhoneLink {
     if (m.t === "joined") {
       if (this.reconnecting) this.reconnecting = false;
       else this.screen = "perm";
+      if (!this.lyrics) this.asked = null;
       this.sendSettings();
       void this.keepAwake();
-    } else if (m.t === "player") this.snapshot = m.snapshot;
-    else if (m.t === "level") this.level = m.v;
+    } else if (m.t === "player") {
+      this.snapshot = m.snapshot;
+      this.wantLyrics();
+    } else if (m.t === "clock") this.clock = { key: m.key, positionMs: m.positionMs, playing: m.playing, at: performance.now() };
+    else if (m.t === "lyrics") {
+      if (m.trackId === this.current?.track.id) this.lyrics = m;
+    } else if (m.t === "lyricsChanged") {
+      if (m.trackId === this.current?.track.id) {
+        this.asked = null;
+        this.wantLyrics();
+      }
+    } else if (m.t === "level") this.level = m.v;
     else if (m.t === "refused") toasts.show(say(m), { icon: WarningIcon });
   }
 
@@ -185,6 +207,8 @@ class PhoneLink {
     this.live = false;
     this.reconnecting = false;
     this.snapshot = null;
+    this.lyrics = null;
+    this.asked = null;
   }
 
   private hear(pcm: ArrayBuffer) {
@@ -197,7 +221,50 @@ class PhoneLink {
 
   /** Sends what the computer keeps for this phone's row; called after every join. */
   private sendSettings() {
+    this.send({ t: "voice", v: this.voice });
     this.sendLive();
+  }
+
+  /** Seconds into the current song, as the computer last said, moving on while it plays. */
+  position(): number {
+    const c = this.clock;
+    if (c.key == null || c.key !== this.current?.key) return 0;
+    return (c.positionMs + (c.playing ? performance.now() - c.at : 0)) / 1000;
+  }
+
+  setVoice(v: number) {
+    this.voice = v;
+    keep(() => localStorage, "phone.voice", String(v));
+    this.sendSoon({ t: "voice", v });
+  }
+
+  setSinger(v: number) {
+    this.sendSoon({ t: "singer", v });
+  }
+
+  private entryAt(offset: number) {
+    const s = this.snapshot;
+    return s?.current == null ? null : (s.entries[s.current + offset] ?? null);
+  }
+
+  private wantLyrics() {
+    const id = this.current?.track.id ?? null;
+    if (id == null || id === this.asked) return;
+    this.asked = id;
+    this.lyrics = null;
+    this.send({ t: "lyrics", trackId: id });
+  }
+
+  /** Sends a slider's value at most every 100 ms, always ending on the latest one. */
+  private sendSoon(m: { t: string; v: number }) {
+    clearTimeout(this.later.get(m.t));
+    const go = () => {
+      this.sentAt.set(m.t, performance.now());
+      this.send(m);
+    };
+    const wait = 100 - (performance.now() - (this.sentAt.get(m.t) ?? -Infinity));
+    if (wait <= 0) go();
+    else this.later.set(m.t, setTimeout(go, wait));
   }
 
   /** Every second while joined: a ping so the computer knows the phone is there, and a connection that has said nothing for a few seconds counts as dropped. */

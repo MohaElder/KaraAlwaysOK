@@ -241,6 +241,15 @@ const es: Record<Key, string> = {
   "phone.mute": "Silenciar",
   "phone.unmute": "Activar sonido",
   "phone.reconnecting": "Se cortó la wifi. Reconectando…",
+  "phone.waitingSong": "Esperando una canción",
+  "phone.addFromSongs": "Añade una canción desde Canciones.",
+  "phone.upNext": "A continuación: {song}",
+  "phone.voice": "Voz",
+  "phone.voiceAria": "Volumen de tu voz",
+  "phone.singer": "Cantante",
+  "phone.partM": "Parte masculina",
+  "phone.partF": "Parte femenina",
+  "phone.partBoth": "Juntos",
 };
 
 export default es;

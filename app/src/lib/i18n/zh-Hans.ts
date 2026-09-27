@@ -241,6 +241,15 @@ const zhHans: Record<Key, string> = {
   "phone.mute": "静音",
   "phone.unmute": "取消静音",
   "phone.reconnecting": "Wi-Fi 断开了。正在重新连接…",
+  "phone.waitingSong": "正在等待歌曲",
+  "phone.addFromSongs": "从“歌曲”添加一首歌。",
+  "phone.upNext": "下一首：{song}",
+  "phone.voice": "人声",
+  "phone.voiceAria": "你的人声音量",
+  "phone.singer": "原唱",
+  "phone.partM": "男声部分",
+  "phone.partF": "女声部分",
+  "phone.partBoth": "合唱",
 };
 
 export default zhHans;
