@@ -63,12 +63,15 @@ fn interleave(a: &Stereo) -> Vec<f32> {
 }
 
 /// One chunk's vocals and instrumental, readable as soon as that chunk is written.
+/// Deletes an original it can't read, so the next prepare fetches the song again.
 pub fn chunk_pcm(store: &Store, lib: &Library, hash: &str, model_id: &str, index: u32) -> Result<ChunkPcm> {
     let row = lib.separation(hash, model_id)?.context("This song isn't prepared yet.")?;
     let original = store.original_path(hash).context("This song isn't prepared yet.")?;
     let vocals = read_vocals(store, hash, model_id, index)?;
     let chunk_len = row.chunk_ms as usize * SAMPLE_RATE as usize / 1000;
-    let mix = decode_range(&original, index as usize * chunk_len, vocals.len())?;
+    let mix = decode_range(&original, index as usize * chunk_len, vocals.len()).inspect_err(|_| {
+        let _ = std::fs::remove_file(&original);
+    })?;
     let minus = |m: &[f32], v: &[f32]| m.iter().zip(v).map(|(m, v)| m - v).collect();
     let inst = Stereo { left: minus(&mix.left, &vocals.left), right: minus(&mix.right, &vocals.right) };
     Ok(ChunkPcm { vocals: interleave(&vocals), inst: interleave(&inst) })

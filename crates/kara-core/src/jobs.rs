@@ -232,11 +232,14 @@ fn prepare_inner(
 }
 
 /// The song in the standard format, plus its hash. Decodes the kept original
-/// when there is one; otherwise fetches the song and keeps a copy.
+/// when there is one and it reads; otherwise deletes it, fetches the song and keeps a copy.
 fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, emit: &mut dyn FnMut(Event)) -> Result<(String, Stereo)> {
     if let Some(hash) = &source.audio_hash {
         if let Some(p) = ctx.store.original_path(hash) {
-            return Ok((hash.clone(), audio::decode_file(&p).context("Couldn't read this song's audio.")?.audio));
+            match audio::decode_file(&p) {
+                Ok(d) => return Ok((hash.clone(), d.audio)),
+                Err(_) => std::fs::remove_file(&p).context("Couldn't read this song's audio.")?,
+            }
         }
     }
     emit(Event::Stage { track_id: track.id, stage: Stage::Fetching });
@@ -599,6 +602,31 @@ mod tests {
         let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
         assert!(events.contains(&Event::Stage { track_id: t, stage: Stage::Fetching }));
         assert!(c.store.original_path(&hash).is_some());
+    }
+
+    #[test]
+    fn a_damaged_original_is_fetched_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        run(&c, &lib, t, &AtomicBool::new(false)).0.unwrap();
+        let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
+        let damage = || std::fs::write(c.store.original_path(&hash).unwrap(), b"damaged").unwrap();
+        let fetches_and_plays = || {
+            let (r, events) = run(&c, &lib, t, &AtomicBool::new(false));
+            assert_eq!(r.unwrap(), Outcome::Done);
+            assert!(events.contains(&Event::Stage { track_id: t, stage: Stage::Fetching }));
+            assert!(cache::track_chunk_pcm(&c.store, &lib, "test", t, 2).is_ok());
+        };
+
+        damage();
+        assert!(cache::track_chunk_pcm(&c.store, &lib, "test", t, 0).is_err());
+        fetches_and_plays();
+
+        damage();
+        std::fs::remove_file(c.store.chunk_path(&hash, "test", 2)).unwrap();
+        fetches_and_plays();
     }
 
     #[test]
