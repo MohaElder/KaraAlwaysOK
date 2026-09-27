@@ -1,4 +1,5 @@
 mod engine;
+mod library;
 mod settings;
 mod state;
 
@@ -18,7 +19,15 @@ pub fn run() {
             let _ = engine::open_library(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![settings::system_locale, engine::startup_problem, engine::setup_engine])
+        .invoke_handler(tauri::generate_handler![
+            settings::system_locale,
+            engine::startup_problem,
+            engine::setup_engine,
+            library::list_collections,
+            library::open_collection,
+            library::get_track,
+            library::track_lyrics,
+        ])
         .build(tauri::generate_context!())
         .expect("error while running KaraAlwaysOK")
         .run(|_, event| {

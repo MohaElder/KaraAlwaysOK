@@ -20,3 +20,41 @@ export async function setupEngine(onProgress: (p: SetupProgress) => void): Promi
 }
 
 export const startupProblem = () => invoke<AppError | null>("startup_problem");
+
+export type Kind = "playlist" | "album" | "artist";
+
+export interface Track {
+  id: number;
+  provider: "local" | "spotify" | "apple";
+  title: string;
+  artist: string | null;
+  album: string | null;
+  durationMs: number | null;
+  vocalRemoval: number;
+  keySemitones: number;
+  instrumental: boolean;
+  artworkPath: string | null;
+  artSeed: number;
+}
+
+export interface CollectionCard {
+  id: number;
+  provider: Track["provider"];
+  kind: Kind;
+  name: string;
+  subtitle: string | null;
+  user: boolean;
+  count: number;
+  covers: Track[];
+}
+
+export interface CollectionPage { card: CollectionCard; tracks: Track[] }
+
+export interface Word { start_ms: number; end_ms: number; text: string }
+export interface LyricLine { start_ms: number; end_ms: number; text: string; words: Word[]; voice?: "m" | "f" | "both" }
+export interface Lyrics { source: "lrclib" | "embedded" | "none" | null; lines: LyricLine[] }
+
+export const listCollections = (kind: Kind) => invoke<CollectionCard[]>("list_collections", { kind });
+export const openCollection = (id: number) => invoke<CollectionPage>("open_collection", { id });
+export const getTrack = (trackId: number) => invoke<Track>("get_track", { trackId });
+export const trackLyrics = (trackId: number) => invoke<Lyrics>("track_lyrics", { trackId });

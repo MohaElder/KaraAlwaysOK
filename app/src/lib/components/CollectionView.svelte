@@ -1,0 +1,61 @@
+<script lang="ts">
+  import type { Kind } from "$lib/api";
+  import type { Icon } from "$lib/icons";
+  import { t, type Key } from "$lib/i18n/index.svelte";
+  import { cardName, library } from "$lib/state/library.svelte";
+  import { minutes } from "$lib/format";
+  import { fade } from "$lib/motion";
+  import Cover from "./Cover.svelte";
+  import SongRow from "./SongRow.svelte";
+  import PlaylistIcon from "phosphor-svelte/lib/PlaylistIcon";
+  import VinylRecordIcon from "phosphor-svelte/lib/VinylRecordIcon";
+  import UserIcon from "phosphor-svelte/lib/UserIcon";
+
+  const kinds: Record<Kind, { label: Key; icon: Icon }> = {
+    playlist: { label: "kind.playlist", icon: PlaylistIcon },
+    album: { label: "kind.album", icon: VinylRecordIcon },
+    artist: { label: "kind.artist", icon: UserIcon },
+  };
+  const page = $derived(library.page);
+  const tracks = $derived(library.visibleTracks);
+</script>
+
+{#if page}
+  {@const kind = kinds[page.card.kind]}
+  {#key page.card.id}
+    <section in:fade>
+      <div class="hero">
+        {#if !page.card.covers.length}
+          <div class="cover none"><PlaylistIcon size={56} /></div>
+        {:else}
+          <div class="cover" class:round={page.card.kind === "artist"}><Cover covers={page.card.covers} size="100%" grid={page.card.kind === "playlist"} /></div>
+        {/if}
+        <div class="grow">
+          <div class="cap hstack"><kind.icon size={14} />{t(kind.label)}</div>
+          <h1>{cardName(page.card)}</h1>
+          <p class="sub num">{#if page.card.subtitle}<span class="subtitle">{page.card.subtitle}</span> · {/if}{t("library.songs", { n: tracks.length })} · {t("library.minutes", { n: minutes(tracks) })}</p>
+          <div class="actions"></div>
+        </div>
+      </div>
+      <div class="rows">
+        {#each tracks as song (song.id)}
+          <SongRow track={song} />
+        {:else}
+          <p class="hstack muted none-yet"><PlaylistIcon />{t("library.emptyPlaylist")}</p>
+        {/each}
+      </div>
+    </section>
+  {/key}
+{/if}
+
+<style>
+  .hero { display: flex; gap: var(--s7); align-items: flex-end; padding: var(--s2) 0 var(--s6); }
+  .cover { width: 184px; aspect-ratio: 1; flex: none; border-radius: var(--r-sm); overflow: hidden; display: grid; box-shadow: 0 18px 40px -22px var(--shadow); }
+  .cover.round { border-radius: 50%; }
+  .cover.none { place-items: center; background: var(--raised); color: var(--faint); }
+  h1 { font: 800 28px/1.1 var(--display); letter-spacing: -.02em; margin: var(--s2) 0 var(--s1); text-wrap: balance; }
+  .sub { margin-bottom: var(--s5); }
+  .subtitle { font-family: var(--body); font-size: 14px; }
+  .actions { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: center; min-height: 40px; }
+  .none-yet { padding: var(--s4) var(--s2); }
+</style>
