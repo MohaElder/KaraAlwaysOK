@@ -149,7 +149,8 @@ fn download_file(url: &Url, dir: &Path) -> Result<PathBuf> {
 }
 
 /// Gets the source's original audio onto disk and returns its path. Links are
-/// downloaded into `store.tmp_dir()` (the caller deletes them after decoding).
+/// downloaded into `store.tmp_dir()` (the caller deletes them after decoding); a link's
+/// first download also fills in the song's info.
 /// Error messages are shown to the user as-is.
 pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSource) -> Result<PathBuf> {
     match source.kind {
@@ -163,13 +164,15 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                     let bin = ytdlp::ensure(&bin_dir).context(Problem::DownloaderSetup)?;
                     let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir(), || ytdlp::update(&bin_dir))
                         .context(Problem::Download)?;
-                    lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
-                    let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
-                    texts.extend(f.tags.iter().map(String::as_str));
-                    if looks_instrumental(&texts) {
-                        lib.mark_instrumental(track.id)?;
+                    if source.audio_hash.is_none() {
+                        lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
+                        let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
+                        texts.extend(f.tags.iter().map(String::as_str));
+                        if looks_instrumental(&texts) {
+                            lib.mark_instrumental(track.id)?;
+                        }
+                        link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     }
-                    link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     if let Some(url) = f.thumbnail.as_deref().filter(|_| track.artwork_path.is_none()) {
                         let _ = download_artwork(lib, store, track.id, url);
                     }
@@ -259,6 +262,30 @@ mod tests {
         assert_eq!(artists, vec!["Juniper Row"]);
         assert_eq!(lib.collections(None, CollectionKind::Album).unwrap()[0].name, "Demos 2026");
         assert_eq!(lib.collection_tracks(lib.collections(None, CollectionKind::Playlist).unwrap()[0].id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn downloading_a_link_again_keeps_the_songs_info() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        let exe = store.bin_dir().join("yt-dlp-fake/yt-dlp_macos");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "#!/bin/sh\necho '{\"filepath\":\"/made/up.m4a\",\"title\":\"Made Up Song\",\"uploader\":\"Made Up Channel\"}'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(store.bin_dir().join("yt-dlp.current"), "fake").unwrap();
+        let lib = Library::open_in_memory().unwrap();
+        let ing = add_link(&lib, &link::parse_link("https://youtu.be/abc").unwrap()).unwrap();
+        let fetch = || fetch_audio(&lib, &store, &lib.track(ing.track_id).unwrap(), &lib.selected_source(ing.track_id).unwrap().unwrap()).unwrap();
+        fetch();
+        assert_eq!(lib.track(ing.track_id).unwrap().title, "Made Up Song");
+        lib.set_source_audio(ing.source_id, "h", 1_000).unwrap();
+        edit_info(&lib, ing.track_id, "Paper Boats", Some("Juniper Row"), None).unwrap();
+        fetch();
+        let t = lib.track(ing.track_id).unwrap();
+        assert_eq!((t.title.as_str(), t.artist.as_deref()), ("Paper Boats", Some("Juniper Row")));
+        let artists: Vec<_> = lib.collections(None, CollectionKind::Artist).unwrap().into_iter().map(|c| c.name).collect();
+        assert_eq!(artists, vec!["Juniper Row"]);
     }
 
     #[test]

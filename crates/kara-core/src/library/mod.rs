@@ -68,6 +68,9 @@ pub struct Track {
     pub instrumental: bool,
     pub artwork_path: Option<String>,
     pub art_seed: u16,
+    /// The user changed the title, singer or album by hand.
+    #[serde(skip)]
+    pub info_edited: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -117,7 +120,7 @@ pub struct LyricsRow {
     pub fetched_at: i64,
 }
 
-const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental, t.artwork_path, t.art_seed";
+const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental, t.artwork_path, t.art_seed, t.info_edited";
 const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, lyric_offset_manual, lyric_synced_at, status, error";
 const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
 const COLLECTION_COLS: &str = "id, provider, kind, name, subtitle, provider_ref LIKE 'user:%'";
@@ -135,6 +138,7 @@ fn track_row(r: &Row) -> rusqlite::Result<Track> {
         instrumental: r.get(8)?,
         artwork_path: r.get(9)?,
         art_seed: r.get(10)?,
+        info_edited: r.get(11)?,
     })
 }
 
@@ -202,6 +206,7 @@ const STEPS: &[Step] = &[
     |tx| Ok(tx.execute_batch("DROP TRIGGER track_ai; DROP TRIGGER track_ad; DROP TRIGGER track_au; DROP TABLE track_fts;")?),
     |tx| Ok(tx.execute_batch("ALTER TABLE audio_source ADD COLUMN lyric_offset_manual INTEGER NOT NULL DEFAULT 0")?),
     |tx| Ok(tx.execute_batch("ALTER TABLE audio_source ADD COLUMN lyric_synced_at INTEGER")?),
+    |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN info_edited INTEGER NOT NULL DEFAULT 0")?),
 ];
 
 pub struct Library {
@@ -254,6 +259,11 @@ impl Library {
 
     pub fn update_track_meta(&self, id: i64, title: &str, artist: Option<&str>, album: Option<&str>) -> Result<()> {
         self.conn.execute("UPDATE track SET title = ?2, artist = ?3, album = ?4 WHERE id = ?1", params![id, title, artist, album])?;
+        Ok(())
+    }
+
+    pub fn mark_info_edited(&self, id: i64) -> Result<()> {
+        self.conn.execute("UPDATE track SET info_edited = 1 WHERE id = ?1", [id])?;
         Ok(())
     }
 

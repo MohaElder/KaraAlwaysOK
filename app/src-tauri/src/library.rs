@@ -113,6 +113,7 @@ pub fn edit_track(state: State<'_, AppState>, track_id: i64, title: String, arti
         None => lib.track(track_id).plain()?.title,
     };
     ingest::edit_info(&lib, track_id, &title, blank_to_none(&artist), blank_to_none(&album)).plain()?;
+    lib.mark_info_edited(track_id).plain()?;
     lib.track(track_id).plain()
 }
 

@@ -150,32 +150,38 @@ fn refresh_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher, emi
     if !lyrics_due(lib, track_id)? {
         return Ok(false);
     }
-    let (src, lines) = look_up_lyrics(lib, track_id, fetcher, emit)?;
+    let (src, lines, swapped) = look_up_lyrics(lib, track_id, fetcher)?;
     lib.set_lyrics(track_id, src, &lines, now_ms())?;
+    let _ = rename(lib, track_id, swapped, emit);
     Ok(true)
 }
 
-/// Looks up a song's lyrics; when they were found with its title and singer swapped, saves the names
-/// the lyrics service knows the song by and emits `Renamed`.
-fn look_up_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher, emit: &mut dyn FnMut(Event)) -> Result<(LyricsSource, Vec<lyrics::Line>)> {
+fn look_up_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> Result<(LyricsSource, Vec<lyrics::Line>, Option<lyrics::Found>)> {
     let t = lib.track(track_id)?;
-    let (src, lines, swapped) = lyrics::find(None, &t.title, t.artist.as_deref(), t.duration_ms.unwrap_or(0), fetcher)?;
-    if let Some(f) = swapped {
+    lyrics::find(None, &t.title, t.artist.as_deref(), t.duration_ms.unwrap_or(0), fetcher)
+}
+
+/// Saves the names the lyrics service knows the song by, from lyrics found with its title and singer swapped,
+/// and emits `Renamed`; a song whose info the user edited keeps it.
+fn rename(lib: &Library, track_id: i64, swapped: Option<lyrics::Found>, emit: &mut dyn FnMut(Event)) -> Result<()> {
+    let t = lib.track(track_id)?;
+    if let Some(f) = swapped.filter(|_| !t.info_edited) {
         ingest::edit_info(lib, track_id, &f.title, Some(&f.artist), t.album.as_deref())?;
         emit(Event::Renamed { track_id });
     }
-    Ok((src, lines))
+    Ok(())
 }
 
 /// Looks up a song's lyrics now, even when it has some or none were found lately; saves any it finds,
 /// forgets the timing set for the old ones and lines the new ones up with the singing if the song is separated.
 /// Returns whether it found any.
 pub fn find_lyrics_again(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<bool> {
-    let (src, lines) = look_up_lyrics(lib, track_id, fetcher, emit).context(Problem::LyricsLookup)?;
+    let (src, lines, swapped) = look_up_lyrics(lib, track_id, fetcher).context(Problem::LyricsLookup)?;
     if src == LyricsSource::None {
         return Ok(false);
     }
     lib.set_lyrics(track_id, src, &lines, now_ms())?;
+    let _ = rename(lib, track_id, swapped, emit);
     if lib.reset_lyric_offset(track_id)? {
         emit(Event::LyricOffset { track_id });
     }
@@ -1167,6 +1173,20 @@ mod tests {
         assert!(!find_lyrics_again(&c, &lib, &stars(), missed, &mut |e| events.push(e)).unwrap());
         let t = lib.track(missed).unwrap();
         assert_eq!((t.title.as_str(), t.artist.as_deref(), events), (title, artist, vec![]));
+    }
+
+    #[test]
+    fn a_song_whose_info_the_user_edited_keeps_it_when_lyrics_are_found_swapped() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = lib.add_track(&crate::library::NewTrack { provider: crate::library::ProviderId::Local, provider_ref: None, title: "Made Up Album", artist: Some("City of Stars"), album: None, duration_ms: Some(150_000) }).unwrap();
+        lib.mark_info_edited(t).unwrap();
+        let mut events = Vec::new();
+        assert!(find_lyrics_again(&c, &lib, &lyrics::Candidates(vec![("City of Stars", "Ryan Gosling & Emma Stone", 150.0)]), t, &mut |e| events.push(e)).unwrap());
+        let track = lib.track(t).unwrap();
+        assert_eq!((track.title.as_str(), track.artist.as_deref(), events), ("Made Up Album", Some("City of Stars"), vec![Event::Lyrics { track_id: t }]));
+        assert_eq!(lib.lyrics(t).unwrap().unwrap().source, LyricsSource::Lrclib);
     }
 
     /// Reports each title it is asked about, then waits for the test to let it finish.
