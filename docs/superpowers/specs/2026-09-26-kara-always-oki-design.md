@@ -53,7 +53,30 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Appearance rule** — light and dark mode, following the macOS system setting live (no in-app toggle needed). Every color comes from theme tokens defined for both modes; the karaoke view stays dark in both.
 
-**Icons** — Phosphor Icons (MIT), one weight used consistently. Not Lucide.
+**Icons** — Phosphor Icons (MIT), Bold weight everywhere. Not Lucide.
+
+**Design tokens** (picked 2026-09-27 in the design kit artifact https://claude.ai/artifact/RgkXxGA3WFmUDSvG2NepsE):
+- Fonts: Geist (body), Bricolage Grotesque 800, tracking −0.02em (display: titles, lyrics), Geist Mono (captions, numbers).
+- Type scale: lyric line 40, page title 28, section 17/600, body 14, caption 11/500 caps +0.07em, numbers 12 mono tabular.
+- Spacing (Comfortable): 4, 8, 12, 16, 20, 24, 32, 40 px; radius 8 small / 14 large; list rows 52 px.
+- Colors: "Walkman" — Sony TPS-L2 blue-grey body as the secondary, hotline-button orange as the accent.
+
+| Token | Light | Dark |
+|---|---|---|
+| bg | #EEF1F4 | #10151B |
+| side (blue-grey) | #D6DFE8 | #18212B |
+| surface | #FFFFFF | #1B232D |
+| raised | #DCE4EC | #243040 |
+| line | #C9D3DE | #2D3948 |
+| text | #1B2430 | #E8EEF4 |
+| muted | #5B6878 | #8C9AAB |
+| faint | #97A3B1 | #566374 |
+| accent (hotline orange) | #DE6414 | #FF8C2E |
+| on-accent | #FFFFFF | #1F0E02 |
+| ready | #2F7D5B | #5FBF93 |
+| busy | #A86B12 | #E3A948 |
+
+The karaoke view stays dark in both modes and uses the dark accent.
 
 **Motion rule** — every interaction animates: showing or hiding any view, sheet, menu, popover, button or status, and every state change. Use only two simple, consistent transitions: a fade, or a short slide (paired with a fade) along the direction the element comes from. Same durations and easing everywhere; they should feel natural, never showy. Respect the system "reduce motion" setting (fall back to fade only).
 
