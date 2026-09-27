@@ -812,6 +812,7 @@ dependencies = [
  "flacenc",
  "hex",
  "hound",
+ "libc",
  "ndarray",
  "ort",
  "realfft",

@@ -381,8 +381,7 @@ fn separate_stage(
     Ok(outcome)
 }
 
-/// Adds songs one at a time on its own thread, so a download never waits for
-/// or holds up the song being prepared for singing.
+/// Adds songs one at a time on its own thread.
 pub struct Adder {
     requests: mpsc::Sender<i64>,
 }

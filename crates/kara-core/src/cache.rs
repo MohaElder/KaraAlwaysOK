@@ -135,11 +135,35 @@ pub fn budget(lib: &Library) -> Result<u64> {
     Ok(lib.setting("cache_budget_bytes")?.and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_BUDGET))
 }
 
+/// Bytes the songs' audio takes on disk.
+pub fn usage(store: &Store) -> u64 {
+    dir_size(&store.audio_root()) as u64
+}
+
 /// Deletes whole songs' audio folders until the cache fits its budget:
 /// unfinished songs first, then the least recently played. Never touches
 /// `protected` hashes (playing / queued), or a song whose only source is a
 /// local file that no longer exists.
 pub fn enforce_budget(store: &Store, lib: &Library, protected: &[String]) -> Result<Vec<String>> {
+    evict_to(store, lib, protected, budget(lib)?)
+}
+
+/// Deletes every song's prepared audio, with the same exceptions as `enforce_budget`.
+pub fn clear(store: &Store, lib: &Library, protected: &[String]) -> Result<Vec<String>> {
+    evict_to(store, lib, protected, 0)
+}
+
+/// A song folder's modified time, in milliseconds since the Unix epoch: when
+/// its original landed, or "now" while it's still being written.
+fn folder_age(store: &Store, hash: &str) -> i64 {
+    std::fs::metadata(store.audio_dir(hash))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis() as i64)
+}
+
+fn evict_to(store: &Store, lib: &Library, protected: &[String], budget: u64) -> Result<Vec<String>> {
     let rows = lib.separations()?;
     let hashes: Vec<String> = match std::fs::read_dir(store.audio_root()) {
         Ok(rd) => rd
@@ -152,19 +176,22 @@ pub fn enforce_budget(store: &Store, lib: &Library, protected: &[String]) -> Res
     let mut entries = Vec::with_capacity(hashes.len());
     for hash in &hashes {
         let ready = rows.iter().find(|r| &r.audio_hash == hash && r.status == SepStatus::Ready);
+        let started = rows.iter().any(|r| &r.audio_hash == hash);
         let unrecoverable = lib
             .sources_with_hash(hash)?
             .iter()
             .any(|s| s.kind == SourceKind::File && !Path::new(&s.uri).exists());
         entries.push(Entry {
             size_bytes: dir_size(&store.audio_dir(hash)),
-            last_used_at: ready.and_then(|r| r.last_used_at).unwrap_or(0),
-            ready: ready.is_some(),
+            last_used_at: ready
+                .and_then(|r| r.last_used_at)
+                .unwrap_or_else(|| if started { 0 } else { folder_age(store, hash) }),
+            ready: ready.is_some() || !started,
             protected: unrecoverable || protected.contains(hash),
         });
     }
     let mut evicted = Vec::new();
-    for i in pick_evictions(&entries, budget(lib)?) {
+    for i in pick_evictions(&entries, budget) {
         let hash = &hashes[i];
         std::fs::remove_dir_all(store.audio_dir(hash))?;
         for r in rows.iter().filter(|r| &r.audio_hash == hash) {
@@ -341,6 +368,36 @@ mod tests {
         for h in ["queued", "gone", "new"] {
             assert!(s.stems_dir(h, "m").exists());
         }
+    }
+
+    #[test]
+    fn clearing_ignores_the_budget_but_keeps_protected_songs() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path());
+        let lib = Library::open_in_memory().unwrap();
+        for h in ["a", "b"] {
+            write_chunk(&s, h, "m", &chunk(0, 10)).unwrap();
+            lib.upsert_separation(&sep_row(h, 1, SepStatus::Ready, 1)).unwrap();
+        }
+        assert!(usage(&s) > 0);
+        assert_eq!(clear(&s, &lib, &["b".to_string()]).unwrap(), vec!["a".to_string()]);
+        assert!(!s.audio_dir("a").exists() && s.audio_dir("b").exists());
+    }
+
+    #[test]
+    fn a_just_added_song_outlives_an_older_played_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path());
+        let lib = Library::open_in_memory().unwrap();
+        // "old": played long ago. "added": no separation row yet (just added).
+        write_chunk(&s, "old", "m", &chunk(0, 10)).unwrap();
+        lib.upsert_separation(&sep_row("old", 1, SepStatus::Ready, 1)).unwrap();
+        write_chunk(&s, "added", "m", &chunk(0, 10)).unwrap();
+        let budget = dir_size(&s.audio_dir("added"));
+        lib.set_setting("cache_budget_bytes", &budget.to_string()).unwrap();
+
+        assert_eq!(enforce_budget(&s, &lib, &[]).unwrap(), vec!["old".to_string()]);
+        assert!(s.audio_dir("added").exists());
     }
 
     #[test]

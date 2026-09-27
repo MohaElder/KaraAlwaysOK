@@ -61,7 +61,7 @@ enum Cmd {
 fn main() {
     if let Err(e) = run() {
         eprintln!("{e}");
-        hide_output_for_the_rest_of_the_process();
+        kara_core::quiet::silence_output();
         std::process::exit(1);
     }
 }
@@ -110,25 +110,6 @@ fn write_wav(path: &Path, interleaved: &[f32]) -> Result<()> {
     Ok(())
 }
 
-/// Sends this process's stdout and stderr to /dev/null until it exits.
-#[cfg(unix)]
-fn hide_output_for_the_rest_of_the_process() {
-    use std::io::Write;
-    use std::os::unix::io::AsRawFd;
-    std::io::stdout().flush().ok();
-    std::io::stderr().flush().ok();
-    if let Ok(devnull) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
-        let fd = devnull.as_raw_fd();
-        unsafe {
-            libc::dup2(fd, libc::STDOUT_FILENO);
-            libc::dup2(fd, libc::STDERR_FILENO);
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn hide_output_for_the_rest_of_the_process() {}
-
 fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml: bool, runtime: Option<PathBuf>, out: Option<&Path>) -> Result<()> {
     let lib = runtime_lib(store, runtime)?;
     let t0 = Instant::now();
@@ -165,7 +146,7 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
         write_wav(&dir.join("instrumental.wav"), &inst)?;
         println!("wrote {}", dir.display());
     }
-    hide_output_for_the_rest_of_the_process();
+    kara_core::quiet::silence_output();
     Ok(())
 }
 
@@ -227,7 +208,7 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
     lyrics_rx.try_iter().for_each(show);
     let lyrics = lib.lyrics(track_id)?.map(|l| l.lines.len()).unwrap_or(0);
     println!("ready\t{}\tlyrics lines: {}", lib.track(track_id)?.title, lyrics);
-    hide_output_for_the_rest_of_the_process();
+    kara_core::quiet::silence_output();
     Ok(())
 }
 
