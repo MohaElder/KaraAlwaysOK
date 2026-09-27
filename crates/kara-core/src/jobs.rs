@@ -36,6 +36,8 @@ pub enum Event {
     Progress { track_id: i64, chunks_done: u32, chunks_total: u32 },
     /// Lyrics were saved, including "none found"; read them from the library.
     Lyrics { track_id: i64 },
+    /// The song's title and singer were corrected; read them from the library.
+    Renamed { track_id: i64 },
     /// The lyric timing was lined up with the singing.
     LyricOffset { track_id: i64 },
     /// A newly added song's audio and lyrics are ready; it is separated when played.
@@ -119,7 +121,7 @@ fn add_inner(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i6
         load_or_fetch(ctx, lib, &track, &source, emit)?;
     }
     emit(Event::Stage { track_id, stage: Stage::FindingLyrics });
-    if refresh_lyrics(lib, track_id, fetcher).unwrap_or(false) {
+    if refresh_lyrics(lib, track_id, fetcher, emit).unwrap_or(false) {
         emit(Event::Lyrics { track_id });
     }
     Ok(())
@@ -144,25 +146,32 @@ fn lyrics_due(lib: &Library, track_id: i64) -> Result<bool> {
 
 /// Looks up and saves a song's lyrics if they are due; returns whether it saved.
 /// A failed lookup saves nothing, so it is tried again next time.
-fn refresh_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> Result<bool> {
+fn refresh_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher, emit: &mut dyn FnMut(Event)) -> Result<bool> {
     if !lyrics_due(lib, track_id)? {
         return Ok(false);
     }
-    let (src, lines) = look_up_lyrics(lib, track_id, fetcher)?;
+    let (src, lines) = look_up_lyrics(lib, track_id, fetcher, emit)?;
     lib.set_lyrics(track_id, src, &lines, now_ms())?;
     Ok(true)
 }
 
-fn look_up_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> Result<(LyricsSource, Vec<lyrics::Line>)> {
+/// Looks up a song's lyrics; when they were found with its title and singer swapped, saves the names
+/// the lyrics service knows the song by and emits `Renamed`.
+fn look_up_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher, emit: &mut dyn FnMut(Event)) -> Result<(LyricsSource, Vec<lyrics::Line>)> {
     let t = lib.track(track_id)?;
-    lyrics::find(None, &t.title, t.artist.as_deref(), t.duration_ms.unwrap_or(0), fetcher)
+    let (src, lines, swapped) = lyrics::find(None, &t.title, t.artist.as_deref(), t.duration_ms.unwrap_or(0), fetcher)?;
+    if let Some(f) = swapped {
+        ingest::edit_info(lib, track_id, &f.title, Some(&f.artist), t.album.as_deref())?;
+        emit(Event::Renamed { track_id });
+    }
+    Ok((src, lines))
 }
 
 /// Looks up a song's lyrics now, even when it has some or none were found lately; saves any it finds,
 /// forgets the timing set for the old ones and lines the new ones up with the singing if the song is separated.
 /// Returns whether it found any.
 pub fn find_lyrics_again(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<bool> {
-    let (src, lines) = look_up_lyrics(lib, track_id, fetcher).context(Problem::LyricsLookup)?;
+    let (src, lines) = look_up_lyrics(lib, track_id, fetcher, emit).context(Problem::LyricsLookup)?;
     if src == LyricsSource::None {
         return Ok(false);
     }
@@ -224,12 +233,13 @@ impl LyricsLookup {
         let pending = Arc::new(Pending::default());
         let p = pending.clone();
         let handle = std::thread::spawn(move || {
+            let mut send = |e: Event| {
+                let _ = events.send(e);
+            };
             while let Some(track_id) = p.next() {
-                if refresh_lyrics(&lib, track_id, fetcher.as_ref()).unwrap_or(false) {
-                    let _ = events.send(Event::Lyrics { track_id });
-                    let _ = sync_whole_song(&ctx, &lib, track_id, &mut |e| {
-                        let _ = events.send(e);
-                    });
+                if refresh_lyrics(&lib, track_id, fetcher.as_ref(), &mut send).unwrap_or(false) {
+                    send(Event::Lyrics { track_id });
+                    let _ = sync_whole_song(&ctx, &lib, track_id, &mut send);
                 }
             }
         });
@@ -585,14 +595,14 @@ mod tests {
 
     struct NoLyrics;
     impl LyricsFetcher for NoLyrics {
-        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
             Ok(None)
         }
     }
 
     struct MadeUpLyrics;
     impl LyricsFetcher for MadeUpLyrics {
-        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
             Ok(Some("[00:00.00]la la la\n".into()))
         }
     }
@@ -867,7 +877,7 @@ mod tests {
         /// Finds made-up lyrics once the test opens the gate.
         struct Gated(mpsc::Receiver<()>);
         impl LyricsFetcher for Gated {
-            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
                 self.0.recv_timeout(Duration::from_secs(10))?;
                 Ok(Some("[00:00.00]la la la\n".into()))
             }
@@ -897,7 +907,7 @@ mod tests {
     fn lyrics_are_retried_for_an_already_ready_song() {
         struct Offline;
         impl LyricsFetcher for Offline {
-            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
                 anyhow::bail!("offline")
             }
         }
@@ -945,7 +955,7 @@ mod tests {
     fn embedded_lyrics_are_kept_and_the_fetcher_is_not_called() {
         struct CountingFetcher(Arc<std::sync::atomic::AtomicU32>);
         impl LyricsFetcher for CountingFetcher {
-            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
                 self.0.fetch_add(1, Ordering::Relaxed);
                 Ok(Some("[00:00.00]other made up text\n".into()))
             }
@@ -1035,8 +1045,8 @@ mod tests {
 
     struct Lrc(String);
     impl LyricsFetcher for Lrc {
-        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
-            Ok(Some(self.0.clone()))
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
+            Ok(Some(self.0.as_str().into()))
         }
     }
 
@@ -1136,10 +1146,33 @@ mod tests {
         lib.add_track(&crate::library::NewTrack { provider: crate::library::ProviderId::Local, provider_ref: None, title, artist: None, album: None, duration_ms: None }).unwrap()
     }
 
+    #[test]
+    fn lyrics_found_only_with_title_and_singer_swapped_fix_the_songs_info() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let (title, artist) = ("La La Land Original Motion Picture Soundtrack", Some("'City of Stars' (Duet ft. Ryan Gosling, Emma Stone)"));
+        let add = |duration_ms| lib.add_track(&crate::library::NewTrack { provider: crate::library::ProviderId::Local, provider_ref: None, title, artist, album: None, duration_ms: Some(duration_ms) }).unwrap();
+        let (found, missed) = (add(150_000), add(200_000));
+        let stars = || lyrics::Candidates(vec![("City of Stars", "Ryan Gosling & Emma Stone", 150.0)]);
+        let (lookups, rx) = lookup(&c, stars());
+        lookups.request(found);
+        lookups.finish();
+        assert_eq!(rx.try_iter().collect::<Vec<_>>(), [Event::Renamed { track_id: found }, Event::Lyrics { track_id: found }]);
+        let t = lib.track(found).unwrap();
+        assert_eq!((t.title.as_str(), t.artist.as_deref()), ("City of Stars", Some("Ryan Gosling & Emma Stone")));
+        assert_eq!(lib.lyrics(found).unwrap().unwrap().source, LyricsSource::Lrclib);
+
+        let mut events = Vec::new();
+        assert!(!find_lyrics_again(&c, &lib, &stars(), missed, &mut |e| events.push(e)).unwrap());
+        let t = lib.track(missed).unwrap();
+        assert_eq!((t.title.as_str(), t.artist.as_deref(), events), (title, artist, vec![]));
+    }
+
     /// Reports each title it is asked about, then waits for the test to let it finish.
     struct Paced(mpsc::Receiver<()>, mpsc::Sender<String>);
     impl LyricsFetcher for Paced {
-        fn fetch(&self, title: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, title: &str, _: Option<&str>, _: u64) -> Result<Option<lyrics::Found>> {
             self.1.send(title.to_string())?;
             self.0.recv_timeout(Duration::from_secs(10))?;
             Ok(None)

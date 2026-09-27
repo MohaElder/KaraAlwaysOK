@@ -130,10 +130,26 @@ pub fn parse_lrc(text: &str, duration_ms: i64) -> Vec<Line> {
     lines
 }
 
+/// Synced lyrics, with the song's title and singer as the lyrics service names them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Found {
+    pub lyrics: String,
+    pub title: String,
+    pub artist: String,
+}
+
+/// Made-up lyrics with no names, for tests.
+#[cfg(test)]
+impl From<&str> for Found {
+    fn from(lyrics: &str) -> Self {
+        Found { lyrics: lyrics.into(), title: String::new(), artist: String::new() }
+    }
+}
+
 /// A source of synced (LRC) lyrics for a song.
 pub trait LyricsFetcher {
     /// Without an artist, matches by title and duration.
-    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>>;
+    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<Found>>;
 }
 
 /// lrclib.net — free, no key.
@@ -163,7 +179,7 @@ impl Lrclib {
 }
 
 impl LyricsFetcher for Lrclib {
-    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<Found>> {
         lookup(|q| self.search(q), title, artist, duration_s)
     }
 }
@@ -222,7 +238,7 @@ fn retrying<T>(deadline: Instant, mut f: impl FnMut() -> Result<T>) -> Result<T>
 }
 
 /// Looks the song up by title and singer, then by title alone, and returns the best matching synced lyrics.
-fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<Found>> {
     let deadline = Instant::now() + RETRY_WITHIN;
     let (title, hint) = clean_title(title, artist);
     let artists: Vec<String> = hint.iter().map(String::as_str).chain(artist).flat_map(clean_artist).collect();
@@ -235,11 +251,11 @@ fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, art
     Ok(best_match(retrying(deadline, || search(&[("q", &title)]))?, &title, &artists, duration_s))
 }
 
-/// The synced lyrics of the hit that best matches the song, scored by title, singer and closeness of length
+/// The synced lyrics and names of the hit that best matches the song, scored by title, singer and closeness of length
 /// in whole seconds; among equals, the one with more timed lines, then the service's first. Hits without a length are skipped.
 /// A hit by a like singer may have a close title and be up to a minute off; by another singer it needs
 /// the same title and nearly the same length.
-fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<String> {
+fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<Found> {
     let title_key = key(title);
     hits.into_iter()
         .rev()
@@ -256,10 +272,10 @@ fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) 
             };
             let score = if same_title { 2.0 } else { 1.0 } + f64::from(singer) + 1.0 - off.round() / LIKE_SINGER_OFF_S;
             let timed_lines = lyrics.lines().filter(|l| is_synced(l)).count();
-            fits.then_some((score, timed_lines, lyrics))
+            fits.then_some((score, timed_lines, Found { lyrics, title: h.track_name, artist: h.artist_name }))
         })
         .max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
-        .map(|(.., lyrics)| lyrics)
+        .map(|(.., found)| found)
 }
 
 /// How alike two singers' names are: 2 the same; 1 close — a Latin name of 3–4 letters only as a whole word
@@ -396,15 +412,34 @@ pub fn clean_artist(artist: &str) -> Vec<String> {
     std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| !n.is_empty()).map(String::from).collect()
 }
 
-/// Embedded synced lyrics first, then the online service, else none.
-pub fn find(embedded: Option<&str>, title: &str, artist: Option<&str>, duration_ms: i64, fetcher: &dyn LyricsFetcher) -> Result<(LyricsSource, Vec<Line>)> {
+/// A lyrics service that answers every search with the same made-up (title, singer, length in seconds) candidates.
+#[cfg(test)]
+pub(crate) struct Candidates(pub Vec<(&'static str, &'static str, f64)>);
+
+#[cfg(test)]
+impl LyricsFetcher for Candidates {
+    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<Found>> {
+        let hits = |_: &[(&str, &str)]| {
+            Ok(self.0.iter().map(|&(t, a, d)| Hit { track_name: t.into(), artist_name: a.into(), duration: Some(d), synced_lyrics: Some("[00:01.00]la la la".into()) }).collect())
+        };
+        lookup(hits, title, artist, duration_s)
+    }
+}
+
+/// Embedded synced lyrics first, then the online service, then the service with title and singer swapped, else none.
+/// With the swap, also returns what the service found, which names the song.
+pub fn find(embedded: Option<&str>, title: &str, artist: Option<&str>, duration_ms: i64, fetcher: &dyn LyricsFetcher) -> Result<(LyricsSource, Vec<Line>, Option<Found>)> {
     if let Some(text) = embedded.filter(|t| is_synced(t)) {
-        return Ok((LyricsSource::Embedded, parse_lrc(text, duration_ms)));
+        return Ok((LyricsSource::Embedded, parse_lrc(text, duration_ms), None));
     }
-    if let Some(text) = fetcher.fetch(title, artist, (duration_ms / 1000) as u64)? {
-        return Ok((LyricsSource::Lrclib, parse_lrc(&text, duration_ms)));
+    let duration_s = (duration_ms / 1000) as u64;
+    if let Some(f) = fetcher.fetch(title, artist, duration_s)? {
+        return Ok((LyricsSource::Lrclib, parse_lrc(&f.lyrics, duration_ms), None));
     }
-    Ok((LyricsSource::None, Vec::new()))
+    if let Some(f) = artist.map(|a| fetcher.fetch(a, Some(title), duration_s)).transpose()?.flatten() {
+        return Ok((LyricsSource::Lrclib, parse_lrc(&f.lyrics, duration_ms), Some(f)));
+    }
+    Ok((LyricsSource::None, Vec::new(), None))
 }
 
 #[cfg(test)]
@@ -458,26 +493,39 @@ mod tests {
 
     struct Fake(Option<&'static str>, RefCell<u32>);
     impl LyricsFetcher for Fake {
-        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<Found>> {
             *self.1.borrow_mut() += 1;
-            Ok(self.0.map(String::from))
+            Ok(self.0.map(Found::from))
         }
     }
 
     #[test]
     fn find_prefers_embedded_then_fetches_then_gives_up() {
         let f = Fake(Some("[00:01.00]online"), RefCell::new(0));
-        let (src, lines) = find(Some("[00:00.00]embedded"), "t", Some("a"), 5_000, &f).unwrap();
+        let (src, lines, _) = find(Some("[00:00.00]embedded"), "t", Some("a"), 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str(), *f.1.borrow()), (LyricsSource::Embedded, "embedded", 0));
-        let (src, lines) = find(Some("plain unsynced"), "t", Some("a"), 5_000, &f).unwrap();
+        let (src, lines, _) = find(Some("plain unsynced"), "t", Some("a"), 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Lrclib, "online"));
         let none = Fake(None, RefCell::new(0));
-        assert_eq!(find(None, "t", Some("a"), 5_000, &none).unwrap(), (LyricsSource::None, vec![]));
+        assert_eq!(find(None, "t", Some("a"), 5_000, &none).unwrap(), (LyricsSource::None, vec![], None));
         // No artist: still asks, by title.
         assert_eq!(find(None, "t", None, 5_000, &f).unwrap().0, LyricsSource::Lrclib);
         // A leading UTF-8 BOM doesn't stop embedded text from being recognized as synced.
-        let (src, lines) = find(Some("\u{FEFF}[00:00.00]bommed"), "t", Some("a"), 5_000, &f).unwrap();
+        let (src, lines, _) = find(Some("\u{FEFF}[00:00.00]bommed"), "t", Some("a"), 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Embedded, "bommed"));
+    }
+
+    #[test]
+    fn a_song_found_only_with_title_and_singer_swapped_gets_the_services_names() {
+        let stars = Candidates(vec![("City of Stars", "Ryan Gosling & Emma Stone", 150.0)]);
+        let (title, artist) = ("La La Land Original Motion Picture Soundtrack", Some("'City of Stars' (Duet ft. Ryan Gosling, Emma Stone)"));
+        let (src, _, renamed) = find(None, title, artist, 150_000, &stars).unwrap();
+        let renamed = renamed.map(|f| (f.title, f.artist));
+        assert_eq!((src, renamed), (LyricsSource::Lrclib, Some(("City of Stars".into(), "Ryan Gosling & Emma Stone".into()))));
+        let (src, _, renamed) = find(None, "City of Stars", Some("Ryan Gosling"), 150_000, &stars).unwrap();
+        assert_eq!((src, renamed), (LyricsSource::Lrclib, None));
+        let (src, _, renamed) = find(None, title, artist, 200_000, &stars).unwrap();
+        assert_eq!((src, renamed), (LyricsSource::None, None));
     }
 
     #[test]
@@ -520,6 +568,7 @@ mod tests {
 
     #[test]
     fn best_match_prefers_the_singer_then_the_closest_length_and_skips_weak_ones() {
+        let best_match = |hits, title, artists: &[String], duration_s| best_match(hits, title, artists, duration_s).map(|f| f.lyrics);
         let lin = vec!["林小雨".to_string()];
         let night = vec![
             hit("夜車", "Someone Else", 240.0, Some("[00:01.00]other singer")),
@@ -575,7 +624,7 @@ mod tests {
                 _ => Ok(vec![hit("Paper Boats", "Juniper Row", 200.0, Some("[00:01.00]found"))]),
             }
         };
-        assert_eq!(lookup(flaky, "Paper Boats", None, 200).unwrap().as_deref(), Some("[00:01.00]found"));
+        assert_eq!(lookup(flaky, "Paper Boats", None, 200).unwrap().map(|f| f.lyrics).as_deref(), Some("[00:01.00]found"));
         let calls = Cell::new(0);
         let down = |_: &[(&str, &str)]| -> Result<Vec<Hit>> {
             calls.set(calls.get() + 1);
@@ -610,10 +659,15 @@ mod tests {
             ("太陽與地球 伴奏", Some("盧廣仲(版本)"), 262),
             ("【4K60FPS】张学友《李香兰》现场版", None, 397),
         ] {
-            let lines = l.fetch(title, artist, duration_s).unwrap().map(|t| parse_lrc(&t, 0).len());
+            let lines = l.fetch(title, artist, duration_s).unwrap().map(|f| parse_lrc(&f.lyrics, 0).len());
             println!("{title}: {lines:?} lines");
             assert!(lines.is_some_and(|n| n > 0), "{title}");
         }
         assert_eq!(l.fetch("zzqxv made up kara song", None, 200).unwrap(), None);
+        let (title, artist) = ("La La Land Original Motion Picture Soundtrack", Some("'City of Stars' (Duet ft. Ryan Gosling, Emma Stone)"));
+        let (src, lines, renamed) = find(None, title, artist, 150_000, &l).unwrap();
+        let renamed = renamed.map(|f| (f.title, f.artist));
+        println!("swapped: {src:?}, {} lines, now {renamed:?}", lines.len());
+        assert!(renamed.is_some());
     }
 }

@@ -199,6 +199,7 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
         }
         Event::Lyrics { .. } => eprintln!("Checked for lyrics.  ({:.1} s)", started.elapsed().as_secs_f64()),
         Event::LyricOffset { .. } => eprintln!("Lined the lyrics up with the singing."),
+        Event::Renamed { .. } => eprintln!("Fixed the song's title and singer."),
         Event::Added { .. } => {}
         Event::Ready { .. } => eprintln!("Ready to sing.  ({:.1} s)", started.elapsed().as_secs_f64()),
         Event::Failed { .. } => {} // `result?` below reports this once, in main.

@@ -6,6 +6,7 @@ import type { Label } from "$lib/audio/chunks";
 import { Streamer, type Phase } from "$lib/audio/streamer";
 import { say } from "$lib/i18n/engine";
 import { t } from "$lib/i18n/index.svelte";
+import { library } from "./library.svelte";
 import { toasts } from "./toasts.svelte";
 import { ui } from "./ui.svelte";
 import ArrowBendDownRightIcon from "phosphor-svelte/lib/ArrowBendDownRightIcon";
@@ -208,6 +209,7 @@ class PlayerState {
 
   private onEngine(e: EngineEvent) {
     this.streamer.onEngine(e);
+    if (e.kind === "renamed") void Promise.all([library.refresh(), this.refresh()]);
     if (e.trackId !== this.track?.id) return;
     if (e.kind === "lyrics") void this.loadLyrics(e.trackId);
     if (e.kind === "failed") this.showProblem(e);
