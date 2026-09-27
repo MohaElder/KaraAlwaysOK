@@ -37,6 +37,7 @@ test("the sidebar tabs fit on one line at a readable size in every language", as
     await page.locator(".side .foot button").click();
     await page.getByRole("dialog").getByRole("combobox").first().selectOption(name);
     await page.keyboard.press("Escape");
+    await expect(page.locator(".side .tabs .fit")).toHaveCount(3);
     for (const label of await page.locator(".side .tabs .fit").all()) {
       await expect.poll(() => label.evaluate((l) => l.scrollWidth <= l.clientWidth && parseFloat(getComputedStyle(l).fontSize) >= 11)).toBe(true);
     }
