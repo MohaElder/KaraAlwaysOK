@@ -98,7 +98,7 @@ The karaoke view stays dark in both modes and uses the dark accent.
 
 **Artwork** — a song shows its own picture (embedded cover or the link's thumbnail). A song with no picture gets a gradient in random colors, picked once and kept. A playlist's cover is built from its songs like Apple Music: a 2×2 grid of the first four songs' pictures, or the first song's picture when it has fewer than four. Nobody edits artwork.
 
-**Window** — on macOS the title bar is transparent with the title hidden, so the app's own background runs up to the top edge and the traffic lights sit over the sidebar (as OpenEnlarge does, `~/Repos/filmrev` commit 113d94e). Windows keeps its standard title bar for now, as OpenEnlarge does.
+**Window** — standard system title bar on macOS and Windows; no transparent or custom title bar.
 
 **First run** — the "Getting ready" screen shows only while the model and runtime download the first time. There is no way to replay it.
 
