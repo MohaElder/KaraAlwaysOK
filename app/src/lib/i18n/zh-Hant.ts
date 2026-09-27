@@ -171,6 +171,7 @@ const zhHant: Record<Key, string> = {
   "update.downloading": "正在下載更新…",
   "update.upToDate": "已是最新版本。",
   "update.failed": "無法檢查更新。請稍後再試。",
+  "update.installFailed": "無法安裝更新。請稍後再試。",
   "update.ok": "好",
   "update.check": "檢查更新",
 };

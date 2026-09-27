@@ -171,6 +171,7 @@ const ja: Record<Key, string> = {
   "update.downloading": "アップデートをダウンロード中…",
   "update.upToDate": "最新バージョンです。",
   "update.failed": "アップデートを確認できませんでした。後でもう一度お試しください。",
+  "update.installFailed": "アップデートをインストールできませんでした。後でもう一度お試しください。",
   "update.ok": "OK",
   "update.check": "アップデートを確認",
 };

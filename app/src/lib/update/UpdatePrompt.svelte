@@ -25,7 +25,7 @@
       <p class="muted">{t("update.downloading")}</p>
       <div class="meter"><i style:width="{Math.round(s.fraction * 100)}%"></i></div>
     {:else}
-      <p class="muted">{t(s.kind === "upToDate" ? "update.upToDate" : "update.failed")}</p>
+      <p class="muted">{t(s.kind === "upToDate" ? "update.upToDate" : s.kind === "error" ? "update.failed" : "update.installFailed")}</p>
       <div class="sfoot"><button class="btn accent" onclick={() => updater.dismiss()}><CheckIcon />{t("update.ok")}</button></div>
     {/if}
   </Sheet>

@@ -169,6 +169,7 @@ const en = {
   "update.downloading": "Downloading the update…",
   "update.upToDate": "You have the latest version.",
   "update.failed": "Couldn't check for updates. Try again later.",
+  "update.installFailed": "Couldn't install the update. Try again later.",
   "update.ok": "OK",
   "update.check": "Check for updates",
 };

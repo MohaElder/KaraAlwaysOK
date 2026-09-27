@@ -171,6 +171,7 @@ const zhHans: Record<Key, string> = {
   "update.downloading": "正在下载更新…",
   "update.upToDate": "已是最新版本。",
   "update.failed": "无法检查更新。请稍后再试。",
+  "update.installFailed": "无法安装更新。请稍后再试。",
   "update.ok": "好",
   "update.check": "检查更新",
 };

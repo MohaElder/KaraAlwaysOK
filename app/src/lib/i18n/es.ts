@@ -171,6 +171,7 @@ const es: Record<Key, string> = {
   "update.downloading": "Descargando la actualización…",
   "update.upToDate": "Tienes la versión más reciente.",
   "update.failed": "No se pudo buscar actualizaciones. Inténtalo más tarde.",
+  "update.installFailed": "No se pudo instalar la actualización. Inténtalo más tarde.",
   "update.ok": "Aceptar",
   "update.check": "Buscar actualizaciones",
 };

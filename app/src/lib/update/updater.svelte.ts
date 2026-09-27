@@ -7,7 +7,8 @@ export type UpdateState =
   | { kind: "available"; version: string; notes: string }
   | { kind: "downloading"; fraction: number }
   | { kind: "upToDate" }
-  | { kind: "error" };
+  | { kind: "error" }
+  | { kind: "installFailed" };
 
 const DAY_MS = 86_400_000;
 
@@ -62,12 +63,12 @@ class Updater {
         if (ev.event === "Started") total = ev.data.contentLength ?? 0;
         else if (ev.event === "Progress") {
           got += ev.data.chunkLength;
-          this.state = { kind: "downloading", fraction: total ? got / total : 0 };
+          if (this.state.kind === "downloading") this.state = { kind: "downloading", fraction: total ? got / total : 0 };
         }
       });
       await relaunch();
     } catch {
-      this.state = { kind: "error" };
+      this.state = { kind: "installFailed" };
     }
   }
 

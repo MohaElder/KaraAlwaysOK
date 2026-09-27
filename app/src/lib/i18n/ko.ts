@@ -171,6 +171,7 @@ const ko: Record<Key, string> = {
   "update.downloading": "업데이트를 다운로드하는 중…",
   "update.upToDate": "최신 버전입니다.",
   "update.failed": "업데이트를 확인할 수 없습니다. 나중에 다시 시도하세요.",
+  "update.installFailed": "업데이트를 설치할 수 없습니다. 나중에 다시 시도하세요.",
   "update.ok": "확인",
   "update.check": "업데이트 확인",
 };
