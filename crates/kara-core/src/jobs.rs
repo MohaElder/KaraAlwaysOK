@@ -44,8 +44,9 @@ pub struct Ctx {
 const LYRICS_RETRY_MS: i64 = 7 * 24 * 3600 * 1000;
 
 /// Prepares one song: fetches and standardizes its audio if needed, then
-/// looks up lyrics and separates vocals in parallel. Emits progress on `emit`
-/// and marks the source failed with a plain-language message on error.
+/// looks up lyrics and separates vocals in parallel. Emits progress on `emit`,
+/// marks the source failed with a plain-language message on error, and
+/// resets it to ready on success.
 pub fn prepare(
     ctx: &Ctx,
     lib: &Library,
@@ -80,11 +81,15 @@ fn prepare_inner(
     cancel: &AtomicBool,
     emit: &mut dyn FnMut(Event),
 ) -> Result<Outcome> {
-    let track = lib.track(track_id)?;
-    let source = lib.selected_source(track_id)?.context("This song has no audio to play.")?;
+    let track = lib.track(track_id).context("This song is no longer in your library.")?;
+    let source = lib
+        .selected_source(track_id)
+        .context("This song is no longer in your library.")?
+        .context("This song has no audio to play.")?;
     if let Some(hash) = &source.audio_hash {
         if is_ready(ctx, lib, hash)? {
             lib.touch_separation(hash, &ctx.model_id, now_ms())?;
+            lib.set_source_status(source.id, SourceStatus::Ready, None)?;
             emit(Event::Ready { track_id });
             return Ok(Outcome::Done);
         }
@@ -93,6 +98,7 @@ fn prepare_inner(
     let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, emit)?;
     if is_ready(ctx, lib, &hash)? {
         lib.touch_separation(&hash, &ctx.model_id, now_ms())?;
+        lib.set_source_status(source.id, SourceStatus::Ready, None)?;
         emit(Event::Ready { track_id });
         return Ok(Outcome::Done);
     }
@@ -100,13 +106,13 @@ fn prepare_inner(
         return Ok(Outcome::Cancelled);
     }
 
-    let track = lib.track(track_id)?; // fetching may have filled in title/artist
+    let track = lib.track(track_id).context("This song is no longer in your library.")?; // fetching may have filled in title/artist
     let need_lyrics = match lib.lyrics(track_id)? {
         None => true,
         Some(l) => l.source == LyricsSource::None && now_ms() - l.fetched_at > LYRICS_RETRY_MS,
     };
     emit(Event::Stage { track_id, stage: Stage::Lyrics });
-    std::thread::scope(|s| {
+    let outcome = std::thread::scope(|s| {
         let lookup = need_lyrics.then(|| {
             let track = &track;
             s.spawn(move || {
@@ -114,15 +120,20 @@ fn prepare_inner(
                 lyrics::find(None, &track.title, track.artist.as_deref(), track.album.as_deref(), dur, fetcher)
             })
         });
-        let outcome = separate_stage(ctx, lib, track_id, &hash, &mix, model, cancel, emit);
+        let outcome = separate_stage(ctx, lib, track_id, source.id, &hash, &mix, model, cancel, emit);
         if let Some(handle) = lookup {
-            // Offline or the service is down: leave lyrics unset so we try again next time.
+            // A failed lookup or save leaves lyrics unset, so we try again next time.
             if let Ok(Ok((src, lines))) = handle.join() {
-                lib.set_lyrics(track_id, src, &lines, now_ms())?;
+                let _ = lib.set_lyrics(track_id, src, &lines, now_ms());
             }
         }
         outcome
-    })
+    })?;
+    // Emitted only after lyrics are saved, so the UI can rely on them being there on Ready.
+    if outcome == Outcome::Done {
+        emit(Event::Ready { track_id });
+    }
+    Ok(outcome)
 }
 
 /// The song in the standard format, plus its hash. Uses the stored copy when
@@ -138,15 +149,17 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
     lib.set_source_status(source.id, SourceStatus::Fetching, None)?;
     let path = ingest::fetch_audio(lib, &ctx.store, track, source)?;
     emit(Event::Stage { track_id: track.id, stage: Stage::Standardizing });
-    let decoded = audio::decode_file(&path).context("Couldn't read this audio. The format may not be supported.")?;
+    let decoded = audio::decode_file(&path).context("Couldn't read this audio. The format may not be supported.");
     if source.kind == SourceKind::Link {
         let _ = std::fs::remove_file(&path);
     }
+    let decoded = decoded?;
     anyhow::ensure!(!decoded.audio.is_empty(), "This audio is empty.");
     let hash = audio::audio_hash(&decoded.audio);
     let dst = ctx.store.source_path(&hash);
     if !is_ready(ctx, lib, &hash)? && !dst.exists() {
-        write_atomic(&dst, &audio::encode_flac(&decoded.audio)?).context("Couldn't save the audio. Is the disk full?")?;
+        let bytes = audio::encode_flac(&decoded.audio).context("Couldn't save the audio. Is the disk full?")?;
+        write_atomic(&dst, &bytes).context("Couldn't save the audio. Is the disk full?")?;
     }
     lib.set_source_audio(source.id, &hash, decoded.audio.duration_ms())?;
     if let Some(text) = decoded.tags.lyrics.as_deref().filter(|t| lyrics::is_synced(t)) {
@@ -163,6 +176,7 @@ fn separate_stage(
     ctx: &Ctx,
     lib: &Library,
     track_id: i64,
+    source_id: i64,
     hash: &str,
     mix: &Stereo,
     model: &mut dyn VocalModel,
@@ -193,8 +207,15 @@ fn separate_stage(
         lib.upsert_separation(&row)?;
         emit(Event::Progress { track_id, chunks_done: row.chunks_done, chunks_total: total });
         Ok(())
-    })
-    .context("Couldn't take the vocals out of this song.")?;
+    });
+    let outcome = match outcome {
+        Ok(o) => o,
+        Err(e) => {
+            row.status = SepStatus::Failed;
+            lib.upsert_separation(&row)?;
+            return Err(e.context("Couldn't take the vocals out of this song."));
+        }
+    };
 
     match outcome {
         Outcome::Cancelled => {
@@ -203,7 +224,7 @@ fn separate_stage(
         }
         Outcome::Done => {
             cache::finish(&ctx.store, lib, hash, &ctx.model_id)?;
-            emit(Event::Ready { track_id });
+            lib.set_source_status(source_id, SourceStatus::Ready, None)?;
         }
     }
     Ok(outcome)
@@ -214,6 +235,9 @@ fn separate_stage(
 struct State {
     queue: VecDeque<i64>,
     running: Option<(i64, Arc<AtomicBool>)>,
+    /// `tracks[0]` from the latest `play()` call: never evicted, regardless
+    /// of where the queue or the running job currently are.
+    playing: Option<i64>,
     shutdown: bool,
 }
 
@@ -231,7 +255,7 @@ impl Worker {
     /// Starts a background thread that prepares queued songs one at a time
     /// and reports their events on `events`.
     pub fn spawn(ctx: Ctx, mut model: Box<dyn VocalModel>, fetcher: Box<dyn LyricsFetcher + Send + Sync>, events: mpsc::Sender<Event>) -> Self {
-        let shared = Arc::new(Shared { state: Mutex::new(State { queue: VecDeque::new(), running: None, shutdown: false }), wake: Condvar::new() });
+        let shared = Arc::new(Shared { state: Mutex::new(State { queue: VecDeque::new(), running: None, playing: None, shutdown: false }), wake: Condvar::new() });
         let s = shared.clone();
         let handle = std::thread::spawn(move || {
             let lib = match Library::open(&ctx.store.db_path()) {
@@ -256,12 +280,13 @@ impl Worker {
                 let _ = prepare(&ctx, &lib, model.as_mut(), fetcher.as_ref(), track, &flag, &mut |e| {
                     let _ = events.send(e);
                 });
-                let upcoming: Vec<i64> = {
+                let (upcoming, playing): (Vec<i64>, Option<i64>) = {
                     let mut st = s.state.lock().unwrap();
                     st.running = None;
-                    st.queue.iter().copied().collect()
+                    (st.queue.iter().copied().collect(), st.playing)
                 };
                 let protected: Vec<String> = std::iter::once(track)
+                    .chain(playing)
                     .chain(upcoming)
                     .filter_map(|t| lib.selected_source(t).ok().flatten()?.audio_hash)
                     .collect();
@@ -275,10 +300,15 @@ impl Worker {
     /// A running job for any other song is cancelled.
     pub fn play(&self, tracks: Vec<i64>) {
         let mut st = self.shared.state.lock().unwrap();
+        st.playing = tracks.first().copied();
         let mut queue: VecDeque<i64> = tracks.into();
         if let Some((running, flag)) = &st.running {
             if queue.front() == Some(running) {
-                queue.pop_front(); // already being prepared
+                // Still preparing the same song: keep it queued (so it
+                // resumes) unless it was already told to cancel.
+                if !flag.load(Ordering::Relaxed) {
+                    queue.pop_front();
+                }
             } else {
                 flag.store(true, Ordering::Relaxed);
             }
@@ -318,6 +348,16 @@ mod tests {
     impl LyricsFetcher for NoLyrics {
         fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
             Ok(None)
+        }
+    }
+
+    /// Slow enough (2 ms/segment, hundreds of segments per chunk) that a
+    /// cancel set right after `play()` is guaranteed to land before it finishes.
+    struct Slow;
+    impl VocalModel for Slow {
+        fn infer(&mut self, i: ndarray::Array4<f32>) -> Result<ndarray::Array4<f32>> {
+            std::thread::sleep(Duration::from_millis(2));
+            Ok(ndarray::Array4::zeros(i.dim()))
         }
     }
 
@@ -412,6 +452,66 @@ mod tests {
         assert_eq!((s.status, s.error.as_deref()), (SourceStatus::Failed, Some("The file was moved or deleted.")));
     }
 
+    #[test]
+    fn an_unknown_track_fails_with_a_plain_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let (r, events) = run(&c, &lib, 999, &AtomicBool::new(false));
+        assert!(r.is_err());
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: 999, message: "This song is no longer in your library.".into() }));
+    }
+
+    #[test]
+    fn separation_error_marks_the_row_failed_and_a_retry_recovers() {
+        struct ErrOnSecondCall(u32);
+        impl VocalModel for ErrOnSecondCall {
+            fn infer(&mut self, i: ndarray::Array4<f32>) -> Result<ndarray::Array4<f32>> {
+                self.0 += 1;
+                if self.0 == 2 {
+                    anyhow::bail!("boom");
+                }
+                Ok(ndarray::Array4::zeros(i.dim()))
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let r = prepare(&c, &lib, &mut ErrOnSecondCall(0), &NoLyrics, t, &AtomicBool::new(false), &mut |_| {});
+        assert!(r.is_err());
+        let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
+        assert_eq!(lib.separation(&hash, "test").unwrap().unwrap().status, SepStatus::Failed);
+
+        let (r, _) = run(&c, &lib, t, &AtomicBool::new(false));
+        assert_eq!(r.unwrap(), Outcome::Done);
+        let s = lib.selected_source(t).unwrap().unwrap();
+        assert_eq!((s.status, s.error.as_deref()), (SourceStatus::Ready, None));
+    }
+
+    #[test]
+    fn lyrics_are_saved_before_ready_is_emitted() {
+        struct MadeUpLyrics;
+        impl LyricsFetcher for MadeUpLyrics {
+            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+                Ok(Some("[00:00.00]la la la\n".into()))
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        lib.update_track_meta(t, "Title", Some("Artist"), None).unwrap();
+        let mut lines_at_ready = None;
+        prepare(&c, &lib, &mut Silence, &MadeUpLyrics, t, &AtomicBool::new(false), &mut |e| {
+            if let Event::Ready { .. } = e {
+                lines_at_ready = Some(lib.lyrics(t).unwrap().unwrap().lines);
+            }
+        })
+        .unwrap();
+        assert_eq!(lines_at_ready.unwrap()[0].text, "la la la");
+    }
+
     fn wait_for(rx: &mpsc::Receiver<Event>, want: &Event) -> Vec<Event> {
         let mut seen = Vec::new();
         loop {
@@ -441,13 +541,6 @@ mod tests {
 
     #[test]
     fn worker_drops_a_song_when_you_switch_away() {
-        struct Slow;
-        impl VocalModel for Slow {
-            fn infer(&mut self, i: ndarray::Array4<f32>) -> Result<ndarray::Array4<f32>> {
-                std::thread::sleep(Duration::from_millis(2));
-                Ok(ndarray::Array4::zeros(i.dim()))
-            }
-        }
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
@@ -460,5 +553,46 @@ mod tests {
         w.play(vec![b]);
         let seen = wait_for(&rx, &Event::Ready { track_id: b });
         assert!(!seen.contains(&Event::Ready { track_id: a }));
+    }
+
+    #[test]
+    fn switching_back_before_the_cancel_lands_still_finishes_the_song() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let a = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let b = ingest::add_file(&lib, &song(dir.path(), "b.wav")).unwrap().track_id;
+        let (tx, rx) = mpsc::channel();
+        let w = Worker::spawn(c, Box::new(Slow), Box::new(NoLyrics), tx);
+        w.play(vec![a]);
+        wait_for(&rx, &Event::Stage { track_id: a, stage: Stage::Separating });
+        w.play(vec![b]);
+        w.play(vec![a]);
+        wait_for(&rx, &Event::Ready { track_id: a });
+    }
+
+    #[test]
+    fn the_playing_song_is_never_evicted() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        lib.set_setting("cache_budget_bytes", "1").unwrap();
+        // Distinct frequencies so a, b and z hash (and get cached) separately.
+        let path = |name, freq| {
+            let p = dir.path().join(name);
+            write_sine_wav(&p, 44_100, 2, 2.5, freq);
+            p
+        };
+        let a = ingest::add_file(&lib, &path("a.wav", 330.0)).unwrap().track_id;
+        let b = ingest::add_file(&lib, &path("b.wav", 440.0)).unwrap().track_id;
+        let z = ingest::add_file(&lib, &path("z.wav", 550.0)).unwrap().track_id;
+        let (tx, rx) = mpsc::channel();
+        let w = Worker::spawn(c, Box::new(Silence), Box::new(NoLyrics), tx);
+        w.play(vec![a, b, z]);
+        // The budget pass that runs right after b finishes happens, in the
+        // worker's own thread, strictly before z starts fetching.
+        wait_for(&rx, &Event::Stage { track_id: z, stage: Stage::Fetching });
+        let hash = lib.selected_source(a).unwrap().unwrap().audio_hash.unwrap();
+        assert_eq!(lib.separation(&hash, "test").unwrap().unwrap().status, SepStatus::Ready);
     }
 }
