@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub struct Entry {
     pub key: u64,
     pub track_id: i64,
+    pub by: Option<String>,
 }
 
 /// The play queue: songs in order, which one is current, and whether the last one finished.
@@ -23,9 +24,9 @@ pub struct Player {
 }
 
 impl Player {
-    fn entry(&mut self, track_id: i64) -> Entry {
+    fn entry(&mut self, track_id: i64, by: Option<String>) -> Entry {
         self.next_key += 1;
-        Entry { key: self.next_key, track_id }
+        Entry { key: self.next_key, track_id, by }
     }
 
     /// Nothing is playing: the queue is empty or its last song finished.
@@ -37,9 +38,9 @@ impl Player {
         self.current.map(|i| self.entries[i].track_id)
     }
 
-    /// Queues a song at the end, or right after the current one; when idle it becomes the current song.
-    pub fn add(&mut self, track_id: i64, next: bool) {
-        let e = self.entry(track_id);
+    /// Queues a song at the end, or right after the current one; when idle it becomes the current song. `by` names the guest who added it.
+    pub fn add(&mut self, track_id: i64, next: bool, by: Option<String>) {
+        let e = self.entry(track_id, by);
         if self.idle() {
             self.entries.push(e);
             self.current = Some(self.entries.len() - 1);
@@ -53,7 +54,7 @@ impl Player {
     pub fn play(&mut self, tracks: &[i64], start: usize) {
         self.entries.clear();
         for &t in tracks {
-            let e = self.entry(t);
+            let e = self.entry(t, None);
             self.entries.push(e);
         }
         self.current = (!self.entries.is_empty()).then(|| start.min(self.entries.len() - 1));
@@ -127,6 +128,7 @@ impl Player {
 pub struct QueueEntry {
     pub key: u64,
     pub track: Track,
+    pub by: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -139,7 +141,7 @@ pub struct PlayerSnapshot {
 }
 
 pub fn snapshot(lib: &Library, p: &Player) -> anyhow::Result<PlayerSnapshot> {
-    let entries = p.entries.iter().map(|e| Ok(QueueEntry { key: e.key, track: lib.track(e.track_id)? })).collect::<anyhow::Result<_>>()?;
+    let entries = p.entries.iter().map(|e| Ok(QueueEntry { key: e.key, track: lib.track(e.track_id)?, by: e.by.clone() })).collect::<anyhow::Result<_>>()?;
     let lyric_offset_ms = match p.current_track() {
         Some(t) => lib.selected_source(t)?.map_or(0, |s| s.lyric_offset_ms),
         None => 0,
@@ -176,9 +178,9 @@ pub fn refresh_if_queued(app: &AppHandle, track_id: i64) {
 }
 
 /// Queues a song, refusing one that is no longer in the library.
-fn queue_song(p: &mut Player, lib: &Library, track_id: i64, next: bool) -> anyhow::Result<()> {
+fn queue_song(p: &mut Player, lib: &Library, track_id: i64, next: bool, by: Option<String>) -> anyhow::Result<()> {
     lib.track(track_id).context(Problem::SongGone)?;
-    p.add(track_id, next);
+    p.add(track_id, next, by);
     Ok(())
 }
 
@@ -202,8 +204,8 @@ pub fn player_state(state: State<'_, AppState>) -> Result<PlayerSnapshot, AppErr
 }
 
 #[tauri::command]
-pub fn queue_add(app: AppHandle, state: State<'_, AppState>, track_id: i64, next: bool) -> Result<PlayerSnapshot, AppError> {
-    update(&app, state.inner(), |p, lib| queue_song(p, lib, track_id, next))
+pub fn queue_add(app: AppHandle, state: State<'_, AppState>, track_id: i64, next: bool, by: Option<String>) -> Result<PlayerSnapshot, AppError> {
+    update(&app, state.inner(), |p, lib| queue_song(p, lib, track_id, next, by))
 }
 
 #[tauri::command]
@@ -332,16 +334,16 @@ mod tests {
     #[test]
     fn a_song_added_when_idle_starts_and_later_ones_line_up() {
         let mut p = Player::default();
-        p.add(1, false);
+        p.add(1, false, None);
         assert_eq!((p.current_track(), p.idle()), (Some(1), false));
-        p.add(2, false);
-        p.add(3, true);
+        p.add(2, false, None);
+        p.add(3, true, None);
         assert_eq!(p.upcoming(), vec![1, 3, 2]);
         p.finish();
         p.finish();
         p.finish();
         assert!(p.idle() && p.upcoming().is_empty());
-        p.add(4, false);
+        p.add(4, false, None);
         assert_eq!((p.current_track(), p.upcoming()), (Some(4), vec![4]));
     }
 
@@ -379,15 +381,15 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         let a = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: "Paper Boats", artist: None, album: None, duration_ms: None }).unwrap();
         let mut p = Player::default();
-        queue_song(&mut p, &lib, a, false).unwrap();
+        queue_song(&mut p, &lib, a, false, None).unwrap();
         let gone = |r: anyhow::Result<()>| kara_core::problem::problem(&r.unwrap_err());
-        assert_eq!(gone(queue_song(&mut p, &lib, 999, true)), Some(Problem::SongGone));
+        assert_eq!(gone(queue_song(&mut p, &lib, 999, true, None)), Some(Problem::SongGone));
         assert_eq!(gone(play_songs(&mut p, &lib, &[a, 999], 0)), Some(Problem::SongGone));
         assert_eq!((p.upcoming(), snapshot(&lib, &p).unwrap().entries.len()), (vec![a], 1));
     }
 
     #[test]
-    fn the_snapshot_carries_the_queue_and_the_current_lyrics_timing() {
+    fn the_snapshot_carries_the_queue_who_added_each_song_and_the_current_lyrics_timing() {
         let lib = Library::open_in_memory().unwrap();
         let add = |title| lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title, artist: None, album: None, duration_ms: None }).unwrap();
         let (a, b) = (add("Paper Boats"), add("Rooftop Static"));
@@ -395,8 +397,10 @@ mod tests {
         lib.set_lyric_offset(src, -300).unwrap();
         let mut p = Player::default();
         p.play(&[a, b], 0);
+        queue_song(&mut p, &lib, b, false, Some("Aiko".into())).unwrap();
         let json = serde_json::to_value(snapshot(&lib, &p).unwrap()).unwrap();
         assert_eq!((json["entries"][1]["track"]["title"].as_str(), json["current"].as_u64(), json["lyricOffsetMs"].as_i64()), (Some("Rooftop Static"), Some(0), Some(-300)));
+        assert_eq!((json["entries"][0]["by"].is_null(), json["entries"][2]["by"].as_str()), (true, Some("Aiko")));
         assert_eq!(json["entries"][0]["track"]["vocalRemoval"], 100);
     }
 

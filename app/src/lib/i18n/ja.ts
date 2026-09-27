@@ -117,6 +117,7 @@ const ja: Record<Key, string> = {
   "queue.emptyBody": "曲をタップするとここに追加されます。「次に再生」で先頭に入れられます。",
   "queue.drag": "ドラッグして並べ替え",
   "queue.remove": "削除",
+  "queue.addedBy": "{name} さんが追加",
   "adding.started": "「{title}」を追加中",
   "adding.reading": "「{title}」を追加中 · ファイルを読み込んでいます",
   "adding.downloading": "「{title}」を追加中 · ダウンロード中",

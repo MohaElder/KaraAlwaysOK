@@ -117,6 +117,7 @@ const es: Record<Key, string> = {
   "queue.emptyBody": "Toca una canción para añadirla aquí. Usa Reproducir a continuación para ponerla primero.",
   "queue.drag": "Arrastra para reordenar",
   "queue.remove": "Quitar",
+  "queue.addedBy": "añadida por {name}",
   "adding.started": "Añadiendo «{title}»",
   "adding.reading": "Añadiendo «{title}» · Leyendo el archivo",
   "adding.downloading": "Añadiendo «{title}» · Descargando",

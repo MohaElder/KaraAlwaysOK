@@ -62,7 +62,7 @@ export const editTrack = (trackId: number, title: string, artist: string, album:
 export const trackLyrics = (trackId: number) => invoke<Lyrics>("track_lyrics", { trackId });
 export const findLyricsAgain = (trackId: number) => invoke<boolean>("find_lyrics_again", { trackId });
 
-export interface QueueEntry { key: number; track: Track }
+export interface QueueEntry { key: number; track: Track; by: string | null }
 export interface PlayerSnapshot { entries: QueueEntry[]; current: number | null; ended: boolean; lyricOffsetMs: number }
 
 export const playerState = () => invoke<PlayerSnapshot>("player_state");

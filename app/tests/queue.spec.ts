@@ -23,3 +23,12 @@ test("the queue shows what's up next, reorders by dragging and removes", async (
   await expect(panel).toContainText("Up next · 1");
   await expect(upNext).toHaveText([/Kettle Duet/]);
 });
+
+test("songs a guest added say who added them", async ({ page }) => {
+  await sing(page, "Paper Boats");
+  await page.evaluate(() => window.fake.guestAdds(3, "Aiko"));
+  await page.keyboard.press("Escape");
+  await page.getByRole("region", { name: "Player" }).getByRole("button", { name: "Queue" }).click();
+  const row = page.getByRole("complementary", { name: "Queue" }).locator("[data-qi]", { hasText: "Lemon Skies" });
+  await expect(row).toContainText("The Porchlights · added by Aiko");
+});

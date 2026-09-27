@@ -46,7 +46,7 @@ const playlists = [
   { id: 2, name: "Friday Mix", user: true, trackIds: [1, 2, 3, 4] },
 ];
 
-let queue: { key: number; trackId: number }[] = [];
+let queue: { key: number; trackId: number; by?: string }[] = [];
 let current: number | null = null;
 let ended = false;
 let nextKey = 0;
@@ -70,6 +70,12 @@ const fake = {
   },
   drop(paths: string[]) {
     return emit("tauri://drag-drop", { paths, position: { x: 0, y: 0 } });
+  },
+  /** A guest adds a song from their phone; with nothing playing it becomes the current song, as the real queue does. */
+  guestAdds(trackId: number, by: string) {
+    queue.push({ key: ++nextKey, trackId, by });
+    if (current == null || ended) [current, ended] = [queue.length - 1, false];
+    changed();
   },
 };
 window.fake = fake;
@@ -102,7 +108,7 @@ function collections(kind: Kind): { card: CollectionCard; tracks: Track[] }[] {
 const allCollections = () => (["playlist", "album", "artist"] as const).flatMap(collections);
 
 function snapshot(): PlayerSnapshot {
-  return { entries: queue.map((e) => ({ key: e.key, track: tracks.get(e.trackId)! })), current, ended, lyricOffsetMs: current === null ? 0 : lyricOffsets.get(queue[current].trackId) ?? 0 };
+  return { entries: queue.map((e) => ({ key: e.key, track: tracks.get(e.trackId)!, by: e.by ?? null })), current, ended, lyricOffsetMs: current === null ? 0 : lyricOffsets.get(queue[current].trackId) ?? 0 };
 }
 
 /** Sends the new queue to the app, as the real backend does after every change. */

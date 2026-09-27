@@ -117,6 +117,7 @@ const ko: Record<Key, string> = {
   "queue.emptyBody": "노래를 탭하면 여기에 추가됩니다. ‘다음에 재생’으로 맨 앞에 넣을 수 있습니다.",
   "queue.drag": "드래그하여 순서 변경",
   "queue.remove": "제거",
+  "queue.addedBy": "{name} 님이 추가함",
   "adding.started": "‘{title}’ 추가 중",
   "adding.reading": "‘{title}’ 추가 중 · 파일을 읽는 중",
   "adding.downloading": "‘{title}’ 추가 중 · 다운로드 중",

@@ -117,6 +117,7 @@ const zhHant: Record<Key, string> = {
   "queue.emptyBody": "點一首歌即可加到這裡。用「接下來播放」把它排到最前。",
   "queue.drag": "拖曳以重新排序",
   "queue.remove": "移除",
+  "queue.addedBy": "{name} 新增",
   "adding.started": "正在加入「{title}」",
   "adding.reading": "正在加入「{title}」 · 正在讀取檔案",
   "adding.downloading": "正在加入「{title}」 · 正在下載",

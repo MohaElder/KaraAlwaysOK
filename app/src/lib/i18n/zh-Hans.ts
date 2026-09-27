@@ -117,6 +117,7 @@ const zhHans: Record<Key, string> = {
   "queue.emptyBody": "点一首歌即可加到这里。用“接下来播放”把它排到最前。",
   "queue.drag": "拖动以重新排序",
   "queue.remove": "移除",
+  "queue.addedBy": "{name} 添加",
   "adding.started": "正在添加“{title}”",
   "adding.reading": "正在添加“{title}” · 正在读取文件",
   "adding.downloading": "正在添加“{title}” · 正在下载",

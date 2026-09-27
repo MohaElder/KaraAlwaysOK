@@ -115,6 +115,7 @@ const en = {
   "queue.emptyBody": "Tap a song to add it here. Use Play next to put it first.",
   "queue.drag": "Drag to reorder",
   "queue.remove": "Remove",
+  "queue.addedBy": "added by {name}",
   "adding.started": "Adding “{title}”",
   "adding.reading": "Adding “{title}” · Reading the file",
   "adding.downloading": "Adding “{title}” · Downloading",
