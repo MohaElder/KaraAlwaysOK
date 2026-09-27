@@ -9,8 +9,13 @@
   import "../styles/base.css";
   import IconContext from "phosphor-svelte/lib/IconContext";
   import { onMount } from "svelte";
+  import { i18n } from "$lib/i18n/index.svelte";
 
   let { children } = $props();
+
+  $effect(() => {
+    document.documentElement.lang = i18n.locale;
+  });
 
   onMount(() => {
     if (import.meta.env.DEV) void fetch("/__webview-log", { method: "POST", body: "ready" }).catch(() => {});

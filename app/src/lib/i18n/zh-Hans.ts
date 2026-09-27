@@ -1,0 +1,38 @@
+import type { Key } from "./en";
+
+const zhHans: Record<Key, string> = {
+  "app.name": "KaraAlwaysOK",
+  "common.tryAgain": "重试",
+  "problem.newerLibrary": "这个资料库由更新版本的 KaraAlwaysOK 创建。请更新应用后再打开。",
+  "problem.dataFolder": "无法打开应用的数据文件夹。",
+  "problem.inUse": "另一个 KaraAlwaysOK 正在使用你的资料库。请关闭后重试。",
+  "problem.libraryOpen": "无法打开你的资料库。",
+  "problem.engineDownload": "无法下载演唱引擎。请检查网络连接。",
+  "problem.engineStart": "无法启动演唱引擎。",
+  "problem.fileMoved": "文件已被移动或删除。",
+  "problem.fileNotAllowed": "KaraAlwaysOK 没有读取此文件的权限。",
+  "problem.notAudio": "这个文件不是可播放的音频。",
+  "problem.songGone": "这首歌已不在你的资料库中。",
+  "problem.noAudio": "这首歌没有可播放的音频。",
+  "problem.download": "无法下载这首歌。请检查链接和网络连接。",
+  "problem.downloaderSetup": "无法准备下载。请检查网络连接。",
+  "problem.unreadable": "无法读取这段音频。可能是不支持的格式。",
+  "problem.songAudio": "无法读取这首歌的音频。",
+  "problem.empty": "这段音频是空的。",
+  "problem.diskFull": "无法保存音频。磁盘已满。",
+  "problem.save": "无法保存音频。",
+  "problem.separate": "无法去除这首歌的人声。",
+  "problem.notPrepared": "这首歌还没准备好。",
+  "problem.partNotReady": "这部分还没准备好。",
+  "problem.streamingLater": "流媒体资料库中的歌曲将在以后的版本中支持。",
+  "problem.upgradeFailed": "无法安全地升级这个资料库。",
+  "problem.linkStreaming": "无法下载流媒体服务的链接。请改为搜索这首歌。",
+  "problem.linkUnsupported": "无法从这个链接获取音频。请粘贴 YouTube、SoundCloud 或 Bandcamp 链接，或音频文件的直接链接。",
+  "problem.readFailed": "无法读取这个文件。",
+  "problem.nothingPlaying": "当前没有在播放。",
+  "problem.notALink": "这不是链接。",
+  "problem.unknown": "出了点问题。",
+  "problem.noSongAtLink": "在这个链接中找不到歌曲。",
+};
+
+export default zhHans;

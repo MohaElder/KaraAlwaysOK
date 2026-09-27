@@ -1,0 +1,38 @@
+import type { Key } from "./en";
+
+const zhHant: Record<Key, string> = {
+  "app.name": "KaraAlwaysOK",
+  "common.tryAgain": "再試一次",
+  "problem.newerLibrary": "這個資料庫由較新版本的 KaraAlwaysOK 建立。請更新 App 後再開啟。",
+  "problem.dataFolder": "無法開啟 App 的資料檔案夾。",
+  "problem.inUse": "另一個 KaraAlwaysOK 正在使用你的資料庫。請關閉後再試一次。",
+  "problem.libraryOpen": "無法開啟你的資料庫。",
+  "problem.engineDownload": "無法下載演唱引擎。請檢查網路連線。",
+  "problem.engineStart": "無法啟動演唱引擎。",
+  "problem.fileMoved": "檔案已被移動或刪除。",
+  "problem.fileNotAllowed": "KaraAlwaysOK 沒有讀取此檔案的權限。",
+  "problem.notAudio": "這個檔案不是可播放的音訊。",
+  "problem.songGone": "這首歌已不在你的資料庫中。",
+  "problem.noAudio": "這首歌沒有可播放的音訊。",
+  "problem.download": "無法下載這首歌。請檢查連結和網路連線。",
+  "problem.downloaderSetup": "無法準備下載。請檢查網路連線。",
+  "problem.unreadable": "無法讀取這段音訊。可能是不支援的格式。",
+  "problem.songAudio": "無法讀取這首歌的音訊。",
+  "problem.empty": "這段音訊是空的。",
+  "problem.diskFull": "無法儲存音訊。磁碟已滿。",
+  "problem.save": "無法儲存音訊。",
+  "problem.separate": "無法去除這首歌的人聲。",
+  "problem.notPrepared": "這首歌還沒準備好。",
+  "problem.partNotReady": "這部分還沒準備好。",
+  "problem.streamingLater": "串流資料庫中的歌曲將在之後的版本中支援。",
+  "problem.upgradeFailed": "無法安全地升級這個資料庫。",
+  "problem.linkStreaming": "無法下載串流服務的連結。請改為搜尋這首歌。",
+  "problem.linkUnsupported": "無法從這個連結取得音訊。請貼上 YouTube、SoundCloud 或 Bandcamp 連結，或音訊檔案的直接連結。",
+  "problem.readFailed": "無法讀取這個檔案。",
+  "problem.nothingPlaying": "目前沒有在播放。",
+  "problem.notALink": "這不是連結。",
+  "problem.unknown": "發生了一些問題。",
+  "problem.noSongAtLink": "在這個連結中找不到歌曲。",
+};
+
+export default zhHant;

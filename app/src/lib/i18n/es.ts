@@ -1,0 +1,38 @@
+import type { Key } from "./en";
+
+const es: Record<Key, string> = {
+  "app.name": "KaraAlwaysOK",
+  "common.tryAgain": "Reintentar",
+  "problem.newerLibrary": "Esta biblioteca se creó con una versión más reciente de KaraAlwaysOK. Actualiza la app para abrirla.",
+  "problem.dataFolder": "No se pudo abrir la carpeta de datos de la app.",
+  "problem.inUse": "Otra copia de KaraAlwaysOK está usando tu biblioteca. Ciérrala y vuelve a intentarlo.",
+  "problem.libraryOpen": "No se pudo abrir tu biblioteca.",
+  "problem.engineDownload": "No se pudo descargar el motor de canto. Revisa tu conexión.",
+  "problem.engineStart": "No se pudo iniciar el motor de canto.",
+  "problem.fileMoved": "El archivo se movió o se eliminó.",
+  "problem.fileNotAllowed": "KaraAlwaysOK no tiene permiso para leer este archivo.",
+  "problem.notAudio": "Este archivo no es un audio que podamos reproducir.",
+  "problem.songGone": "Esta canción ya no está en tu biblioteca.",
+  "problem.noAudio": "Esta canción no tiene audio para reproducir.",
+  "problem.download": "No se pudo descargar esta canción. Revisa el enlace y tu conexión.",
+  "problem.downloaderSetup": "No se pudo preparar la descarga. Revisa tu conexión.",
+  "problem.unreadable": "No se pudo leer este audio. Puede que el formato no sea compatible.",
+  "problem.songAudio": "No se pudo leer el audio de esta canción.",
+  "problem.empty": "Este audio está vacío.",
+  "problem.diskFull": "No se pudo guardar el audio. El disco está lleno.",
+  "problem.save": "No se pudo guardar el audio.",
+  "problem.separate": "No se pudo quitar la voz de esta canción.",
+  "problem.notPrepared": "Esta canción aún no está preparada.",
+  "problem.partNotReady": "Esta parte de la canción aún no está lista.",
+  "problem.streamingLater": "Las canciones de servicios de streaming llegarán en una versión futura.",
+  "problem.upgradeFailed": "No se pudo actualizar esta biblioteca de forma segura.",
+  "problem.linkStreaming": "Los enlaces de servicios de streaming no se pueden descargar. Busca la canción en su lugar.",
+  "problem.linkUnsupported": "No se puede obtener audio de este enlace. Pega un enlace de YouTube, SoundCloud o Bandcamp, o un enlace directo a un archivo de audio.",
+  "problem.readFailed": "No se pudo leer este archivo.",
+  "problem.nothingPlaying": "No se está reproduciendo nada.",
+  "problem.notALink": "Eso no es un enlace.",
+  "problem.unknown": "Algo salió mal.",
+  "problem.noSongAtLink": "No se encontró ninguna canción en este enlace.",
+};
+
+export default es;

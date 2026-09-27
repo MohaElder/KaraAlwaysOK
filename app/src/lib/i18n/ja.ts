@@ -1,0 +1,38 @@
+import type { Key } from "./en";
+
+const ja: Record<Key, string> = {
+  "app.name": "KaraAlwaysOK",
+  "common.tryAgain": "もう一度試す",
+  "problem.newerLibrary": "このライブラリは新しいバージョンの KaraAlwaysOK で作られています。開くにはアプリをアップデートしてください。",
+  "problem.dataFolder": "アプリのデータフォルダを開けませんでした。",
+  "problem.inUse": "別の KaraAlwaysOK がライブラリを使用中です。閉じてからもう一度お試しください。",
+  "problem.libraryOpen": "ライブラリを開けませんでした。",
+  "problem.engineDownload": "歌唱エンジンをダウンロードできませんでした。接続を確認してください。",
+  "problem.engineStart": "歌唱エンジンを起動できませんでした。",
+  "problem.fileMoved": "ファイルが移動または削除されました。",
+  "problem.fileNotAllowed": "KaraAlwaysOK にはこのファイルを読み込む許可がありません。",
+  "problem.notAudio": "このファイルは再生できる音声ではありません。",
+  "problem.songGone": "この曲はライブラリにありません。",
+  "problem.noAudio": "この曲には再生できる音声がありません。",
+  "problem.download": "この曲をダウンロードできませんでした。リンクと接続を確認してください。",
+  "problem.downloaderSetup": "ダウンロードの準備ができませんでした。接続を確認してください。",
+  "problem.unreadable": "この音声を読み込めませんでした。対応していない形式の可能性があります。",
+  "problem.songAudio": "この曲の音声を読み込めませんでした。",
+  "problem.empty": "この音声は空です。",
+  "problem.diskFull": "音声を保存できませんでした。ディスクがいっぱいです。",
+  "problem.save": "音声を保存できませんでした。",
+  "problem.separate": "この曲からボーカルを取り除けませんでした。",
+  "problem.notPrepared": "この曲はまだ準備できていません。",
+  "problem.partNotReady": "この部分はまだ準備できていません。",
+  "problem.streamingLater": "ストリーミングの曲は今後のバージョンで対応します。",
+  "problem.upgradeFailed": "このライブラリを安全にアップグレードできませんでした。",
+  "problem.linkStreaming": "ストリーミングサービスのリンクはダウンロードできません。曲を検索してください。",
+  "problem.linkUnsupported": "このリンクから音声を取得できません。YouTube、SoundCloud、Bandcampのリンクか、音声ファイルへの直接リンクを貼り付けてください。",
+  "problem.readFailed": "このファイルを読み込めませんでした。",
+  "problem.nothingPlaying": "再生中の曲はありません。",
+  "problem.notALink": "リンクではありません。",
+  "problem.unknown": "問題が発生しました。",
+  "problem.noSongAtLink": "このリンクに曲が見つかりませんでした。",
+};
+
+export default ja;

@@ -1,0 +1,38 @@
+import type { Key } from "./en";
+
+const ko: Record<Key, string> = {
+  "app.name": "KaraAlwaysOK",
+  "common.tryAgain": "다시 시도",
+  "problem.newerLibrary": "이 보관함은 더 새로운 버전의 KaraAlwaysOK로 만들어졌습니다. 열려면 앱을 업데이트하세요.",
+  "problem.dataFolder": "앱 데이터 폴더를 열 수 없습니다.",
+  "problem.inUse": "다른 KaraAlwaysOK가 보관함을 사용 중입니다. 닫은 후 다시 시도하세요.",
+  "problem.libraryOpen": "보관함을 열 수 없습니다.",
+  "problem.engineDownload": "노래 엔진을 다운로드할 수 없습니다. 연결을 확인하세요.",
+  "problem.engineStart": "노래 엔진을 시작할 수 없습니다.",
+  "problem.fileMoved": "파일이 이동되었거나 삭제되었습니다.",
+  "problem.fileNotAllowed": "KaraAlwaysOK에 이 파일을 읽을 권한이 없습니다.",
+  "problem.notAudio": "이 파일은 재생할 수 있는 오디오가 아닙니다.",
+  "problem.songGone": "이 노래는 더 이상 보관함에 없습니다.",
+  "problem.noAudio": "이 노래에는 재생할 오디오가 없습니다.",
+  "problem.download": "이 노래를 다운로드할 수 없습니다. 링크와 연결을 확인하세요.",
+  "problem.downloaderSetup": "다운로드를 준비할 수 없습니다. 연결을 확인하세요.",
+  "problem.unreadable": "이 오디오를 읽을 수 없습니다. 지원하지 않는 형식일 수 있습니다.",
+  "problem.songAudio": "이 노래의 오디오를 읽을 수 없습니다.",
+  "problem.empty": "이 오디오는 비어 있습니다.",
+  "problem.diskFull": "오디오를 저장할 수 없습니다. 디스크가 가득 찼습니다.",
+  "problem.save": "오디오를 저장할 수 없습니다.",
+  "problem.separate": "이 노래에서 보컬을 제거할 수 없습니다.",
+  "problem.notPrepared": "이 노래는 아직 준비되지 않았습니다.",
+  "problem.partNotReady": "이 부분은 아직 준비되지 않았습니다.",
+  "problem.streamingLater": "스트리밍 보관함의 노래는 이후 버전에서 지원됩니다.",
+  "problem.upgradeFailed": "이 보관함을 안전하게 업그레이드할 수 없습니다.",
+  "problem.linkStreaming": "스트리밍 서비스 링크는 다운로드할 수 없습니다. 대신 노래를 검색하세요.",
+  "problem.linkUnsupported": "이 링크에서 오디오를 가져올 수 없습니다. YouTube, SoundCloud, Bandcamp 링크나 오디오 파일의 직접 링크를 붙여 넣으세요.",
+  "problem.readFailed": "이 파일을 읽을 수 없습니다.",
+  "problem.nothingPlaying": "재생 중인 노래가 없습니다.",
+  "problem.notALink": "링크가 아닙니다.",
+  "problem.unknown": "문제가 발생했습니다.",
+  "problem.noSongAtLink": "이 링크에서 노래를 찾을 수 없습니다.",
+};
+
+export default ko;

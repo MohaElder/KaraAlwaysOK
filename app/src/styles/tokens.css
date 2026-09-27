@@ -8,13 +8,18 @@
   --glass-edge: rgba(255, 255, 255, .8); --glass-line: rgba(27, 36, 48, .12);
   --thumb: #FFFFFF; --bezel: #0B0F14;
   --blur: blur(30px) saturate(1.9);
-  --body: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --display: "Bricolage Grotesque", "Geist", ui-sans-serif, sans-serif;
+  --cjk: "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo";
+  --body: "Geist", var(--cjk), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --display: "Bricolage Grotesque", "Geist", var(--cjk), ui-sans-serif, sans-serif;
   --mono: "Geist Mono", ui-monospace, Menlo, monospace;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px;
   --r-sm: 8px; --r-lg: 14px; --row: 52px; --side-w: 260px;
   --ease: cubic-bezier(.2, .7, .2, 1); --t: 240ms; --sy: 8px; --motion: 1;
 }
+
+:root:lang(ja) { --cjk: "Hiragino Sans", "PingFang SC", "Apple SD Gothic Neo"; }
+:root:lang(ko) { --cjk: "Apple SD Gothic Neo", "PingFang SC", "Hiragino Sans"; }
+:root:lang(zh-Hant) { --cjk: "PingFang TC", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo"; }
 
 @media (prefers-color-scheme: dark) {
   :root {
