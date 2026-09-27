@@ -96,6 +96,8 @@ The karaoke view stays dark in both modes and uses the dark accent.
 
 **Motion rule** — every interaction animates: showing or hiding any view, sheet, menu, popover, button or status, and every state change. Use only two simple, consistent transitions: a fade, or a short slide (paired with a fade) along the direction the element comes from. Same durations and easing everywhere; they should feel natural, never showy. Respect the system "reduce motion" setting (fall back to fade only).
 
+**Languages** — the MVP ships in English, Japanese, Korean, Simplified Chinese, Traditional Chinese and Spanish. The app follows the system language (English if it isn't one of these), and Settings can change it. The phone page follows the phone's browser language. Every piece of UI text lives in one file per language, looked up by key; components hold no text. Song titles, artists, albums and lyrics are never translated. Layouts must handle longer text (Spanish) and CJK text; Geist has no CJK letters, so CJK falls back to the system fonts (PingFang, Hiragino Sans, Apple SD Gothic Neo).
+
 ## 3. Architecture
 
 Pipeline: **provider → processor → streamer → UI**. Rust does fetching, decoding and ML; the web view does playback and mixing.
