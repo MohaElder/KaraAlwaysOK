@@ -236,13 +236,14 @@ fn prepare_inner(
 }
 
 /// The song in the standard format, plus its hash. Decodes the kept original
-/// when there is one and it reads; otherwise deletes it, fetches the song and keeps a copy.
+/// when there is one; if it's missing or damaged (deleted), fetches the song and keeps a copy.
 fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, emit: &mut dyn FnMut(Event)) -> Result<(String, Stereo)> {
     if let Some(hash) = &source.audio_hash {
         if let Some(p) = ctx.store.original_path(hash) {
             match audio::decode_file(&p) {
                 Ok(d) => return Ok((hash.clone(), d.audio)),
-                Err(_) => std::fs::remove_file(&p).context("Couldn't read this song's audio.")?,
+                Err(e) if audio::is_damaged(&e) => std::fs::remove_file(&p).context("Couldn't read this song's audio.")?,
+                Err(e) => return Err(e.context("Couldn't read this song's audio.")),
             }
         }
     }
@@ -631,6 +632,25 @@ mod tests {
         damage();
         std::fs::remove_file(c.store.chunk_path(&hash, "test", 2)).unwrap();
         fetches_and_plays();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_original_that_cannot_be_opened_is_kept() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        run(&c, &lib, t, &AtomicBool::new(false)).0.unwrap();
+        let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
+        let original = c.store.original_path(&hash).unwrap();
+        std::fs::remove_file(c.store.chunk_path(&hash, "test", 2)).unwrap();
+        std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        assert!(cache::track_chunk_pcm(&c.store, &lib, "test", t, 0).is_err());
+        assert!(run(&c, &lib, t, &AtomicBool::new(false)).0.is_err());
+        assert!(original.exists());
     }
 
     #[test]

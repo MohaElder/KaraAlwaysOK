@@ -134,6 +134,11 @@ pub fn read_tags(path: &Path) -> Result<(Tags, Option<i64>)> {
     Ok((tags, dur))
 }
 
+/// Whether a decode error means the file is damaged, rather than that it couldn't be opened.
+pub fn is_damaged(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<std::io::Error>().is_none()
+}
+
 /// Decode any supported file to 44.1 kHz stereo. Mono is duplicated; channels past two are dropped.
 pub fn decode_file(path: &Path) -> Result<Decoded> {
     let mut audio = Stereo::default();

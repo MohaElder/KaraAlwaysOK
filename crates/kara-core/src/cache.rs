@@ -1,7 +1,7 @@
 //! The separated-audio cache: chunk files on disk, marking songs ready, the
 //! disk budget (least recently played goes first) and cleanup after a crash.
 
-use crate::audio::{decode_range, encode_flac, read_flac, Stereo, SAMPLE_RATE};
+use crate::audio::{decode_range, encode_flac, is_damaged, read_flac, Stereo, SAMPLE_RATE};
 use crate::library::{Library, SepStatus, SourceKind};
 use crate::separate::mdx::ChunkOut;
 use crate::store::{write_atomic, DataLock, Store};
@@ -63,14 +63,16 @@ fn interleave(a: &Stereo) -> Vec<f32> {
 }
 
 /// One chunk's vocals and instrumental, readable as soon as that chunk is written.
-/// Deletes an original it can't read, so the next prepare fetches the song again.
+/// Deletes a damaged original, so the next prepare fetches the song again.
 pub fn chunk_pcm(store: &Store, lib: &Library, hash: &str, model_id: &str, index: u32) -> Result<ChunkPcm> {
     let row = lib.separation(hash, model_id)?.context("This song isn't prepared yet.")?;
     let original = store.original_path(hash).context("This song isn't prepared yet.")?;
     let vocals = read_vocals(store, hash, model_id, index)?;
     let chunk_len = row.chunk_ms as usize * SAMPLE_RATE as usize / 1000;
-    let mix = decode_range(&original, index as usize * chunk_len, vocals.len()).inspect_err(|_| {
-        let _ = std::fs::remove_file(&original);
+    let mix = decode_range(&original, index as usize * chunk_len, vocals.len()).inspect_err(|e| {
+        if is_damaged(e) {
+            let _ = std::fs::remove_file(&original);
+        }
     })?;
     let minus = |m: &[f32], v: &[f32]| m.iter().zip(v).map(|(m, v)| m - v).collect();
     let inst = Stereo { left: minus(&mix.left, &vocals.left), right: minus(&mix.right, &vocals.right) };
