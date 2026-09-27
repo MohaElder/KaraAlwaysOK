@@ -1060,9 +1060,10 @@ mod tests {
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
         let a = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let b = ingest::add_file(&lib, &song(dir.path(), "b.wav")).unwrap().track_id;
         let (w, rx) = worker(&c, Silence);
-        w.play(vec![a]);
-        wait_for(&rx, &Event::Ready { track_id: a });
+        w.play(vec![a, b]);
+        wait_for(&rx, &Event::Ready { track_id: b });
         w.play(vec![a]);
         wait_for(&rx, &Event::Ready { track_id: a });
     }

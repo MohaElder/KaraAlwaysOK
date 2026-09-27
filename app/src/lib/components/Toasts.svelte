@@ -13,7 +13,7 @@
 
 <div class="toasts" role="status">
   {#each toasts.list as t (t.id)}
-    <div class="toast glass" class:link={!!t.onClick} transition:slide={{ y: 8 }} role="button" tabindex="0" onclick={() => tap(t)} onkeydown={(e) => e.key === "Enter" && tap(t)}>
+    <div class="toast glass" class:link={!!t.onClick} transition:slide={{ y: 8 }} {...(t.onClick && { role: "button", tabindex: 0 })} onclick={() => tap(t)} onkeydown={(e) => e.key === "Enter" && tap(t)}>
       {#if t.art}
         <Artwork track={t.art} size={28} />
       {:else if t.spin}

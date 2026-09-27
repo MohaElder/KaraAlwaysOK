@@ -168,6 +168,7 @@ class PlayerState {
   /** Tells the user why the queue didn't change. */
   private refused = (e: unknown) => {
     toasts.show(say(e), { icon: WarningIcon });
+    if (this.idle) this.wantPlay = false;
     return null;
   };
 
