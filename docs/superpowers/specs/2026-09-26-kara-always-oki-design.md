@@ -312,6 +312,8 @@ Each phase gets its own implementation plan.
 
 ## 9. Out of scope (for now)
 
+- **Per-app AirPlay** (send only KaraAlwaysOK's audio to an AirPlay speaker, with lyrics shifted for AirPlay's ~2 s delay; phone mics stay on the Mac's speakers). Parked 2026-09-27: needs either the web view's media AirPlay (untested for a live mix) or moving output to Apple's native player. System-wide AirPlay from Control Center already works.
+
 - Lyric timing from audio (Whisper) when no synced lyrics exist.
 - Recording or exporting performances.
 - Windows / Linux builds (planned for the public release).
