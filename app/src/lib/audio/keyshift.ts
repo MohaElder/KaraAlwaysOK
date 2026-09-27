@@ -54,8 +54,9 @@ export class KeyShift {
   }
 
   private async create(): Promise<StretchNode> {
-    const hung = new Promise<never>((_, fail) => setTimeout(() => this.ctx.state === "running" && fail(new Error("key shift did not start")), 10_000));
-    const node = await Promise.race([SignalsmithStretch(this.ctx), hung]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hung = new Promise<never>((_, fail) => (timer = setTimeout(() => this.ctx.state === "running" && fail(new Error("key shift did not start")), 10_000)));
+    const node = await Promise.race([SignalsmithStretch(this.ctx), hung]).finally(() => clearTimeout(timer));
     node.connect(this.ctx.destination);
     this.lag = await node.latency();
     await node.start();

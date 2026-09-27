@@ -12,6 +12,7 @@ interface Chunk {
 const START_AHEAD = 6;
 const RESUME_AHEAD = 3;
 const LEAD = 0.1;
+const FADE = 0.015;
 
 /** Plays one song's separated audio as it gets ready: fetches chunks ahead of the playhead,
  *  lines them up on the audio clock, mixes the singer in and shifts the key. */
@@ -28,6 +29,8 @@ export class Streamer {
   private chunks = new Map<number, Chunk>();
   private fetching = new Set<number>();
   private sources: AudioBufferSourceNode[] = [];
+  /** This run's vocal and instrumental volume, faded out when it stops. */
+  private fades: [GainNode, GainNode] | null = null;
   private nextToSchedule = 0;
   private scheduledEnd = 0;
   private anchor = 0;
@@ -201,7 +204,7 @@ export class Streamer {
     this.nextToSchedule = chunkAt(pos, this.chunkSec);
     this.scheduledEnd = pos;
     this.phase = "playing";
-    this.key.input.gain.setValueAtTime(1, this.anchor + pos);
+    this.fades = [this.fadeInto(this.vocals), this.fadeInto(this.key.input)];
     this.scheduleReady();
     this.onChange();
   }
@@ -213,7 +216,7 @@ export class Streamer {
       this.scheduledEnd = i * this.chunkSec + c.inst.duration;
       const plan = planStart(i, this.chunkSec, c.inst.duration, this.anchor, this.ctx.currentTime);
       if (!plan) continue;
-      for (const [buffer, dest] of [[c.vocals, this.vocals], [c.inst, this.key.input]] as const) {
+      for (const [buffer, dest] of [[c.vocals, this.fades![0]], [c.inst, this.fades![1]]] as const) {
         const s = this.ctx.createBufferSource();
         s.buffer = buffer;
         s.connect(dest);
@@ -227,12 +230,22 @@ export class Streamer {
   private halt() {
     if (this.phase === "playing") this.pos = this.position();
     const now = this.ctx.currentTime;
-    this.key.input.gain.setTargetAtTime(0, now, 0.003);
     for (const s of this.sources) {
       s.onended = null;
-      s.stop(now + 0.015);
+      s.stop(now + FADE);
     }
     this.sources = [];
+    for (const fade of this.fades ?? []) {
+      fade.gain.setTargetAtTime(0, now, FADE / 5);
+      setTimeout(() => fade.disconnect(), FADE * 1000);
+    }
+    this.fades = null;
+  }
+
+  private fadeInto(dest: AudioNode): GainNode {
+    const fade = this.ctx.createGain();
+    fade.connect(dest);
+    return fade;
   }
 
   /** Keeps the chunks around the playhead decoded and drops the rest. */
