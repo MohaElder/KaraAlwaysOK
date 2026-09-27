@@ -78,9 +78,16 @@ pub fn save_artwork(lib: &Library, store: &Store, track_id: i64, bytes: &[u8], e
     lib.set_artwork(track_id, &path.display().to_string())
 }
 
+/// Downloads a thumbnail and saves it, unless the response isn't actually an image.
 fn download_artwork(lib: &Library, store: &Store, track_id: i64, url: &str) -> Result<()> {
-    let ext = Url::parse(url)?.path().rsplit('.').next().and_then(image_ext).unwrap_or("jpg");
-    let bytes = reqwest::blocking::get(url)?.error_for_status()?.bytes()?;
+    let resp = reqwest::blocking::get(url)?.error_for_status()?;
+    let ext = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| image_ext(v.split(';').next().unwrap_or(v)))
+        .context("the linked thumbnail isn't an image")?;
+    let bytes = resp.bytes()?;
     save_artwork(lib, store, track_id, &bytes, ext)
 }
 

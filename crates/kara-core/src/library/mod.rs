@@ -257,8 +257,9 @@ impl Library {
         Ok(())
     }
 
+    /// Sets a song's artwork if it doesn't have one yet; the first picture a song gets is kept.
     pub fn set_artwork(&self, id: i64, path: &str) -> Result<()> {
-        self.conn.execute("UPDATE track SET artwork_path = ?2 WHERE id = ?1", params![id, path])?;
+        self.conn.execute("UPDATE track SET artwork_path = ?2 WHERE id = ?1 AND artwork_path IS NULL", params![id, path])?;
         Ok(())
     }
 
@@ -815,5 +816,14 @@ mod tests {
         let seed = Library::open(&p).unwrap().track(id).unwrap().art_seed;
         assert!(seed < 360);
         assert_eq!(Library::open(&p).unwrap().track(id).unwrap().art_seed, seed);
+    }
+
+    #[test]
+    fn the_first_artwork_a_song_gets_is_kept() {
+        let l = lib();
+        let id = l.add_track(&local("A", None)).unwrap();
+        l.set_artwork(id, "/art/first.png").unwrap();
+        l.set_artwork(id, "/art/second.png").unwrap();
+        assert_eq!(l.track(id).unwrap().artwork_path.as_deref(), Some("/art/first.png"));
     }
 }
