@@ -2,3 +2,5 @@ node_modules
 /build
 /.svelte-kit
 /src-tauri/gen
+/test-results
+/playwright-report
