@@ -215,7 +215,7 @@ mod tests {
     }
 
     fn chunk(index: usize, len: usize) -> ChunkOut {
-        ChunkOut { index, vocals: Stereo::silence(len), inst: Stereo::default() }
+        ChunkOut { index, vocals: Stereo::silence(len) }
     }
 
     fn sep_row(hash: &str, total: u32, status: SepStatus, used: i64) -> SeparationRow {
@@ -268,7 +268,7 @@ mod tests {
             let part = mix.slice(start, (start + 44_100).min(mix.len()));
             let loud = |x: &Vec<f32>| x.iter().map(|s| -1.5 * s).collect();
             let vocals = Stereo { left: loud(&part.left), right: loud(&part.right) };
-            write_chunk(&s, "h", "m", &ChunkOut { index, vocals, inst: Stereo::default() }).unwrap();
+            write_chunk(&s, "h", "m", &ChunkOut { index, vocals }).unwrap();
         }
         let row = SeparationRow { chunk_ms: 1_000, ..sep_row("h", 3, SepStatus::Running, 0) };
         lib.upsert_separation(&row).unwrap();

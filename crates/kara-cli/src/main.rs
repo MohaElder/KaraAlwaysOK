@@ -138,14 +138,13 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
     let mut model = OnnxModel::load(&lib, model_path, coreml)?;
     let load_s = t1.elapsed().as_secs_f64();
     let params = MdxParams { n_fft: 7680, hop: 1024, dim_f: 3072, dim_t: 256, compensate };
-    let (mut vocals, mut inst) = (Vec::new(), Vec::new());
+    let mut vocals = Vec::new();
     let interleave = |a: &Stereo| a.left.iter().zip(&a.right).flat_map(|(l, r)| [*l, *r]).collect::<Vec<_>>();
     let mut first_chunk_s = None;
     let t2 = Instant::now();
     mdx::separate(&mut model, &params, &mix, CHUNK_LEN, 0, &AtomicBool::new(false), |c| {
         first_chunk_s.get_or_insert(t2.elapsed().as_secs_f64());
         vocals.extend(interleave(&c.vocals));
-        inst.extend(interleave(&c.inst));
         Ok(())
     })?;
     let sep_s = t2.elapsed().as_secs_f64();
@@ -161,6 +160,7 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
     }
     if let Some(dir) = out {
         std::fs::create_dir_all(dir)?;
+        let inst: Vec<f32> = interleave(&mix).iter().zip(&vocals).map(|(m, v)| m - v).collect();
         write_wav(&dir.join("vocals.wav"), &vocals)?;
         write_wav(&dir.join("instrumental.wav"), &inst)?;
         println!("wrote {}", dir.display());

@@ -1,5 +1,5 @@
 //! Runs an MDX-Net vocal model over a whole song in segments and regroups the
-//! result into fixed-length chunks (vocals + instrumental = mix).
+//! vocals into fixed-length chunks.
 
 use super::stft::{Complex32, Stft};
 use crate::audio::Stereo;
@@ -39,7 +39,6 @@ pub trait VocalModel: Send {
 pub struct ChunkOut {
     pub index: usize,
     pub vocals: Stereo,
-    pub inst: Stereo,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -113,7 +112,7 @@ pub fn separate(
     let mut seg = out_start / gen;
     let mut skip = out_start - seg * gen;
     let mut index = start_chunk;
-    let (mut pv, mut pi) = (Stereo::default(), Stereo::default());
+    let mut pv = Stereo::default();
 
     while seg * gen < total {
         if cancel.load(Ordering::Relaxed) {
@@ -131,11 +130,8 @@ pub fn separate(
         let (vl, vr) = (stft.inverse(&sl, size), stft.inverse(&sr, size));
         let n = (base + gen).min(total) - base;
         for k in skip..n {
-            let (a, b) = (vl[trim + k] * p.compensate, vr[trim + k] * p.compensate);
-            pv.left.push(a);
-            pv.right.push(b);
-            pi.left.push(mix.left[base + k] - a);
-            pi.right.push(mix.right[base + k] - b);
+            pv.left.push(vl[trim + k] * p.compensate);
+            pv.right.push(vr[trim + k] * p.compensate);
         }
         skip = 0;
         seg += 1;
@@ -143,8 +139,7 @@ pub fn separate(
         while pv.len() >= chunk_len || (last && !pv.is_empty()) {
             let take = chunk_len.min(pv.len());
             let vocals = Stereo { left: pv.left.drain(..take).collect(), right: pv.right.drain(..take).collect() };
-            let inst = Stereo { left: pi.left.drain(..take).collect(), right: pi.right.drain(..take).collect() };
-            on_chunk(ChunkOut { index, vocals, inst })?;
+            on_chunk(ChunkOut { index, vocals })?;
             index += 1;
         }
     }
@@ -174,10 +169,10 @@ mod tests {
         out
     }
 
-    fn joined(chunks: &[ChunkOut], vocals: bool) -> Stereo {
+    fn joined(chunks: &[ChunkOut]) -> Stereo {
         let mut s = Stereo::default();
         for c in chunks {
-            s.append(if vocals { &c.vocals } else { &c.inst });
+            s.append(&c.vocals);
         }
         s
     }
@@ -191,25 +186,11 @@ mod tests {
     }
 
     #[test]
-    fn silence_model_gives_instrumental_equal_to_mix() {
-        let m = mix(1000);
-        let chunks = run(&mut Silence, &test_params(), &m, 300, 0);
+    fn silence_model_gives_silent_vocals_in_fixed_length_chunks() {
+        let chunks = run(&mut Silence, &test_params(), &mix(1000), 300, 0);
         assert_eq!(chunks.iter().map(|c| c.vocals.len()).collect::<Vec<_>>(), vec![300, 300, 300, 100]);
         assert_eq!(chunks.iter().map(|c| c.index).collect::<Vec<_>>(), vec![0, 1, 2, 3]);
-        assert_eq!(joined(&chunks, false), m);
-        assert!(joined(&chunks, true).left.iter().all(|x| *x == 0.0));
-    }
-
-    #[test]
-    fn vocals_plus_instrumental_is_the_mix() {
-        let m = mix(1000);
-        let p = MdxParams { compensate: 1.035, ..test_params() };
-        let chunks = run(&mut Passthrough, &p, &m, 300, 0);
-        let (v, i) = (joined(&chunks, true), joined(&chunks, false));
-        for k in 0..m.len() {
-            assert!((v.left[k] + i.left[k] - m.left[k]).abs() < 1e-6);
-            assert!((v.right[k] + i.right[k] - m.right[k]).abs() < 1e-6);
-        }
+        assert!(joined(&chunks).left.iter().all(|x| *x == 0.0));
     }
 
     /// What a whole-signal STFT round trip gives after zeroing bins 0..3, the
@@ -229,7 +210,7 @@ mod tests {
         let m = mix(2000);
         let p = test_params();
         let chunks = run(&mut Passthrough, &p, &m, 300, 0);
-        let v = joined(&chunks, true);
+        let v = joined(&chunks);
         let expected = low_bins_zeroed(&m.left, &p);
         assert_eq!(v.len(), m.len());
         // Segment seams leave a small residual (< 4e-3 measured); a real
@@ -248,7 +229,6 @@ mod tests {
         assert_eq!(resumed.len(), full.len() - 2);
         for (a, b) in full[2..].iter().zip(&resumed) {
             assert_eq!(a.vocals, b.vocals);
-            assert_eq!(a.inst, b.inst);
         }
     }
 
