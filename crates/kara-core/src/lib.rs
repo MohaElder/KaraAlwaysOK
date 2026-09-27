@@ -4,6 +4,7 @@ pub mod assets;
 pub mod audio;
 pub mod cache;
 pub mod ingest;
+pub mod jobs;
 pub mod library;
 pub mod lyrics;
 pub mod separate;
