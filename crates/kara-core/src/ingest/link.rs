@@ -37,6 +37,27 @@ pub fn parse_link(input: &str) -> Option<Url> {
     Some(url)
 }
 
+/// The one link for a YouTube video, whatever form it was pasted in; other links unchanged.
+pub fn canonical(url: &Url) -> Url {
+    let host = url.host_str().unwrap_or("").trim_end_matches('.').to_ascii_lowercase();
+    let mut path = url.path_segments().into_iter().flatten();
+    let id = if host_is(&host, "youtu.be") {
+        path.next().map(str::to_string)
+    } else if host_is(&host, "youtube.com") {
+        match path.next() {
+            Some("watch") => url.query_pairs().find(|(k, _)| k == "v").map(|(_, v)| v.into_owned()),
+            Some("shorts" | "live" | "embed") => path.next().map(str::to_string),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    match id.filter(|id| !id.is_empty()) {
+        Some(id) => Url::parse_with_params("https://www.youtube.com/watch", [("v", id)]).unwrap_or_else(|_| url.clone()),
+        None => url.clone(),
+    }
+}
+
 pub fn verdict(url: &Url) -> LinkVerdict {
     let host = url.host_str().unwrap_or("").trim_end_matches('.').to_ascii_lowercase();
     let ext = url.path().rsplit('.').next().unwrap_or("").to_ascii_lowercase();
@@ -66,6 +87,26 @@ mod tests {
 
     fn v(s: &str) -> LinkVerdict {
         verdict(&parse_link(s).unwrap())
+    }
+
+    #[test]
+    fn every_youtube_link_form_becomes_one_watch_link() {
+        let watch = "https://www.youtube.com/watch?v=abc123";
+        for form in [
+            "https://youtu.be/abc123?si=track",
+            "youtube.com/watch?v=abc123&t=30&list=PL1",
+            "https://music.youtube.com/watch?v=abc123&si=x",
+            "https://m.youtube.com/watch?v=abc123",
+            "https://www.youtube.com/shorts/abc123?si=x",
+            "https://www.youtube.com/live/abc123",
+            "https://www.youtube.com/embed/abc123",
+            watch,
+        ] {
+            assert_eq!(canonical(&parse_link(form).unwrap()).as_str(), watch, "{form}");
+        }
+        for other in ["https://soundcloud.com/a/b?si=x", "https://www.youtube.com/playlist?list=PL1"] {
+            assert_eq!(canonical(&parse_link(other).unwrap()).as_str(), other);
+        }
     }
 
     #[test]

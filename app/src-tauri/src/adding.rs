@@ -78,7 +78,12 @@ pub async fn link_preview(state: State<'_, AppState>, url: String, on_update: Ch
 #[tauri::command]
 pub async fn youtube_search(state: State<'_, AppState>, query: String) -> Result<Vec<SearchHit>, AppError> {
     let bin_dir = state.store.bin_dir();
-    tauri::async_runtime::spawn_blocking(move || ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query))).await.map_err(AppError::from)?.plain()
+    tauri::async_runtime::spawn_blocking(move || {
+        ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query)).map_err(|e| coded(e, kara_core::problem::Problem::NoSongAtLink))
+    })
+    .await
+    .map_err(AppError::from)?
+    .plain()
 }
 
 /// Puts a dropped file in Imported; `start_adding` then gets it ready.

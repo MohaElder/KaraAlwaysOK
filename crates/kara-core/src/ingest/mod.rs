@@ -121,6 +121,7 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
 
 /// Adds a link as a track right away (a link already in the library returns its existing track); its real title arrives when the audio is fetched.
 pub fn add_link(lib: &Library, url: &Url) -> Result<Ingested> {
+    let url = &link::canonical(url);
     if let Some(p) = link::rejection(url) {
         bail!(p);
     }
@@ -265,7 +266,7 @@ mod tests {
         assert!(add_link(&lib, &url).is_err());
         let url = link::parse_link("https://youtu.be/abc").unwrap();
         let ing = add_link(&lib, &url).unwrap();
-        assert_eq!(lib.track(ing.track_id).unwrap().title, "youtu.be link");
+        assert_eq!(lib.track(ing.track_id).unwrap().title, "youtube.com link");
     }
 
     #[cfg(unix)]

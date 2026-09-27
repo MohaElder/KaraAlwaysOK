@@ -12,8 +12,8 @@
   import SoundcloudLogoIcon from "phosphor-svelte/lib/SoundcloudLogoIcon";
   import GlobeIcon from "phosphor-svelte/lib/GlobeIcon";
 
-  let { preview, host, onAdd }: { preview: LinkPreview | null; host: string; onAdd: (then: Then) => void } = $props();
-  const Site = $derived(host.includes("youtu") ? YoutubeLogoIcon : host.includes("soundcloud") ? SoundcloudLogoIcon : GlobeIcon);
+  let { preview, host, onAdd }: { preview: LinkPreview | null; host?: string; onAdd: (then: Then) => void } = $props();
+  const Site = $derived(host?.includes("youtu") ? YoutubeLogoIcon : host?.includes("soundcloud") ? SoundcloudLogoIcon : GlobeIcon);
 </script>
 
 {#if !preview}
@@ -26,7 +26,7 @@
     </span>
     <span class="grow">
       <b class="ell">{preview.title}</b>
-      <span class="hstack muted"><span use:tip={host}><Site /></span><span class="ell">{[preview.channel, duration(preview.durationMs)].filter(Boolean).join(" · ")}</span></span>
+      <span class="hstack muted">{#if host}<span use:tip={host}><Site /></span>{/if}<span class="ell">{[preview.channel, duration(preview.durationMs)].filter(Boolean).join(" · ")}</span></span>
     </span>
     <button class="ib" use:tip={t("song.addToQueue")} onclick={(e) => { e.stopPropagation(); onAdd("queue"); }}><ListPlusIcon size={18} /></button>
     <button class="ib" use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); onAdd("next"); }}><ArrowBendDownRightIcon size={18} /></button>

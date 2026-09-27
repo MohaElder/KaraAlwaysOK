@@ -4,6 +4,7 @@ use super::link::host_is;
 use crate::problem::Problem;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -76,6 +77,7 @@ struct Dump {
     thumbnail: Option<String>,
     #[serde(default)]
     thumbnails: Vec<Thumbnail>,
+    live_status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -109,14 +111,18 @@ pub fn probe(bin: &Path, url: &Url) -> Result<LinkPreview> {
     Ok(d.preview())
 }
 
-/// The top YouTube videos for `query`, from yt-dlp's search without downloading anything.
+/// The top YouTube videos for `query`, once each and none live or still to come, from
+/// yt-dlp's search without downloading anything.
 pub fn search(bin: &Path, query: &str) -> Result<Vec<SearchHit>> {
     let target = format!("ytsearch{SEARCH_RESULTS}:{query}");
     let out = run_with_timeout(bin, &["--flat-playlist", "--dump-json", "--skip-download", "--no-warnings", &target], SEARCH_TIMEOUT)?;
+    let mut seen = HashSet::new();
     Ok(out
         .lines()
         .filter_map(|line| serde_json::from_str::<Dump>(line).ok())
+        .filter(|d| !matches!(d.live_status.as_deref(), Some("is_live" | "is_upcoming")))
         .filter_map(|mut d| Some(SearchHit { url: d.url.take()?, preview: d.preview() }))
+        .filter(|hit| seen.insert(hit.url.clone()))
         .collect())
 }
 
@@ -230,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn search_lists_ytdlp_flat_results_and_skips_broken_entries() {
+    fn search_lists_ytdlp_flat_results_once_each_skipping_broken_live_and_upcoming_entries() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("yt-dlp");
         std::fs::write(
@@ -239,7 +245,10 @@ mod tests {
              {\"_type\":\"url\",\"id\":\"aaa\",\"url\":\"https://www.youtube.com/watch?v=aaa\",\"title\":\"Made Up Song\",\"channel\":\"Made Up Channel\",\"duration\":205.4,\"thumbnails\":[{\"url\":\"https://i.example/a-small.jpg\",\"width\":360},{\"url\":\"https://i.example/a-big.jpg\",\"width\":720}]}\n\
              not json\n\
              {\"_type\":\"url\",\"id\":\"bbb\",\"title\":\"No Link\"}\n\
-             {\"_type\":\"url\",\"id\":\"ccc\",\"url\":\"https://www.youtube.com/watch?v=ccc\",\"title\":\"Live Thing\",\"uploader\":\"Someone\",\"duration\":null}\n\
+             {\"_type\":\"url\",\"id\":\"ccc\",\"url\":\"https://www.youtube.com/watch?v=ccc\",\"title\":\"Old Stream\",\"uploader\":\"Someone\",\"duration\":null,\"live_status\":\"was_live\"}\n\
+             {\"_type\":\"url\",\"id\":\"ddd\",\"url\":\"https://www.youtube.com/watch?v=ddd\",\"title\":\"On Air\",\"live_status\":\"is_live\"}\n\
+             {\"_type\":\"url\",\"id\":\"eee\",\"url\":\"https://www.youtube.com/watch?v=eee\",\"title\":\"Premiere\",\"live_status\":\"is_upcoming\"}\n\
+             {\"_type\":\"url\",\"id\":\"aaa\",\"url\":\"https://www.youtube.com/watch?v=aaa\",\"title\":\"Made Up Song\"}\n\
              EOF\n",
         )
         .unwrap();
@@ -255,7 +264,7 @@ mod tests {
                 },
                 SearchHit {
                     url: "https://www.youtube.com/watch?v=ccc".into(),
-                    preview: LinkPreview { title: "Live Thing".into(), channel: Some("Someone".into()), duration_ms: None, thumbnail: None },
+                    preview: LinkPreview { title: "Old Stream".into(), channel: Some("Someone".into()), duration_ms: None, thumbnail: None },
                 },
             ]
         );

@@ -4,7 +4,7 @@
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { ui } from "$lib/state/ui.svelte";
   import { player } from "$lib/state/player.svelte";
-  import { adding } from "$lib/state/adding.svelte";
+  import { adding, type Then } from "$lib/state/adding.svelte";
   import { cardName, library } from "$lib/state/library.svelte";
   import { fade, fadeAway } from "$lib/motion";
   import Cover from "./Cover.svelte";
@@ -18,7 +18,7 @@
   import MagnifyingGlassMinusIcon from "phosphor-svelte/lib/MagnifyingGlassMinusIcon";
   import YoutubeLogoIcon from "phosphor-svelte/lib/YoutubeLogoIcon";
 
-  let { onOpen }: { onOpen: (kind: Kind, id: number) => void } = $props();
+  let { onOpen, onAdd }: { onOpen: (kind: Kind, id: number) => void; onAdd: (url: string, then: Then, title: string) => void } = $props();
   const GROUPS: { kind: Kind; label: Key; icon: Icon }[] = [
     { kind: "playlist", label: "kind.playlists", icon: PlaylistIcon },
     { kind: "album", label: "kind.albums", icon: VinylRecordIcon },
@@ -57,7 +57,7 @@
     <section transition:fade>
       <h2 class="sec"><YoutubeLogoIcon size={18} />{t("search.youtube")}</h2>
       {#each view.youtube ?? [null, null, null] as hit, i (hit?.url ?? i)}
-        <LinkRow preview={hit} host="youtube.com" onAdd={(then) => { if (!hit) return; ui.clearSearch(); void adding.link(hit.url, then, hit.title); }} />
+        <LinkRow preview={hit} onAdd={(then) => hit && onAdd(hit.url, then, hit.title)} />
       {/each}
     </section>
   {/if}

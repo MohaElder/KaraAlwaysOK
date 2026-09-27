@@ -17,6 +17,7 @@
   let seq = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let youtubeTimer: ReturnType<typeof setTimeout> | undefined;
+  let youtubeAsked: string | null = null;
 
   export function focus() {
     input?.focus();
@@ -39,7 +40,7 @@
       const url = ui.search.url;
       linkPreview(url, (p) => (ui.search = withPreview(ui.search, url, p))).catch(() => (ui.search = previewFailed(ui.search, url)));
     }
-    if (ui.search.kind === "text" && ui.search.youtube === null) {
+    if (ui.search.kind === "text" && ui.search.youtube === null && ui.search.query !== youtubeAsked) {
       clearTimeout(youtubeTimer);
       youtubeTimer = setTimeout(findOnYoutube, 280);
     }
@@ -47,8 +48,9 @@
 
   async function findOnYoutube() {
     if (ui.search.kind !== "text") return;
-    const query = ui.search.query;
+    const query = (youtubeAsked = ui.search.query);
     const hits = await youtubeSearch(query).catch(() => []);
+    if (youtubeAsked === query) youtubeAsked = null;
     ui.search = withYoutube(ui.search, query, hits);
   }
 

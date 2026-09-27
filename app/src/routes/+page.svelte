@@ -22,7 +22,7 @@
   import { engine } from "$lib/state/engine.svelte";
   import { library } from "$lib/state/library.svelte";
   import { player } from "$lib/state/player.svelte";
-  import { adding } from "$lib/state/adding.svelte";
+  import { adding, type Then } from "$lib/state/adding.svelte";
   import { ui } from "$lib/state/ui.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SearchResults from "$lib/components/SearchResults.svelte";
@@ -35,6 +35,11 @@
   function openFromSearch(kind: Kind, id: number) {
     searchBar?.clear();
     void library.show(kind, id);
+  }
+
+  function addLink(url: string, then: Then, title: string) {
+    ui.clearSearch();
+    void adding.link(url, then, title);
   }
 
   async function syncTransparency() {
@@ -81,9 +86,9 @@
     <header class="top"><SearchBar bind:this={searchBar} onSubmitLink={(url, title) => adding.link(url, "", title)} /></header>
     <div class="view">
       {#if ui.search.kind === "text"}
-        <SearchResults onOpen={openFromSearch} />
+        <SearchResults onOpen={openFromSearch} onAdd={addLink} />
       {:else if ui.search.kind === "link"}
-        <LinkResult onAdd={(url, then, title) => { ui.clearSearch(); void adding.link(url, then, title); }} />
+        <LinkResult onAdd={addLink} />
       {:else if library.error}
         <Empty icon={WarningIcon} title={t("problem.libraryOpen")} />
       {:else if library.page}
