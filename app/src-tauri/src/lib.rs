@@ -1,3 +1,4 @@
+mod adding;
 mod engine;
 mod library;
 mod player;
@@ -24,6 +25,8 @@ pub fn run() {
             settings::system_locale,
             engine::startup_problem,
             engine::setup_engine,
+            adding::search,
+            adding::link_preview,
             library::list_collections,
             library::open_collection,
             library::get_track,

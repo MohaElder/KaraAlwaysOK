@@ -29,7 +29,14 @@ class LibraryState {
 
   async select(id: number) {
     this.selected = id;
-    await this.show(id);
+    await this.open(id);
+  }
+
+  /** Opens a collection of `kind` in the sidebar. */
+  async show(kind: Kind, id: number) {
+    this.kind = kind;
+    this.selected = id;
+    await this.refresh();
   }
 
   /** Reloads the sidebar and the open collection, keeping the selection while it is shown. */
@@ -46,11 +53,11 @@ class LibraryState {
     }
     const keep = this.visibleCards.find((c) => c.id === this.selected) ?? this.visibleCards[0];
     this.selected = keep?.id ?? null;
-    await this.show(this.selected);
+    await this.open(this.selected);
   }
 
   /** Opens collection `id`, unless another one was picked meanwhile. */
-  private async show(id: number | null) {
+  private async open(id: number | null) {
     try {
       const page = id === null ? null : await openCollection(id);
       if (this.selected === id) [this.page, this.error] = [page, null];

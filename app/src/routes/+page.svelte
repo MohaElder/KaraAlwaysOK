@@ -16,6 +16,17 @@
   import { library } from "$lib/state/library.svelte";
   import { player } from "$lib/state/player.svelte";
   import { ui } from "$lib/state/ui.svelte";
+  import SearchBar from "$lib/components/SearchBar.svelte";
+  import SearchResults from "$lib/components/SearchResults.svelte";
+  import LinkResult from "$lib/components/LinkResult.svelte";
+  import type { Kind } from "$lib/api";
+
+  let searchBar: SearchBar | undefined = $state();
+
+  function openFromSearch(kind: Kind, id: number) {
+    ui.clearSearch();
+    void library.show(kind, id);
+  }
 
   onMount(() => {
     engine.start();
@@ -26,9 +37,13 @@
 <div class="app">
   <Sidebar />
   <main class="main" class:q-open={ui.queueOpen}>
-    <header class="top"></header>
+    <header class="top"><SearchBar bind:this={searchBar} /></header>
     <div class="view">
-      {#if library.error}
+      {#if ui.search.kind === "text"}
+        <SearchResults onOpen={openFromSearch} />
+      {:else if ui.search.kind === "link"}
+        <LinkResult />
+      {:else if library.error}
         <Empty icon={WarningIcon} title={t("problem.libraryOpen")} />
       {:else if library.page}
         <CollectionView />

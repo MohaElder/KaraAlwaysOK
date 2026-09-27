@@ -90,3 +90,18 @@ export type EngineEvent =
   | { kind: "failed"; trackId: number; message: string; problem: ProblemCode | null };
 
 export const onEngine = (cb: (e: EngineEvent) => void) => listen<EngineEvent>("engine", (e) => cb(e.payload));
+
+export interface LinkPreview { title: string; channel: string | null; durationMs: number | null; thumbnail: string | null }
+
+export type SearchOutcome =
+  | { kind: "text"; tracks: Track[]; collections: CollectionCard[] }
+  | { kind: "link"; url: string; host: string }
+  | { kind: "rejected"; streaming: boolean; host: string };
+
+export const search = (input: string) => invoke<SearchOutcome>("search", { input });
+
+export async function linkPreview(url: string, onUpdate: (p: LinkPreview) => void): Promise<void> {
+  const channel = new Channel<LinkPreview>();
+  channel.onmessage = onUpdate;
+  await invoke("link_preview", { url, onUpdate: channel });
+}
