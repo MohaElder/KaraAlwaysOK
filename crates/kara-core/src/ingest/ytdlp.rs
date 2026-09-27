@@ -1,7 +1,6 @@
 //! yt-dlp: installed on first use (checksum-verified), then used to pull audio from pages.
 
-use crate::assets::sha256_hex;
-use crate::store::write_atomic;
+use crate::assets::install_verified;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -30,10 +29,7 @@ pub fn ensure(bin_dir: &Path) -> Result<PathBuf> {
     let sums = String::from_utf8(get(SUMS_URL)?)?;
     let want = sha_from_sums(&sums, BIN_NAME).context("yt-dlp checksum not published")?;
     let bytes = get(BIN_URL)?;
-    if sha256_hex(&bytes) != want {
-        bail!("yt-dlp failed its checksum");
-    }
-    write_atomic(&path, &bytes)?;
+    let path = install_verified(bin_dir, "yt-dlp", &bytes, &want)?;
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path)

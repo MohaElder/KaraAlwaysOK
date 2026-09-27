@@ -5,8 +5,8 @@ pub mod ytdlp;
 
 use crate::audio;
 use crate::library::{AudioSource, CollectionKind, Library, NewTrack, ProviderId, SourceKind, Track};
-use crate::store::Store;
-use anyhow::{anyhow, bail, Context, Result};
+use crate::store::{write_atomic, Store};
+use anyhow::{bail, Context, Result};
 use link::LinkVerdict;
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -73,12 +73,10 @@ pub fn add_link(lib: &Library, url: &Url) -> Result<Ingested> {
 }
 
 fn download_file(url: &Url, dir: &Path) -> Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
     let name = url.path_segments().and_then(|mut s| s.next_back()).filter(|s| !s.is_empty()).unwrap_or("download");
+    let bytes = reqwest::blocking::get(url.as_str())?.error_for_status()?.bytes()?;
     let path = dir.join(name);
-    let mut resp = reqwest::blocking::get(url.as_str())?.error_for_status()?;
-    let mut f = std::fs::File::create(&path)?;
-    resp.copy_to(&mut f)?;
+    write_atomic(&path, &bytes)?;
     Ok(path)
 }
 
@@ -101,7 +99,7 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                 LinkVerdict::Extractable => {
                     let bin = ytdlp::ensure(&store.bin_dir()).context("Couldn't set up downloading. Check your connection.")?;
                     let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir())
-                        .map_err(|e| anyhow!("Couldn't download this song. ({e})"))?;
+                        .context("Couldn't download this song. Check the link and your connection.")?;
                     lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
                     link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     Ok(f.path)

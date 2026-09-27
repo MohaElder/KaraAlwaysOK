@@ -37,7 +37,7 @@ pub fn parse_link(input: &str) -> Option<Url> {
 }
 
 pub fn verdict(url: &Url) -> LinkVerdict {
-    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let host = url.host_str().unwrap_or("").trim_end_matches('.').to_ascii_lowercase();
     let ext = url.path().rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     if url.path().contains('.') && AUDIO_EXT.contains(&ext.as_str()) {
         LinkVerdict::AudioFile
@@ -52,7 +52,7 @@ pub fn verdict(url: &Url) -> LinkVerdict {
 
 /// What to show under the search bar for a link we won't process.
 pub fn rejection_message(url: &Url) -> Option<String> {
-    let host = url.host_str().unwrap_or("").trim_start_matches("www.").trim_start_matches("open.");
+    let host = url.host_str().unwrap_or("").trim_end_matches('.').trim_start_matches("www.").trim_start_matches("open.");
     match verdict(url) {
         LinkVerdict::AudioFile | LinkVerdict::Extractable => None,
         LinkVerdict::Streaming => Some(format!("{host} links can't be downloaded. Search for the song instead.")),
@@ -88,6 +88,7 @@ mod tests {
         assert_eq!(v("https://music.apple.com/us/album/x"), LinkVerdict::Streaming);
         assert_eq!(v("https://example.com/page"), LinkVerdict::Unsupported);
         assert_eq!(v("https://notyoutube.com/x"), LinkVerdict::Unsupported);
+        assert_eq!(v("https://youtube.com./watch?v=x"), LinkVerdict::Extractable);
     }
 
     #[test]

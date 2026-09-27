@@ -23,15 +23,20 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-/// Verifies `bytes` against the manifest, then writes them into `dir`.
-pub fn install(asset: &Asset, dir: &Path, bytes: &[u8]) -> Result<PathBuf> {
+/// Verifies `bytes` against `expected_sha256`, then writes them to `dir/file_name`.
+pub fn install_verified(dir: &Path, file_name: &str, bytes: &[u8], expected_sha256: &str) -> Result<PathBuf> {
     let got = sha256_hex(bytes);
-    if got != asset.sha256 {
-        bail!("{} failed its checksum (got {got})", asset.file_name);
+    if got != expected_sha256 {
+        bail!("{file_name} failed its checksum (got {got})");
     }
-    let path = dir.join(asset.file_name);
+    let path = dir.join(file_name);
     write_atomic(&path, bytes)?;
     Ok(path)
+}
+
+/// Verifies `bytes` against the manifest, then writes them into `dir`.
+pub fn install(asset: &Asset, dir: &Path, bytes: &[u8]) -> Result<PathBuf> {
+    install_verified(dir, asset.file_name, bytes, asset.sha256)
 }
 
 /// Path to a verified copy of `asset` in `dir`, downloading it if missing or corrupt.
