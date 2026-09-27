@@ -122,7 +122,7 @@ kara-always-oki/
 ### 3.2 Processor
 One job chain per song, run by `jobs/` (one worker; switching songs cancels the old chain; current song first; when it finishes, the next queued song starts preparing).
 1. **Fetch** — files: read in place. Links: yt-dlp downloads audio as M4A into a temp dir.
-2. **Standardize** — decode with symphonia (pure Rust; MP3, AAC/M4A, FLAC, WAV, Vorbis, and audio inside MP4), resample with rubato to 44.1 kHz stereo, write `source.flac`, compute `audio_hash` (SHA-256 of the decoded PCM). Same hash → reuse existing stems.
+2. **Standardize** — decode with symphonia (pure Rust; MP3, AAC/M4A, FLAC, WAV, Vorbis, and audio inside MP4), resample with rubato to 44.1 kHz stereo (in memory, for separation and playback; the original file is what's kept on disk), compute `audio_hash` (SHA-256 of the decoded PCM). Same hash → reuse existing stems.
 3. **Lyrics** (in parallel with separation) — embedded synced lyrics first, then LRCLIB by title + artist + duration. Line-level timings get even word timing across each line. Not found → stored as `none`, song still plays.
 4. **Separate** — 10 s chunks with overlap for model context, cropped back to seamless edges (same idea as filmrev's `plan_tiles`). Model outputs vocals; instrumental = mix − vocals, so vocals + instrumental = original. Each chunk writes only `NNNN.vocals.flac` (24-bit, 6 dB headroom so it never clips) via `.part` + rename; the instrumental is computed live at playback as original − vocals. Progress events after each chunk.
 
