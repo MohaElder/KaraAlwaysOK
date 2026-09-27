@@ -173,7 +173,7 @@ impl LyricsFetcher for Lrclib {
 struct Hit {
     track_name: String,
     artist_name: String,
-    duration: f64,
+    duration: Option<f64>,
     synced_lyrics: Option<String>,
 }
 
@@ -197,13 +197,16 @@ const LIKE_SINGER_OFF_S: f64 = 60.0;
 const UNKNOWN_SINGER_OFF_S: f64 = 10.0;
 const OTHER_SINGER_OFF_S: f64 = 3.0;
 
-/// Words that mark a version, a video or an upload rather than the song's name.
-const NOISE: &[&str] = &[
+/// Words that mark a video, an upload or a performance rather than the song's name.
+const TAGS: &[&str] = &[
     "official", "video", "mv", "audio", "lyrics", "lyric", "hd", "4k", "60fps", "remaster", "remastered", "live",
-    "piano only", "instrumental", "inst", "karaoke", "off vocal", "feat", "ft", "cover", "version", "edit", "mix", "remix",
-    "acoustic", "mono", "stereo", "single", "demo", "radio", "from",
+    "piano only", "instrumental", "inst", "karaoke", "off vocal", "feat", "ft", "cover",
     "现场版", "現場版", "伴奏", "カラオケ", "翻唱", "版本", "官方",
 ];
+/// Words that name a version of a song.
+const VERSIONS: &[&str] = &["version", "edit", "mix", "remix", "acoustic", "demo"];
+/// Words that name a version only next to a version word or tag, as in "Radio Edit".
+const VERSION_MODIFIERS: &[&str] = &["single", "radio", "mono", "stereo"];
 /// Endings channels add to a singer's name.
 const ARTIST_SUFFIXES: &[&str] = &["- topic", "- 主題", "vevo", "官方", "official"];
 
@@ -233,7 +236,7 @@ fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, art
 }
 
 /// The synced lyrics of the hit that best matches the song, scored by title, singer and closeness of length
-/// in whole seconds; among equals, the one with more timed lines, then the service's first.
+/// in whole seconds; among equals, the one with more timed lines, then the service's first. Hits without a length are skipped.
 /// A hit by a like singer may have a close title and be up to a minute off; by another singer it needs
 /// the same title and nearly the same length.
 fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<String> {
@@ -242,7 +245,7 @@ fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) 
         .rev()
         .filter_map(|h| {
             let lyrics = h.synced_lyrics.filter(|s| is_synced(s))?;
-            let off = if duration_s == 0 { 0.0 } else { (h.duration - duration_s as f64).abs() };
+            let off = if duration_s == 0 { 0.0 } else { (h.duration? - duration_s as f64).abs() };
             let (their_title, _) = clean_title(&h.track_name, Some(&h.artist_name));
             let same_title = key(&their_title) == title_key;
             let singer = clean_artist(&h.artist_name).iter().flat_map(|a| artists.iter().map(move |b| singer_likeness(a, b))).max().unwrap_or(0);
@@ -259,14 +262,15 @@ fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) 
         .map(|(.., lyrics)| lyrics)
 }
 
-/// How alike two singers' names are: 2 the same; 1 close — a name of 3–4 letters only as a whole word
+/// How alike two singers' names are: 2 the same; 1 close — a Latin name of 3–4 letters only as a whole word
 /// of the other, names under 3 letters never; 0 unlike.
 fn singer_likeness(a: &str, b: &str) -> u8 {
     let (ka, kb) = (key(a), key(b));
-    let words = |text: &str| fold(&simplified(text)).split(|c: char| !c.is_alphanumeric()).map(String::from).collect::<Vec<_>>();
-    let close = match ka.chars().count().min(kb.chars().count()) {
+    let words = |text: &str| words(&fold(&simplified(text)));
+    let short = if ka.chars().count() <= kb.chars().count() { &ka } else { &kb };
+    let close = match short.chars().count() {
         0..=2 => false,
-        3..=4 => words(a).contains(&kb) || words(b).contains(&ka),
+        3..=4 if short.is_ascii() => words(a).contains(&kb) || words(b).contains(&ka),
         _ => similar(a, b) || similar(b, a),
     };
     if !ka.is_empty() && ka == kb { 2 } else { u8::from(close) }
@@ -287,11 +291,39 @@ fn similar(query: &str, text: &str) -> bool {
     Fuzzy::new(&simplified(query)).and_then(|mut f| f.score(&simplified(text))).is_some()
 }
 
-/// Whether `text` holds a noise word (`NOISE`).
+/// The lower-case words of `text`.
+fn words(text: &str) -> Vec<String> {
+    text.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(String::from).collect()
+}
+
+/// The lower-case words of `text` without its tags (`TAGS`), and whether it had any.
+fn untagged(text: &str) -> (Vec<String>, bool) {
+    let all = format!(" {} ", words(text).join(" "));
+    let mut rest = all.clone();
+    for tag in TAGS {
+        let tag = if tag.is_ascii() { format!(" {tag} ") } else { tag.to_string() };
+        while rest.contains(&tag) {
+            rest = rest.replace(&tag, " ");
+        }
+    }
+    (rest.split_whitespace().map(String::from).collect(), rest != all)
+}
+
+/// Whether `text` holds a tag or as a whole names a version.
 fn noisy(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    let words = format!(" {} ", lower.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
-    NOISE.iter().any(|n| if n.is_ascii() { words.contains(&format!(" {n} ")) } else { lower.contains(n) })
+    untagged(text).1 || version_phrase(text)
+}
+
+/// Whether `text` as a whole names a version, like "Single Version", "2015 Mix", "Remastered 2011" or "Live at …".
+fn version_phrase(text: &str) -> bool {
+    let all = words(text);
+    if all.len() > 2 && all[0] == "live" && ["at", "in", "from", "on"].contains(&all[1].as_str()) {
+        return true;
+    }
+    let (rest, tagged) = untagged(text);
+    let is = |list: &[&str], w: &str| list.contains(&w);
+    rest.iter().all(|w| w.chars().all(|c| c.is_ascii_digit()) || is(VERSIONS, w) || is(VERSION_MODIFIERS, w))
+        && (tagged || rest.iter().any(|w| is(VERSIONS, w)))
 }
 
 /// `text` without its bracketed parts — (…) （…） […] 【…】 — and those parts as (opening bracket, contents).
@@ -318,7 +350,7 @@ fn strip_suffix_ci<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
 }
 
 /// A song's name as a lyrics service knows it, from a file's or upload's title: without tags like
-/// 【4K】 or (Official Video), version words and anything after " | "; the name in 《》「」『』 when there is one;
+/// 【4K】, (Official Video) or (Radio Edit), a trailing version like 现场版 and anything after " | "; the name in 《》「」『』 when there is one;
 /// for "A - B", A when B is the singer or a version or no singer is known, else B. Also returns a singer named in the title
 /// (before 《》「」『』 or " - ").
 pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>) {
@@ -340,12 +372,12 @@ pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>
     }
     let is_singer = |part: &str| artist.into_iter().flat_map(clean_artist).any(|a| key(&a) == key(part));
     let (name, named) = match name.split_once(" - ") {
-        Some((left, right)) if is_singer(right) || noisy(right) || artist.is_none() => (left, None),
+        Some((left, right)) if is_singer(right) || version_phrase(right) || artist.is_none() => (left, None),
         Some((left, right)) => (right, singer(left).filter(|_| !is_singer(left))),
         None => (name.as_str(), None),
     };
     let mut name = name.trim();
-    while let Some(rest) = NOISE.iter().filter(|n| !n.is_ascii()).find_map(|n| name.strip_suffix(n)).filter(|r| !r.trim().is_empty()) {
+    while let Some(rest) = TAGS.iter().filter(|n| !n.is_ascii()).find_map(|n| name.strip_suffix(n)).filter(|r| !r.trim().is_empty()) {
         name = rest.trim_end();
     }
     if name.is_empty() { (title.trim().to_string(), None) } else { (name.to_string(), named) }
@@ -464,6 +496,12 @@ mod tests {
         assert_eq!(title("Hey Jude - 2015 Mix", Some("The Beatles")), ("Hey Jude".into(), None));
         assert_eq!(title("Hello - Adele", None), ("Hello".into(), None));
         assert_eq!(title("Adele - Hello", Some("Adele")), ("Hello".into(), None));
+        assert_eq!(title("Beyoncé - Single Ladies (Put a Ring on It)", Some("Beyoncé")), ("Single Ladies (Put a Ring on It)".into(), None));
+        assert_eq!(title("Radio - Single Version", Some("Lana Del Rey")), ("Radio".into(), None));
+        assert_eq!(title("Lana Del Rey - Radio", Some("Lana Del Rey")), ("Radio".into(), None));
+        assert_eq!(title("Hozier - From Eden", Some("Hozier")), ("From Eden".into(), None));
+        assert_eq!(title("Paper Boats - Live at Wembley", Some("Juniper Row")), ("Paper Boats".into(), None));
+        assert_eq!(title("Paper Boats (From Me to You) (Radio Edit)", None), ("Paper Boats (From Me to You)".into(), None));
         assert_eq!(clean_artist("盧廣仲(版本)"), ["盧廣仲"]);
         assert_eq!(clean_artist("盧廣仲 (Crowd Lu)"), ["盧廣仲", "Crowd Lu"]);
         assert_eq!(clean_artist("Crowd Lu - Topic"), ["Crowd Lu"]);
@@ -472,7 +510,7 @@ mod tests {
     }
 
     fn hit(track: &str, artist: &str, duration: f64, lyrics: Option<&str>) -> Hit {
-        Hit { track_name: track.into(), artist_name: artist.into(), duration, synced_lyrics: lyrics.map(String::from) }
+        Hit { track_name: track.into(), artist_name: artist.into(), duration: Some(duration), synced_lyrics: lyrics.map(String::from) }
     }
 
     #[test]
@@ -513,6 +551,10 @@ mod tests {
         assert_eq!(best_match(ties, "Paper Boats", &["Juniper Row".into()], 200).as_deref(), Some("[00:01.00]long\n[00:02.00]er"));
         assert_eq!(singer_likeness("Bob", "Bob Dylan"), 1);
         assert_eq!((singer_likeness("Bob", "Nobody Real Band"), singer_likeness("Eve", "Evanescence")), (0, 0));
+        assert_eq!(singer_likeness("林小雨", "林小雨與朋友"), 1);
+
+        let no_length: Vec<Hit> = serde_json::from_str(r#"[{"trackName":"Paper Boats","artistName":"Juniper Row","duration":null,"syncedLyrics":"[00:01.00]x"}]"#).unwrap();
+        assert_eq!(best_match(no_length, "Paper Boats", &["Juniper Row".into()], 200), None);
 
         let other_script = vec![hit("夜車", "Lin Xiaoyu - Topic", 240.0, Some("[00:01.00]same length")), hit("夜車", "Someone Else", 262.0, Some("[00:01.00]other length"))];
         assert_eq!(best_match(other_script, "夜車", &lin, 240).as_deref(), Some("[00:01.00]same length"));
