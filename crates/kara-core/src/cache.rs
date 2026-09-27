@@ -128,7 +128,11 @@ pub fn budget(lib: &Library) -> Result<u64> {
 pub fn enforce_budget(store: &Store, lib: &Library, protected: &[String]) -> Result<Vec<String>> {
     let rows = lib.separations()?;
     let hashes: Vec<String> = match std::fs::read_dir(store.audio_root()) {
-        Ok(rd) => rd.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect(),
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect(),
         Err(_) => Vec::new(),
     };
     let mut entries = Vec::with_capacity(hashes.len());
@@ -309,6 +313,18 @@ mod tests {
         for h in ["queued", "gone", "new"] {
             assert!(s.stems_dir(h, "m").exists());
         }
+    }
+
+    #[test]
+    fn enforce_budget_ignores_stray_files_in_the_audio_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path());
+        let lib = Library::open_in_memory().unwrap();
+        lib.set_setting("cache_budget_bytes", "0").unwrap();
+        write_chunk(&s, "h", "m", &chunk(0, 10)).unwrap();
+        lib.upsert_separation(&sep_row("h", 1, SepStatus::Ready, 80, 1)).unwrap();
+        std::fs::write(s.audio_root().join(".DS_Store"), b"x").unwrap();
+        assert_eq!(enforce_budget(&s, &lib, &[]).unwrap(), vec!["h".to_string()]);
     }
 
     #[test]
