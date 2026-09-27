@@ -434,6 +434,24 @@ mod tests {
     }
 
     #[test]
+    fn chunk_audio_is_readable_by_track_at_its_exact_length_while_separating() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let mut lens = Vec::new();
+        prepare(&c, &lib, &mut Silence, &NoLyrics, t, &AtomicBool::new(false), &mut |e| {
+            if let Event::Progress { chunks_done: n @ 1.., .. } = e {
+                let pcm = cache::track_chunk_pcm(&c.store, &lib, "test", t, n - 1).unwrap();
+                lens.push((pcm.vocals.len(), pcm.inst.len()));
+            }
+        })
+        .unwrap();
+        // Two full 1 s chunks, then the last 0.5 s; two samples per frame.
+        assert_eq!(lens, vec![(88_200, 88_200), (88_200, 88_200), (44_100, 44_100)]);
+    }
+
+    #[test]
     fn prepare_resumes_after_cancel() {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());

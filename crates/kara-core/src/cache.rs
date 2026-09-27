@@ -50,6 +50,29 @@ pub fn read_chunk(store: &Store, hash: &str, model_id: &str, index: u32) -> Resu
     ))
 }
 
+/// One chunk of both tracks as interleaved stereo f32 (L, R, L, R, …) at 44.1 kHz.
+/// A full chunk holds `CHUNK_LEN` frames; the last one holds the rest of the song.
+pub struct ChunkPcm {
+    pub vocals: Vec<f32>,
+    pub inst: Vec<f32>,
+}
+
+fn interleave(a: &Stereo) -> Vec<f32> {
+    a.left.iter().zip(&a.right).flat_map(|(l, r)| [*l, *r]).collect()
+}
+
+/// The decoded audio of one chunk, readable as soon as that chunk is written.
+pub fn chunk_pcm(store: &Store, hash: &str, model_id: &str, index: u32) -> Result<ChunkPcm> {
+    let (vocals, inst) = read_chunk(store, hash, model_id, index)?;
+    Ok(ChunkPcm { vocals: interleave(&vocals), inst: interleave(&inst) })
+}
+
+/// `chunk_pcm` for a track's selected audio.
+pub fn track_chunk_pcm(store: &Store, lib: &Library, model_id: &str, track_id: i64, index: u32) -> Result<ChunkPcm> {
+    let hash = lib.selected_source(track_id)?.and_then(|s| s.audio_hash).context("This song isn't prepared yet.")?;
+    chunk_pcm(store, &hash, model_id, index).context("This part of the song isn't ready yet.")
+}
+
 /// Complete chunk pairs on disk, counting up from 0 and stopping at the first gap.
 pub fn count_complete_chunks(store: &Store, hash: &str, model_id: &str) -> u32 {
     let mut n = 0;
@@ -188,7 +211,8 @@ mod tests {
     fn chunk(index: usize, len: usize) -> ChunkOut {
         let v: Vec<f32> = (0..len).map(|i| (i as f32 * 0.01).sin() * 0.3).collect();
         let i: Vec<f32> = v.iter().map(|x| x * 0.5).collect();
-        ChunkOut { index, vocals: Stereo { left: v.clone(), right: v }, inst: Stereo { left: i.clone(), right: i } }
+        let neg = |x: &Vec<f32>| x.iter().map(|s| -s).collect();
+        ChunkOut { index, vocals: Stereo { right: neg(&v), left: v }, inst: Stereo { right: neg(&i), left: i } }
     }
 
     fn sep_row(hash: &str, total: u32, status: SepStatus, size: i64, used: i64) -> SeparationRow {
@@ -218,8 +242,9 @@ mod tests {
         // A lone vocals file for chunk 2 (crash between the two writes) doesn't count.
         std::fs::write(s.chunk_path("h", "m", 2, Stem::Vocals), b"x").unwrap();
         assert_eq!(count_complete_chunks(&s, "h", "m"), 2);
-        let (v, i) = read_chunk(&s, "h", "m", 1).unwrap();
-        assert_eq!((v.len(), i.len()), (1000, 1000));
+        let pcm = chunk_pcm(&s, "h", "m", 1).unwrap();
+        assert_eq!((pcm.vocals.len(), pcm.inst.len()), (2000, 2000));
+        assert!(pcm.vocals[2] > 0.0 && pcm.vocals[3] == -pcm.vocals[2]); // L, R, L, R, …
     }
 
     #[test]
