@@ -26,16 +26,16 @@ pub struct Lyrics {
 }
 
 /// A collection with its song count and its first four songs for the cover.
-pub fn card(lib: &Library, row: CollectionRow) -> anyhow::Result<CollectionCard> {
-    let tracks = lib.collection_tracks(row.id)?;
-    Ok(CollectionCard { count: tracks.len(), covers: tracks.into_iter().take(4).collect(), row })
+fn card(row: CollectionRow, tracks: &[Track]) -> CollectionCard {
+    CollectionCard { count: tracks.len(), covers: tracks.iter().take(4).cloned().collect(), row }
 }
 
 /// Every collection of `kind`; empty ones show only if the user made them.
 pub fn cards(lib: &Library, kind: CollectionKind) -> anyhow::Result<Vec<CollectionCard>> {
     let mut out = Vec::new();
     for row in lib.collections(None, kind)? {
-        let c = card(lib, row)?;
+        let tracks = lib.collection_tracks(row.id)?;
+        let c = card(row, &tracks);
         if c.count > 0 || c.row.user {
             out.push(c);
         }
@@ -45,7 +45,7 @@ pub fn cards(lib: &Library, kind: CollectionKind) -> anyhow::Result<Vec<Collecti
 
 pub fn page(lib: &Library, id: i64) -> anyhow::Result<CollectionPage> {
     let tracks = lib.collection_tracks(id)?;
-    Ok(CollectionPage { card: card(lib, lib.collection(id)?)?, tracks })
+    Ok(CollectionPage { card: card(lib.collection(id)?, &tracks), tracks })
 }
 
 #[tauri::command]

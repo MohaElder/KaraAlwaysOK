@@ -18,6 +18,7 @@
   };
   const page = $derived(library.page);
   const tracks = $derived(library.visibleTracks);
+  const length = $derived(minutes(tracks));
 </script>
 
 {#if page}
@@ -33,7 +34,7 @@
         <div class="grow">
           <div class="cap hstack"><kind.icon size={14} />{t(kind.label)}</div>
           <h1>{cardName(page.card)}</h1>
-          <p class="sub num">{#if page.card.subtitle}<span class="subtitle">{page.card.subtitle}</span> · {/if}{t("library.songs", { n: tracks.length })} · {t("library.minutes", { n: minutes(tracks) })}</p>
+          <p class="sub num">{#if page.card.subtitle}<span class="subtitle">{page.card.subtitle}</span> · {/if}{t("library.songs", { n: tracks.length })}{#if length} · {t("library.minutes", { n: length })}{/if}</p>
           <div class="actions"></div>
         </div>
       </div>

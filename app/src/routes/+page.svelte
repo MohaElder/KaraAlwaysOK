@@ -6,13 +6,13 @@
   import GettingReady from "$lib/components/GettingReady.svelte";
   import Tooltip from "$lib/components/Tooltip.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
+  import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
   import { engine } from "$lib/state/engine.svelte";
   import { library } from "$lib/state/library.svelte";
 
   onMount(() => {
     engine.start();
-    library.refresh();
   });
 </script>
 
@@ -21,7 +21,9 @@
   <main class="main">
     <header class="top"></header>
     <div class="view">
-      {#if library.page}
+      {#if library.error}
+        <Empty icon={WarningIcon} title={t("problem.libraryOpen")} />
+      {:else if library.page}
         <CollectionView />
       {:else if library.loaded && library.kind === "playlist"}
         <Empty icon={MusicNotesIcon} title={t("library.emptyTitle")}>

@@ -1,4 +1,5 @@
 import { setupEngine, startupProblem, type SetupProgress } from "$lib/api";
+import { library } from "./library.svelte";
 
 class EngineState {
   phase = $state<"starting" | "downloading" | "done" | "ready" | "failed">("starting");
@@ -6,7 +7,7 @@ class EngineState {
   error = $state<unknown>(null);
   private blocked = false;
 
-  /** Gets the singing engine ready; the setup screen shows only while something downloads or fails. */
+  /** Opens the library and gets the singing engine ready; the setup screen shows only while something downloads or fails. */
   async start() {
     if (this.phase === "failed") this.phase = "downloading";
     const problem = await startupProblem();
@@ -17,6 +18,7 @@ class EngineState {
       return;
     }
     if (this.blocked) return location.reload();
+    void library.refresh();
     try {
       await setupEngine((p) => {
         this.phase = "downloading";

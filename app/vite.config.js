@@ -23,6 +23,7 @@ const webviewLog = {
 export default defineConfig({
   plugins: [sveltekit(), webviewLog],
   clearScreen: false,
+  optimizeDeps: { exclude: ["phosphor-svelte"] },
   server: {
     port: 1420,
     strictPort: true,

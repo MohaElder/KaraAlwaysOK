@@ -21,7 +21,7 @@
     ],
     "security": {
       "csp": null,
-      "assetProtocol": { "enable": true, "scope": ["$DATA/kara-always-oki/artwork/**"] }
+      "assetProtocol": { "enable": true, "scope": [] }
     }
   },
   "bundle": {

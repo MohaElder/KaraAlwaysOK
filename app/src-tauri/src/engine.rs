@@ -21,7 +21,9 @@ pub fn open_library(app: &AppHandle) -> Result<(), AppError> {
     if app.try_state::<AppState>().is_some() {
         return Ok(());
     }
-    app.manage(AppState::open(app.state::<Startup>().0.clone())?);
+    let state = AppState::open(app.state::<Startup>().0.clone())?;
+    app.asset_protocol_scope().allow_directory(state.store.artwork_dir(), true)?;
+    app.manage(state);
     Ok(())
 }
 
