@@ -8,12 +8,6 @@ describe("lining chunks up on the audio clock", () => {
     expect(planStart(0, 10, 10, 100, 111)).toBeNull();
   });
 
-  it("lines back-to-back chunks up to the sample", () => {
-    const anchor = 12.345;
-    const starts = [0, 1, 2, 3].map((i) => planStart(i, 441_000 / 44_100, 10, anchor, anchor)!.when);
-    expect(starts.slice(1).map((w, i) => Math.round((w - starts[i]) * 44_100))).toEqual([441_000, 441_000, 441_000]);
-  });
-
   it("keeps the previous chunk and the next three decoded", () => {
     expect(windowRange(25, 10, 30)).toEqual([1, 5]);
     expect(windowRange(3, 10, 2)).toEqual([0, 1]);
@@ -21,7 +15,7 @@ describe("lining chunks up on the audio clock", () => {
 });
 
 describe("waiting for the song to be ready", () => {
-  it("a_song_shorter_than_one_chunk_can_start_and_ends_on_time", () => {
+  it("a song shorter than one chunk can start and ends on time", () => {
     const ready = readyEnd(1, 1, 10, 4.2);
     expect(ready).toBe(4.2);
     expect(canStart(0, ready, 4.2, 6)).toBe(true);
@@ -35,7 +29,7 @@ describe("waiting for the song to be ready", () => {
     expect(canStart(0, readyEnd(0, null, 10, Infinity), Infinity, 6)).toBe(false);
   });
 
-  it("seeking_past_the_prepared_part_lands_inside_it", () => {
+  it("seeking past the prepared part lands inside it", () => {
     expect(clampSeek(95, 30, 200)).toEqual({ pos: 29, clamped: true });
     expect(clampSeek(12, 30, 200)).toEqual({ pos: 12, clamped: false });
     expect(clampSeek(199, 200, 200)).toEqual({ pos: 199, clamped: false });

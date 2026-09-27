@@ -80,3 +80,13 @@ export interface PlaybackInfo { chunkFrames: number; chunksTotal: number | null;
 
 export const playbackInfo = (trackId: number) => invoke<PlaybackInfo>("playback_info", { trackId });
 export const chunkPcm = (trackId: number, index: number) => invoke<ArrayBuffer>("chunk_pcm", { trackId, index });
+
+export type EngineEvent =
+  | { kind: "stage"; trackId: number; stage: "fetching" | "standardizing" | "findingLyrics" | "separating" }
+  | { kind: "progress"; trackId: number; chunksDone: number; chunksTotal: number }
+  | { kind: "lyrics"; trackId: number }
+  | { kind: "added"; trackId: number }
+  | { kind: "ready"; trackId: number }
+  | { kind: "failed"; trackId: number; message: string; problem: ProblemCode | null };
+
+export const onEngine = (cb: (e: EngineEvent) => void) => listen<EngineEvent>("engine", (e) => cb(e.payload));

@@ -292,7 +292,9 @@ pub fn playback(lib: &Library, track_id: i64) -> anyhow::Result<PlaybackInfo> {
 /// A chunk's vocals, then its instrumental, each interleaved stereo f32 little-endian and of equal length.
 pub fn pcm_bytes(pcm: &ChunkPcm) -> Vec<u8> {
     let n = pcm.vocals.len().min(pcm.inst.len());
-    pcm.vocals[..n].iter().chain(&pcm.inst[..n]).flat_map(|x| x.to_le_bytes()).collect()
+    let mut bytes = Vec::with_capacity(8 * n);
+    bytes.extend(pcm.vocals[..n].iter().chain(&pcm.inst[..n]).flat_map(|x| x.to_le_bytes()));
+    bytes
 }
 
 #[tauri::command]
