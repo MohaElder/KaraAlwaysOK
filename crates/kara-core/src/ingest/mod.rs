@@ -59,6 +59,31 @@ pub fn edit_info(lib: &Library, track_id: i64, title: &str, artist: Option<&str>
     lib.prune_empty_collections()
 }
 
+/// The file extension to store an image under, from a media type or a file extension.
+pub fn image_ext(kind: &str) -> Option<&'static str> {
+    match kind.to_ascii_lowercase().trim_start_matches("image/") {
+        "jpeg" | "jpg" => Some("jpg"),
+        "png" => Some("png"),
+        "webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+/// Stores cover art once per distinct image and points the song at it.
+pub fn save_artwork(lib: &Library, store: &Store, track_id: i64, bytes: &[u8], ext: &str) -> Result<()> {
+    let path = store.artwork_dir().join(format!("{}.{ext}", crate::assets::sha256_hex(bytes)));
+    if !path.exists() {
+        write_atomic(&path, bytes)?;
+    }
+    lib.set_artwork(track_id, &path.display().to_string())
+}
+
+fn download_artwork(lib: &Library, store: &Store, track_id: i64, url: &str) -> Result<()> {
+    let ext = Url::parse(url)?.path().rsplit('.').next().and_then(image_ext).unwrap_or("jpg");
+    let bytes = reqwest::blocking::get(url)?.error_for_status()?.bytes()?;
+    save_artwork(lib, store, track_id, &bytes, ext)
+}
+
 /// Adds a local file; a file that is already in the library returns its existing track.
 pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
     let path = &path.canonicalize().map_err(|e| audio::describe_read_failure(e.into(), "This file isn't audio we can play."))?;
@@ -130,6 +155,9 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                         lib.mark_instrumental(track.id)?;
                     }
                     link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
+                    if let Some(url) = f.thumbnail.as_deref().filter(|_| track.artwork_path.is_none()) {
+                        let _ = download_artwork(lib, store, track.id, url);
+                    }
                     Ok(f.path)
                 }
                 _ => bail!(link::rejection_message(&url).unwrap_or_default()),

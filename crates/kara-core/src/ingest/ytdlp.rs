@@ -70,6 +70,7 @@ pub struct Fetched {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub tags: Vec<String>,
+    pub thumbnail: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +82,7 @@ struct Info {
     track: Option<String>,
     album: Option<String>,
     tags: Option<Vec<String>>,
+    thumbnail: Option<String>,
 }
 
 /// Downloads the best audio we can decode (M4A, else MP3, else whatever is best).
@@ -102,7 +104,7 @@ fn download_once(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
         .args(["--no-playlist", "--no-progress", "-f", "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio"])
         .arg("-o")
         .arg(out_dir.join("%(id)s.%(ext)s"))
-        .args(["--print", "after_move:%(.{filepath,title,uploader,artist,track,album,tags})j"])
+        .args(["--print", "after_move:%(.{filepath,title,uploader,artist,track,album,tags,thumbnail})j"])
         .arg(url)
         .output()
         .context("run yt-dlp")?;
@@ -116,7 +118,7 @@ fn download_once(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
         Some(track) => (track, info.artist.or(info.uploader)),
         None => clean_meta(info.title.as_deref().unwrap_or("Unknown song"), info.uploader.as_deref()),
     };
-    Ok(Fetched { path: info.filepath, title, artist, album: info.album, tags: info.tags.unwrap_or_default() })
+    Ok(Fetched { path: info.filepath, title, artist, album: info.album, tags: info.tags.unwrap_or_default(), thumbnail: info.thumbnail })
 }
 
 #[cfg(test)]

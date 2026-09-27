@@ -257,6 +257,11 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
     }
     let (hash, decoded) = kept?;
     lib.set_source_audio(source.id, &hash, decoded.audio.duration_ms())?;
+    if let Some(p) = decoded.tags.picture.as_ref().filter(|_| track.artwork_path.is_none()) {
+        if let Some(ext) = ingest::image_ext(&p.media_type) {
+            ingest::save_artwork(lib, &ctx.store, track.id, &p.data, ext)?;
+        }
+    }
     if let Some(text) = decoded.tags.lyrics.as_deref().filter(|t| lyrics::is_synced(t)) {
         let lines = lyrics::parse_lrc(text, decoded.audio.duration_ms());
         lib.set_lyrics(track.id, LyricsSource::Embedded, &lines, now_ms())?;
@@ -988,5 +993,38 @@ mod tests {
         wait_for(&rx, &Event::Stage { track_id: z, stage: Stage::Fetching });
         let hash = lib.selected_source(a).unwrap().unwrap().audio_hash.unwrap();
         assert_eq!(lib.separation(&hash, "test").unwrap().unwrap().status, SepStatus::Ready);
+    }
+
+    /// Runs ffmpeg quietly to build a test fixture at `out` (tests only; the app never uses ffmpeg).
+    fn ffmpeg(args: &[&str], out: &Path) {
+        let status = std::process::Command::new("ffmpeg")
+            .args(["-y", "-loglevel", "error"])
+            .args(args)
+            .arg(out)
+            .status()
+            .expect("this test needs ffmpeg to build fixture files");
+        assert!(status.success());
+    }
+
+    #[test]
+    fn cover_art_is_saved_once_and_shared_between_songs() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let cover = dir.path().join("cover.png");
+        ffmpeg(&["-f", "lavfi", "-i", "color=c=orange:s=8x8", "-frames:v", "1"], &cover);
+        let arts: Vec<String> = [330, 440]
+            .iter()
+            .map(|freq| {
+                let p = dir.path().join(format!("{freq}.mp3"));
+                let sine = format!("sine=frequency={freq}:duration=2.5:sample_rate=44100");
+                ffmpeg(&["-f", "lavfi", "-i", &sine, "-i", cover.to_str().unwrap(), "-map", "0:a", "-map", "1:v", "-c:v", "png", "-disposition:v", "attached_pic", "-id3v2_version", "3", "-ac", "2"], &p);
+                let t = ingest::add_file(&lib, &p).unwrap().track_id;
+                run(&c, &lib, t, &AtomicBool::new(false)).0.unwrap();
+                lib.track(t).unwrap().artwork_path.unwrap()
+            })
+            .collect();
+        assert_eq!(arts[0], arts[1]);
+        assert!(arts[0].ends_with(".png") && Path::new(&arts[0]).exists());
     }
 }

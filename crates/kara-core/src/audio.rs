@@ -10,7 +10,7 @@ use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_AAC, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{MetadataOptions, StandardTagKey, Tag};
+use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey};
 use symphonia::core::probe::Hint;
 
 pub const SAMPLE_RATE: u32 = 44_100;
@@ -49,6 +49,12 @@ impl Stereo {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct Picture {
+    pub data: Vec<u8>,
+    pub media_type: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tags {
     pub title: Option<String>,
     pub artist: Option<String>,
@@ -56,6 +62,7 @@ pub struct Tags {
     pub lyrics: Option<String>,
     /// From iTunes' gapless tag on AAC audio: encoder delay frames to drop, then frames of real audio.
     pub gapless: Option<(usize, usize)>,
+    pub picture: Option<Picture>,
 }
 
 pub struct Decoded {
@@ -75,10 +82,10 @@ fn open(path: &Path) -> Result<(Box<dyn FormatReader>, Tags)> {
         .context("not a supported audio file")?;
     let mut tags = Tags::default();
     if let Some(rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
-        collect_tags(rev.tags(), &mut tags);
+        collect_tags(rev, &mut tags);
     }
     if let Some(rev) = probed.format.metadata().current() {
-        collect_tags(rev.tags(), &mut tags);
+        collect_tags(rev, &mut tags);
     }
     if !audio_track(probed.format.as_ref()).is_ok_and(|t| t.codec_params.codec == CODEC_TYPE_AAC) {
         tags.gapless = None;
@@ -93,8 +100,11 @@ fn parse_itunsmpb(value: &str) -> Option<(usize, usize)> {
     Some((hex(1)?, hex(3)?)).filter(|(_, len)| *len > 0)
 }
 
-fn collect_tags(src: &[Tag], out: &mut Tags) {
-    for tag in src {
+fn collect_tags(rev: &MetadataRevision, out: &mut Tags) {
+    if out.picture.is_none() {
+        out.picture = rev.visuals().first().map(|v| Picture { data: v.data.to_vec(), media_type: v.media_type.clone() });
+    }
+    for tag in rev.tags() {
         if tag.key.ends_with("iTunSMPB") {
             out.gapless = out.gapless.or(parse_itunsmpb(&tag.value.to_string()));
             continue;

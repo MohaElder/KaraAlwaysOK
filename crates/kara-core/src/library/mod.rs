@@ -64,6 +64,8 @@ pub struct Track {
     pub vocal_removal: u8,
     pub key_semitones: i8,
     pub instrumental: bool,
+    pub artwork_path: Option<String>,
+    pub art_seed: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -109,7 +111,7 @@ pub struct LyricsRow {
     pub fetched_at: i64,
 }
 
-const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental";
+const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental, t.artwork_path, t.art_seed";
 const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, status, error";
 const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
 const COLLECTION_COLS: &str = "id, provider, kind, name, subtitle, provider_ref LIKE 'user:%'";
@@ -125,6 +127,8 @@ fn track_row(r: &Row) -> rusqlite::Result<Track> {
         vocal_removal: r.get(6)?,
         key_semitones: r.get(7)?,
         instrumental: r.get(8)?,
+        artwork_path: r.get(9)?,
+        art_seed: r.get(10)?,
     })
 }
 
@@ -186,6 +190,7 @@ type Step = fn(&Transaction) -> Result<()>;
 const STEPS: &[Step] = &[
     |tx| Ok(tx.execute_batch(include_str!("schema.sql"))?),
     |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN instrumental INTEGER NOT NULL DEFAULT 0")?),
+    |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN art_seed INTEGER NOT NULL DEFAULT 0; UPDATE track SET art_seed = abs(random()) % 360;")?),
 ];
 
 pub struct Library {
@@ -225,7 +230,7 @@ impl Library {
 
     pub fn add_track(&self, t: &NewTrack) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO track (provider, provider_ref, title, artist, album, duration_ms, added_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO track (provider, provider_ref, title, artist, album, duration_ms, added_at, art_seed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, abs(random()) % 360)",
             params![t.provider, t.provider_ref, t.title, t.artist, t.album, t.duration_ms, crate::now_ms()],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -249,6 +254,11 @@ impl Library {
     /// Flags a song as already instrumental; the first time, its singer slider moves to original.
     pub fn mark_instrumental(&self, id: i64) -> Result<()> {
         self.conn.execute("UPDATE track SET instrumental = 1, vocal_removal = 0 WHERE id = ?1 AND instrumental = 0", [id])?;
+        Ok(())
+    }
+
+    pub fn set_artwork(&self, id: i64, path: &str) -> Result<()> {
+        self.conn.execute("UPDATE track SET artwork_path = ?2 WHERE id = ?1", params![id, path])?;
         Ok(())
     }
 
@@ -795,5 +805,15 @@ mod tests {
         assert_eq!(json["provider"], "local");
         assert_eq!(json["vocalRemoval"], 100);
         assert_eq!(json["durationMs"], 1000);
+    }
+
+    #[test]
+    fn a_song_keeps_the_gradient_it_was_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("kara.db");
+        let id = Library::open(&p).unwrap().add_track(&local("A", None)).unwrap();
+        let seed = Library::open(&p).unwrap().track(id).unwrap().art_seed;
+        assert!(seed < 360);
+        assert_eq!(Library::open(&p).unwrap().track(id).unwrap().art_seed, seed);
     }
 }

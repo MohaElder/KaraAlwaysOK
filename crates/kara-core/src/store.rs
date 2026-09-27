@@ -54,6 +54,9 @@ impl Store {
     pub fn audio_root(&self) -> PathBuf {
         self.root.join("audio")
     }
+    pub fn artwork_dir(&self) -> PathBuf {
+        self.root.join("artwork")
+    }
     pub fn audio_dir(&self, hash: &str) -> PathBuf {
         self.audio_root().join(hash)
     }
