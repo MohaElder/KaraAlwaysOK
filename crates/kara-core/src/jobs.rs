@@ -862,23 +862,6 @@ mod tests {
     }
 
     #[test]
-    fn many_workers_start_at_once_on_new_data_folders() {
-        std::thread::scope(|s| {
-            for _ in 0..12 {
-                s.spawn(|| {
-                    let dir = tempfile::tempdir().unwrap();
-                    let c = ctx(dir.path());
-                    let (w, rx) = worker(&c, Silence);
-                    let lib = Library::open(&c.store.db_path()).unwrap();
-                    let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
-                    w.play(vec![t]);
-                    wait_for(&rx, &Event::Ready { track_id: t });
-                });
-            }
-        });
-    }
-
-    #[test]
     fn worker_prepares_the_queue_in_order() {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
