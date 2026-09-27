@@ -1,10 +1,10 @@
 use crate::state::{AppError, AppState, Plain};
 use anyhow::Context;
 use kara_core::library::{Library, Track};
+use kara_core::problem::Problem;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Entry {
     pub key: u64,
     pub track_id: i64,
@@ -162,8 +162,24 @@ pub(crate) fn update(
     Ok(snap)
 }
 
+/// Queues a song, refusing one that is no longer in the library.
+fn queue_song(p: &mut Player, lib: &Library, track_id: i64, next: bool) -> anyhow::Result<()> {
+    lib.track(track_id).context(Problem::SongGone)?;
+    p.add(track_id, next);
+    Ok(())
+}
+
+/// Replaces the queue with `track_ids`, refusing them all if any is no longer in the library.
+fn play_songs(p: &mut Player, lib: &Library, track_ids: &[i64], start: usize) -> anyhow::Result<()> {
+    for &t in track_ids {
+        lib.track(t).context(Problem::SongGone)?;
+    }
+    p.play(track_ids, start);
+    Ok(())
+}
+
 fn playing(p: &Player, lib: &Library) -> anyhow::Result<Track> {
-    lib.track(p.current_track().context(kara_core::problem::Problem::NothingPlaying)?)
+    lib.track(p.current_track().context(Problem::NothingPlaying)?)
 }
 
 #[tauri::command]
@@ -174,18 +190,12 @@ pub fn player_state(state: State<'_, AppState>) -> Result<PlayerSnapshot, AppErr
 
 #[tauri::command]
 pub fn queue_add(app: AppHandle, state: State<'_, AppState>, track_id: i64, next: bool) -> Result<PlayerSnapshot, AppError> {
-    update(&app, state.inner(), |p, _| {
-        p.add(track_id, next);
-        Ok(())
-    })
+    update(&app, state.inner(), |p, lib| queue_song(p, lib, track_id, next))
 }
 
 #[tauri::command]
 pub fn play_tracks(app: AppHandle, state: State<'_, AppState>, track_ids: Vec<i64>, start: usize) -> Result<PlayerSnapshot, AppError> {
-    update(&app, state.inner(), |p, _| {
-        p.play(&track_ids, start);
-        Ok(())
-    })
+    update(&app, state.inner(), |p, lib| play_songs(p, lib, &track_ids, start))
 }
 
 #[tauri::command]
@@ -241,7 +251,7 @@ pub fn set_key(app: AppHandle, state: State<'_, AppState>, semitones: i8) -> Res
 pub fn set_lyric_offset(app: AppHandle, state: State<'_, AppState>, ms: i64) -> Result<PlayerSnapshot, AppError> {
     update(&app, state.inner(), |p, lib| {
         let t = playing(p, lib)?;
-        let src = lib.selected_source(t.id)?.context(kara_core::problem::Problem::NoAudio)?;
+        let src = lib.selected_source(t.id)?.context(Problem::NoAudio)?;
         lib.set_lyric_offset(src.id, ms.clamp(-5000, 5000))
     })
 }
@@ -286,6 +296,8 @@ mod tests {
         assert_eq!(p.upcoming(), vec![2, 4]);
         assert!(p.skip(-1));
         assert_eq!(p.current_track(), Some(1));
+        assert!(!p.skip(-1) && !p.skip(3));
+        assert_eq!(p.current_track(), Some(1));
     }
 
     #[test]
@@ -298,6 +310,18 @@ mod tests {
         assert_eq!(p.upcoming(), vec![3]);
         p.remove_track(3);
         assert!(p.idle() && p.entries.is_empty());
+    }
+
+    #[test]
+    fn a_missing_song_is_refused_and_the_queue_stays_as_it_was() {
+        let lib = Library::open_in_memory().unwrap();
+        let a = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: "Paper Boats", artist: None, album: None, duration_ms: None }).unwrap();
+        let mut p = Player::default();
+        queue_song(&mut p, &lib, a, false).unwrap();
+        let gone = |r: anyhow::Result<()>| kara_core::problem::problem(&r.unwrap_err());
+        assert_eq!(gone(queue_song(&mut p, &lib, 999, true)), Some(Problem::SongGone));
+        assert_eq!(gone(play_songs(&mut p, &lib, &[a, 999], 0)), Some(Problem::SongGone));
+        assert_eq!((p.upcoming(), snapshot(&lib, &p).unwrap().entries.len()), (vec![a], 1));
     }
 
     #[test]
