@@ -1441,6 +1441,7 @@ function loop(ts){
     } else if (wantPlay && ahead() >= (stalled ? 3 : START_AHEAD)){ wantPlay = stalled = false; start(); }
     renderPlayer();
   }
+  pTick(false);
   requestAnimationFrame(loop);
 }
 
@@ -1470,7 +1471,7 @@ $('#mlist').oninput = e => { const i = e.target.dataset.vol; if (i != null){ mic
 setInterval(() => {
   const loud = playing ? 5 : 2;
   $$('[data-meter]').forEach(m => { const lvl = Math.random() * loud | 0; [...m.children].forEach((b, i) => b.classList.toggle('lit', i < lvl)); });
-  phoneTick();
+  pLevel();
 }, 120);
 
 /* ================= prototype states (Settings › Prototype only, or URL hash) ================= */
@@ -1658,11 +1659,13 @@ function pTick(force){
   const up = queue[qi + 1] && byId(queue[qi + 1].id), nt = up ? `Up next: ${up.t} · ${up.ar}` : '', pn = $('#pNext');
   if (pn.dataset.t !== nt){ pn.dataset.t = nt; pn.innerHTML = nt && `<span>${esc(nt)}</span><span aria-hidden="true">${esc(nt)}</span>`; replay(pn); }
   if (x?.gap) fillDots($('#pLyr .dots'), lt, x); else if (x) fillWords($('#pLyr .now'), lt, x);
-  const singing = x && playing && !x.gap && lt < x.end;
-  P.lv = P.muted || P.state === 'reconnecting' ? 0 : singing ? .5 + Math.random() * .5 : Math.random() * .15;
+  P.singing = x && playing && !x.gap && lt < x.end;
+}
+function pLevel(){
+  if (!isOn('#phoneView') || !$('#pMic')) return;
+  P.lv = P.muted || P.state === 'reconnecting' ? 0 : P.singing ? .5 + Math.random() * .5 : Math.random() * .15;
   $('#pMic').style.setProperty('--lv', P.lv.toFixed(2));
 }
-const phoneTick = () => pTick(false);
 function openPhone(st = 'join'){
   const fit = () => document.documentElement.style.setProperty('--ps', Math.min(1, (innerHeight - 48) / 844, innerWidth < 761 ? (innerWidth - 32) / 390 : 1));
   fit(); addEventListener('resize', fit); show('#phoneView');
