@@ -29,6 +29,7 @@ The official APIs don't allow what we need: Spotify's development mode hides the
 - **Expired or refused tokens**: "Log in to Spotify again" with a button that reopens the login window. Nothing else breaks.
 - **Browsing**: collections from a service look and behave like local ones (Cover rule, Sing/Shuffle, song rows, search). User-made KaraAlwaysOK playlists can mix songs from every source.
 - **Song menu › Change match…**: a sheet listing the candidate uploads (thumbnail, title, channel, length, which one is in use) plus "Paste a link". The choice is remembered for that song.
+- **Search suggestions**: once connected, Apple Music and Spotify results and suggestions appear in the search bar's suggestions and results alongside local and YouTube.
 - **Artwork**: normal covers everywhere; where a collection or song has animated artwork, it loops on the collection header and as the karaoke background, falls back to the still cover, and stays still under Reduce motion.
 - The app never writes to your Apple Music or Spotify library.
 
