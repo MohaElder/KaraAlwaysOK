@@ -93,6 +93,8 @@ pub struct AudioSource {
     pub lyric_offset_ms: i64,
     /// The user set the lyric timing, so automatic sync leaves it alone.
     pub lyric_offset_manual: bool,
+    /// When the lyrics that the whole song was last lined up with were saved.
+    pub lyric_synced_at: Option<i64>,
     pub status: SourceStatus,
     pub error: Option<String>,
 }
@@ -116,7 +118,7 @@ pub struct LyricsRow {
 }
 
 const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental, t.artwork_path, t.art_seed";
-const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, lyric_offset_manual, status, error";
+const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, lyric_offset_manual, lyric_synced_at, status, error";
 const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
 const COLLECTION_COLS: &str = "id, provider, kind, name, subtitle, provider_ref LIKE 'user:%'";
 
@@ -146,8 +148,9 @@ fn source_row(r: &Row) -> rusqlite::Result<AudioSource> {
         audio_hash: r.get(5)?,
         lyric_offset_ms: r.get(6)?,
         lyric_offset_manual: r.get(7)?,
-        status: r.get(8)?,
-        error: r.get(9)?,
+        lyric_synced_at: r.get(8)?,
+        status: r.get(9)?,
+        error: r.get(10)?,
     })
 }
 
@@ -198,6 +201,7 @@ const STEPS: &[Step] = &[
     |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN art_seed INTEGER NOT NULL DEFAULT 0; UPDATE track SET art_seed = abs(random()) % 360;")?),
     |tx| Ok(tx.execute_batch("DROP TRIGGER track_ai; DROP TRIGGER track_ad; DROP TRIGGER track_au; DROP TABLE track_fts;")?),
     |tx| Ok(tx.execute_batch("ALTER TABLE audio_source ADD COLUMN lyric_offset_manual INTEGER NOT NULL DEFAULT 0")?),
+    |tx| Ok(tx.execute_batch("ALTER TABLE audio_source ADD COLUMN lyric_synced_at INTEGER")?),
 ];
 
 pub struct Library {
@@ -473,6 +477,11 @@ impl Library {
             params![source_id, ms],
         )?;
         Ok(n > 0)
+    }
+
+    pub fn set_lyric_synced_at(&self, source_id: i64, lyrics_fetched_at: i64) -> Result<()> {
+        self.conn.execute("UPDATE audio_source SET lyric_synced_at = ?2 WHERE id = ?1", params![source_id, lyrics_fetched_at])?;
+        Ok(())
     }
 
     // ---- separation ----

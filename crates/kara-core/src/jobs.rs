@@ -77,6 +77,7 @@ pub fn prepare(
                 let _ = lib.set_source_status(src.id, SourceStatus::Ready, None);
             }
             emit(Event::Ready { track_id });
+            let _ = sync_whole_song(ctx, lib, track_id, emit);
         }
         Err(e) => fail(lib, track_id, e, emit),
         Ok(Outcome::Cancelled) => {}
@@ -194,15 +195,20 @@ impl Pending {
 }
 
 impl LyricsLookup {
-    /// Sends `Event::Lyrics` on `events` each time it saves a song's lyrics.
-    pub fn spawn(store: &Store, fetcher: Box<dyn LyricsFetcher + Send>, events: mpsc::Sender<Event>) -> Result<Self> {
-        let lib = Library::open(&store.db_path())?;
+    /// Sends `Event::Lyrics` on `events` each time it saves a song's lyrics, then
+    /// lines them up with the singing if the song is already separated.
+    pub fn spawn(ctx: &Ctx, fetcher: Box<dyn LyricsFetcher + Send>, events: mpsc::Sender<Event>) -> Result<Self> {
+        let lib = Library::open(&ctx.store.db_path())?;
+        let ctx = ctx.clone();
         let pending = Arc::new(Pending::default());
         let p = pending.clone();
         let handle = std::thread::spawn(move || {
             while let Some(track_id) = p.next() {
                 if refresh_lyrics(&lib, track_id, fetcher.as_ref()).unwrap_or(false) {
                     let _ = events.send(Event::Lyrics { track_id });
+                    let _ = sync_whole_song(&ctx, &lib, track_id, &mut |e| {
+                        let _ = events.send(e);
+                    });
                 }
             }
         });
@@ -386,7 +392,6 @@ fn separate_stage(
         }
         Outcome::Done => {
             cache::finish(lib, hash, &ctx.model_id)?;
-            let _ = sync_lyrics(ctx, lib, track_id, hash, total, emit);
         }
     }
     Ok(outcome)
@@ -404,6 +409,16 @@ fn sync_lyrics(ctx: &Ctx, lib: &Library, track_id: i64, hash: &str, chunks: u32,
         }
     }
     Ok(())
+}
+
+/// Lines a separated song's lyrics up with all of its singing, once per saved lyrics.
+fn sync_whole_song(ctx: &Ctx, lib: &Library, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<()> {
+    let Some(source) = lib.selected_source(track_id)? else { return Ok(()) };
+    let Some(hash) = source.audio_hash.as_deref().filter(|h| is_ready(ctx, lib, h).unwrap_or(false)) else { return Ok(()) };
+    let Some(lyrics) = lib.lyrics(track_id)?.filter(|l| source.lyric_synced_at != Some(l.fetched_at)) else { return Ok(()) };
+    let chunks = cache::count_complete_chunks(&ctx.store, hash, &ctx.model_id);
+    sync_lyrics(ctx, lib, track_id, hash, chunks, emit)?;
+    lib.set_lyric_synced_at(source.id, lyrics.fetched_at)
 }
 
 /// Adds songs one at a time on its own thread.
@@ -464,7 +479,7 @@ impl Worker {
         events: mpsc::Sender<Event>,
     ) -> Result<Self> {
         let lib = Library::open(&ctx.store.db_path())?;
-        let lyrics = Arc::new(LyricsLookup::spawn(&ctx.store, fetcher, events.clone())?);
+        let lyrics = Arc::new(LyricsLookup::spawn(&ctx, fetcher, events.clone())?);
         let shared = Arc::new(Shared { state: Mutex::new(State { queue: VecDeque::new(), running: None, playing: None, shutdown: false }), wake: Condvar::new() });
         let (s, l) = (shared.clone(), lyrics.clone());
         let handle = std::thread::spawn(move || {
@@ -584,7 +599,7 @@ mod tests {
 
     fn lookup(c: &Ctx, fetcher: impl LyricsFetcher + Send + 'static) -> (LyricsLookup, mpsc::Receiver<Event>) {
         let (tx, rx) = mpsc::channel();
-        (LyricsLookup::spawn(&c.store, Box::new(fetcher), tx).unwrap(), rx)
+        (LyricsLookup::spawn(c, Box::new(fetcher), tx).unwrap(), rx)
     }
 
     fn worker(c: &Ctx, model: impl VocalModel + 'static) -> (Worker, mpsc::Receiver<Event>) {
@@ -997,24 +1012,26 @@ mod tests {
         wait_for(&rx, &Event::Failed { track_id: t, message: "The file was moved or deleted.".into(), problem: Some(Problem::FileMoved) });
     }
 
-    #[test]
-    fn lyrics_line_up_with_the_singing_unless_the_user_set_the_timing() {
-        let dir = tempfile::tempdir().unwrap();
-        let c = ctx(dir.path());
-        let lib = Library::open(&c.store.db_path()).unwrap();
-        let t = titled(&lib, "Paper Lanterns");
+    struct Lrc(String);
+    impl LyricsFetcher for Lrc {
+        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+
+    /// A separated two-minute song whose vocals sing its made-up LRC lyrics 1.5 s late; returns (track, source, LRC).
+    fn separated_singing_song(c: &Ctx, lib: &Library) -> (i64, i64, String) {
+        let t = titled(lib, "Paper Lanterns");
         let s = lib.add_source(t, SourceKind::File, "/music/a.wav", None).unwrap();
         lib.set_source_audio(s, "h", 120_000).unwrap();
-        let mut lines = Vec::new();
+        let mut lrc = String::new();
         let mut at = 4_000;
         for i in 0..60i64 {
-            let sung = 1_000 + (i * i * 37 % 23) * 100;
-            let next = at + sung + 400 + (i * i * 53 % 29) * 100;
-            lines.push(lyrics::Line { start_ms: at, end_ms: next, text: "la".into(), words: vec![], voice: None });
-            at = next;
+            lrc += &format!("[{:02}:{:02}.{:02}]la la la\n", at / 60_000, at / 1_000 % 60, at / 10 % 100);
+            at += 1_400 + (i * i * 37 % 23) * 100 + (i * i * 53 % 29) * 100;
         }
-        lib.set_lyrics(t, LyricsSource::Lrclib, &lines, now_ms()).unwrap();
-        let sung = |ms: i64| lines.iter().any(|l| (l.start_ms + 1_500..l.end_ms + 1_500).contains(&ms));
+        let lines = lyrics::parse_lrc(&lrc, 120_000);
+        let sung = |ms: i64| lines.iter().any(|l| (l.words[0].start_ms + 1_500..l.words[2].end_ms + 1_500).contains(&ms));
         for index in 0..12 {
             let samples: Vec<f32> = (0..441_000usize)
                 .map(|i| {
@@ -1025,15 +1042,47 @@ mod tests {
             let vocals = Stereo { left: samples.clone(), right: samples };
             cache::write_chunk(&c.store, "h", "test", &mdx::ChunkOut { index, vocals }).unwrap();
         }
-        let mut events = Vec::new();
-        sync_lyrics(&c, &lib, t, "h", 12, &mut |e| events.push(e)).unwrap();
-        assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 1_500);
-        assert_eq!(events, vec![Event::LyricOffset { track_id: t }]);
+        std::fs::write(c.store.original_dest("h", Some("wav")), b"").unwrap();
+        let row = SeparationRow { audio_hash: "h".into(), model_id: "test".into(), chunk_ms: 10_000, chunks_total: 12, chunks_done: 12, status: SepStatus::Ready, last_used_at: None };
+        lib.upsert_separation(&row).unwrap();
+        (t, s, lrc)
+    }
 
+    #[test]
+    fn a_ready_song_lines_its_lyrics_up_once_per_saved_lyrics_unless_the_user_set_the_timing() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let (t, s, lrc) = separated_singing_song(&c, &lib);
+        let save_lyrics = |at: i64| lib.set_lyrics(t, LyricsSource::Lrclib, &lyrics::parse_lrc(&lrc, 120_000), at).unwrap();
+        let play = || {
+            let (r, events) = run(&c, &lib, t, &AtomicBool::new(false));
+            assert_eq!(r.unwrap(), Outcome::Done);
+            let synced = events.iter().filter(|e| **e == Event::LyricOffset { track_id: t }).count();
+            (lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, synced)
+        };
+        save_lyrics(1);
+        assert_eq!(play(), (1_500, 1));
+        lib.set_auto_lyric_offset(s, 0).unwrap();
+        assert_eq!(play(), (0, 0));
+        save_lyrics(2);
+        assert_eq!(play(), (1_500, 1));
         lib.set_lyric_offset(s, 200).unwrap();
-        sync_lyrics(&c, &lib, t, "h", 12, &mut |e| events.push(e)).unwrap();
-        assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 200);
-        assert_eq!(events.len(), 1);
+        save_lyrics(3);
+        assert_eq!(play(), (200, 0));
+    }
+
+    #[test]
+    fn lyrics_that_arrive_for_a_separated_song_are_lined_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let (t, _, lrc) = separated_singing_song(&c, &lib);
+        let (lyrics, rx) = lookup(&c, Lrc(lrc));
+        lyrics.request(t);
+        lyrics.finish();
+        assert_eq!(rx.try_iter().collect::<Vec<_>>(), vec![Event::Lyrics { track_id: t }, Event::LyricOffset { track_id: t }]);
+        assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 1_500);
     }
 
     #[test]

@@ -27,7 +27,7 @@ const SINGING_RANGE_DB: f32 = 20.0;
 const BREATH_HOPS: usize = 600 / HOP_MS as usize;
 
 /// Loudness of each hop of the first `chunks` stored vocal chunks, in dB.
-pub fn vocal_loudness(store: &Store, hash: &str, model_id: &str, chunks: u32) -> Result<Vec<f32>> {
+pub(crate) fn vocal_loudness(store: &Store, hash: &str, model_id: &str, chunks: u32) -> Result<Vec<f32>> {
     const HOP: usize = (SAMPLE_RATE as i64 * HOP_MS / 1000) as usize;
     let (mut db, mut power, mut n) = (Vec::new(), 0.0f32, 0);
     for i in 0..chunks {
@@ -46,7 +46,7 @@ pub fn vocal_loudness(store: &Store, hash: &str, model_id: &str, chunks: u32) ->
 
 /// Which hops are singing: within `SINGING_RANGE_DB` of the song's loud singing
 /// (its 95th percentile) and louder than silence, with breaths filled in.
-pub fn singing(db: &[f32]) -> Vec<bool> {
+pub(crate) fn singing(db: &[f32]) -> Vec<bool> {
     let mut sorted = db.to_vec();
     sorted.sort_by(f32::total_cmp);
     let loud = sorted.get(((sorted.len() as f32 - 1.0) * 0.95).round() as usize).copied().unwrap_or(SILENCE_DB);
@@ -66,7 +66,7 @@ pub fn singing(db: &[f32]) -> Vec<bool> {
 
 /// Which hops the lyrics say are sung: from each line's first word to its last,
 /// or the whole line when it has no words.
-pub fn lyric_activity(lines: &[Line]) -> Vec<bool> {
+pub(crate) fn lyric_activity(lines: &[Line]) -> Vec<bool> {
     let spans: Vec<(i64, i64)> = lines
         .iter()
         .map(|l| match (l.words.first(), l.words.last()) {
@@ -84,7 +84,7 @@ pub fn lyric_activity(lines: &[Line]) -> Vec<bool> {
 
 /// The lyric offset in ms (positive = lyrics later) that best lines the lyrics up
 /// with the singing, when it is clearly better than any other offset.
-pub fn best_offset(sung: &[bool], lyric: &[bool]) -> Option<i64> {
+pub(crate) fn best_offset(sung: &[bool], lyric: &[bool]) -> Option<i64> {
     let scores: Vec<f64> = (EARLIEST..=LATEST).map(|d| correlation(sung, lyric, d)).collect();
     let (best_i, &best) = scores.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1))?;
     let second = HOPS_PER_S as usize;
