@@ -40,7 +40,7 @@ The approved prototype's phone screens:
   - The guest's name in an orange pill; Leave.
   - Now playing (artwork, title, artist), the scrolling "Up next" line (text only, live from the queue), and the lyrics with word-by-word fill, countdowns and duet sides.
   - The big mic button: "Tap to sing" when muted, "Tap to mute" when live; it pulses with the voice level.
-  - Voice and Singer buttons below it; tapping one opens its slider.
+  - Voice, Singer and Effect buttons in one row below it; tapping one opens its control. Effect offers presets — No effect, Karaoke mix (echo plus reverb that makes a voice sit nicely in the song), Auto-tune (pulls the voice to the nearest note) — each with one intensity slider. The choice is per phone and remembered on that phone.
 - **Songs tab**: search the library and YouTube (same fuzzy search and YouTube section as the Mac); Play next / Add to queue. Songs a guest adds show their name in the queue.
 - **Queue tab**: Now playing and Up next; drag to reorder, remove.
 - **States**: Connecting, Reconnecting ("Wi-Fi dropped. Reconnecting…"), Session ended ("The host ended the session").
@@ -64,6 +64,7 @@ The approved prototype's phone screens:
 - **Phone**: getUserMedia (echo cancellation on, auto gain off) → an AudioWorklet → 16-bit PCM frames (~5 ms each) → the WebSocket. The phone sends only while unmuted.
 - **Mac, per phone**: an adaptive buffer (starts at 20 ms, grows up to ~60 ms after underruns, shrinks slowly when steady), resampling to the output rate (also absorbs clock drift and 44.1 kHz phones), a short fade on underrun instead of a click.
 - **Mix**: per-phone gain (the Mac's volume slider × the phone's Voice slider, capped) → sum → a shared reverb → a limiter → its own low-latency output stream (cpal, 128–256 frames). The karaoke track keeps playing through the web view; the device mixes the two streams.
+- **Voice effects (per phone)**: applied in Rust before the mix. Karaoke mix = a short echo plus a warm reverb, intensity scales both. Auto-tune = real-time pitch detection and correction to the nearest semitone (chromatic; no song-key detection), intensity sets how strongly and how fast it pulls; it must keep the added delay small (target ≤ 15 ms). No effect = dry voice (the shared room reverb still applies).
 - **Howl control**: per phone, a detector watches for a sustained narrow peak that keeps growing; when it fires, that mic's gain drops until it settles, and the Mac window shows the mic as "turned down".
 - **Levels**: per-phone levels go to the Mac window (meters) and back to each phone (the mic button's pulse).
 - Up to 4 phones; a 5th sees "This room is full."
