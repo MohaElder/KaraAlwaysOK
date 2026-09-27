@@ -445,7 +445,16 @@ body.k-open #bar{left:var(--s7)}
 .part{display:inline-flex;align-items:center;gap:4px;margin-bottom:var(--s1)}
 .plyr .dots{justify-content:flex-start;height:34px}.plyr .dots i{width:12px;height:12px}
 .ptab{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;margin:0 calc(-1 * var(--s5));padding:0 var(--s5)}
-.ptabs{flex:none;display:grid;grid-template-columns:repeat(3,1fr);margin:var(--s2) calc(-1 * var(--s5)) calc(-1 * var(--s5));padding:var(--s1) 0;border-top:1px solid var(--line)}
+.ptabs{flex:none;display:grid;grid-template-columns:repeat(3,1fr);margin-top:var(--s3);padding:2px var(--s2);border-radius:999px}
+.pctrls{display:flex;justify-content:center;gap:var(--s3);margin-top:var(--s4)}
+.pctl{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 var(--s4);border-radius:999px;font-size:13px;font-weight:500}
+.pctl .i{width:16px;height:16px}
+.pctl[aria-pressed="true"]{color:var(--accent)}
+.pslide{--fy:calc(var(--sy) * -1);display:flex;align-items:center;gap:var(--s3);height:44px;margin-top:var(--s3);padding:0 var(--s4);border-radius:999px}
+.pslide.gone{display:none}
+.pslide .i{width:18px;height:18px;color:var(--muted)}
+.pslide .vs{flex:1;width:auto}
+.pslide output{font:12px var(--mono);color:var(--muted);min-width:4ch;text-align:right}
 .ptabs button{display:grid;justify-items:center;align-content:center;gap:2px;height:54px;font-size:11px;font-weight:600;color:var(--muted)}
 .ptabs .i{width:24px;height:24px}
 .ptabs button[aria-pressed="true"]{color:var(--accent)}
@@ -499,7 +508,7 @@ body.k-open #bar{left:var(--s7)}
 }
 
 /* ================= GLASS: everything that floats over content ================= */
-#bar,.ktop .ib,.ktop .pill,.sbox,.top .pill,.menu,.qpanel,.toast,.tip,.ptabs,.pbanner{
+#bar,.ktop .ib,.ktop .pill,.sbox,.top .pill,.menu,.qpanel,.toast,.tip,.ptabs,.pbanner,.pctl,.pslide{
   background:var(--glass);color:var(--text);border:0;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
   box-shadow:inset 0 0 0 1px var(--glass-edge),0 0 0 .5px var(--glass-line),0 10px 30px -20px var(--shadow)}
 .sbox:focus-within{box-shadow:inset 0 0 0 1px var(--glass-edge),0 0 0 1.5px var(--accent),0 0 0 5px color-mix(in srgb,var(--accent) 20%,transparent)}
@@ -510,11 +519,10 @@ body.k-open #bar{left:var(--s7)}
 #bar .ib:hover,.ktop .ib:hover,.ktop .pill:hover,.top .pill:hover{background:var(--glass-hi)}
 #bar .ib .i{width:15px;height:15px}
 #bar .ib[aria-pressed="true"]{color:var(--accent);background:var(--glass-hi)}
-.ptabs{margin-bottom:calc(-1 * var(--s5));box-shadow:inset 0 1px 0 var(--glass-edge)}
 /* the "…" menu floats over lyrics: heavier blur so what's behind turns to mush */
 .menu{background:color-mix(in srgb,var(--surface) 55%,transparent);-webkit-backdrop-filter:blur(64px) saturate(1.8);backdrop-filter:blur(64px) saturate(1.8)}
 @media (prefers-reduced-transparency:reduce){
-  #bar,.ktop .ib,.ktop .pill,.sbox,.top .pill,.menu,.qpanel,.toast,.tip,.ptabs,.pbanner{background:color-mix(in srgb,var(--surface) 96%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none}
+  #bar,.ktop .ib,.ktop .pill,.sbox,.top .pill,.menu,.qpanel,.toast,.tip,.ptabs,.pbanner,.pctl,.pslide{background:color-mix(in srgb,var(--surface) 96%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none}
   #bar .ib{background:var(--raised)}
 }
 </style>
@@ -1495,7 +1503,7 @@ $('#protoChips').onclick = e => { const b = e.target.closest('[data-demo]'); if 
 <script>
 /* ================= PHONE PAGE (guest microphone) =================
    Same tokens and helpers as the desktop. Mirrors the desktop's current song and lyric line. */
-const P = {state:'join', name:'Aiko', muted:false, mic:0, lv:0, tab:'mic', q:''};
+const P = {state:'join', name:'Aiko', muted:false, mic:0, lv:0, tab:'mic', q:'', vol:80, slide:null};
 const P_STATES = {join:['arrow-right', 'Join'], connecting:['wifi-high', 'Connecting'], perm:['microphone', 'Mic permission'], mic:['microphone-stage', 'Microphone mode'], reconnecting:['wifi-slash', 'Reconnecting'], ended:['hand-waving', 'Session ended'], blocked:['microphone-slash', 'Mic blocked']};
 $('#pStates').innerHTML = Object.entries(P_STATES).map(([k, [i, l]]) => `<button class="opt" data-ps="${k}">${I(i)}<span class="grow">${l}</span></button>`).join('');
 $('#pStates').onclick = e => { const b = e.target.closest('[data-ps]'); if (b) pGo(b.dataset.ps); };
@@ -1526,8 +1534,8 @@ const pTabs = {
   mic: () => `<div class="psong" id="pSong"></div><div class="plyr" id="pLyr"></div><div style="flex:1"></div>
     <button class="micbtn" id="pMic" aria-label="Mute"><span class="ring"></span></button>
     <div class="pstate" id="pState"></div>
-    <label class="pvol">${I('speaker-high')}<input class="vs" type="range" min="0" max="100" value="80" style="--v:80%" aria-label="Your voice volume" oninput="this.style.setProperty('--v',this.value+'%')"><span class="cap">Voice</span></label>
-    <label class="pvol" style="margin-top:var(--s2)">${I('user-sound')}<input class="vs" id="pVox" type="range" min="0" max="100" value="${cur ? cur.vox : 100}" style="--v:${cur ? cur.vox : 100}%" aria-label="Singer: left is the original, right removes the singer" ${cur ? '' : 'disabled'}><span class="cap">Singer</span></label>`,
+    <div class="pctrls"><button class="pctl" data-pslide="voice">${I('speaker-high')}Voice</button><button class="pctl" data-pslide="singer">${I('user-sound')}Singer</button></div>
+    <div class="pslide fx off gone" id="pSlide"></div>`,
   songs: () => `<label class="psearch">${I('magnifying-glass')}<input id="pQ" placeholder="Search songs" value="${esc(P.q)}" aria-label="Search songs" autocomplete="off"></label><div class="plist" id="pRes"></div>`,
   queue: () => `<div class="plist" id="pQueue"></div>`,
 };
@@ -1563,6 +1571,15 @@ function pQueue(){
       + (up.length ? up.map((q, k) => pSong(byId(q.id), q.by === P.name ? `<button class="pib" data-pdel="${qi + 1 + k}" aria-label="Remove">${I('x')}</button>` : q.by ? `<small class="muted">${esc(q.by)}</small>` : '')).join('')
         : `<div class="pempty">${I('list-plus')}<b>Nothing up next</b><span>Add songs from Songs.</span></div>`);
 }
+/* Voice / Singer buttons each open one slider; tapping the open one closes it */
+function pSlide(k){
+  const box = $('#pSlide'); P.slide = P.slide === k ? null : k;
+  $$('[data-pslide]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pslide === P.slide));
+  if (!P.slide){ show(box, false); return setTimeout(() => !P.slide && box.classList.add('gone'), 240); }
+  const v = k === 'voice' ? P.vol : cur ? cur.vox : 100;
+  box.innerHTML = `${I(k === 'voice' ? 'speaker-high' : 'user-sound')}<input class="vs" id="${k === 'voice' ? 'pVol' : 'pVox'}" type="range" min="0" max="100" value="${v}" style="--v:${v}%" aria-label="${k === 'voice' ? 'Your voice volume' : 'Singer: left is the original, right removes the singer'}" ${k === 'singer' && !cur ? 'disabled' : ''}><output>${k === 'voice' ? v + '%' : ''}</output>`;
+  box.classList.remove('gone'); requestAnimationFrame(() => show(box));
+}
 const pQueueRefresh = () => { if (P.tab === 'queue') pQueue(); };
 let pTimer;
 function pGo(st){
@@ -1586,12 +1603,14 @@ $('#pScreen').onclick = e => {
   const g = e.target.closest('[data-go]'); if (g) return pGo(g.dataset.go);
   if (e.target.closest('#pMic')){ P.muted = !P.muted; pMicUi(); }
   const t = e.target.closest('[data-tab]'); if (t) return pTab(t.dataset.tab);
+  const ps = e.target.closest('[data-pslide]'); if (ps) return pSlide(ps.dataset.pslide);
   const a = e.target.closest('[data-padd],[data-pnext]');
   if (a){ enqueue(+(a.dataset.padd || a.dataset.pnext), !!a.dataset.pnext, P.name); a.classList.add('done'); a.innerHTML = I('check'); setTimeout(() => { a.classList.remove('done'); a.innerHTML = I(a.dataset.pnext ? 'arrow-bend-down-right' : 'list-plus'); }, 1200); }
   const d = e.target.closest('[data-pdel]'); if (d) removeQueued(+d.dataset.pdel);
   const l = e.target.closest('[data-plink]'); if (l && pLink && !pLink.loading){ const L = pLink; P.q = ''; pTab('songs'); addSong(L, l.dataset.plink === 'lib' ? '' : l.dataset.plink, P.name, '#pToasts'); }
 };
-$('#pScreen').oninput = e => { if (e.target.id === 'pVox' && cur){ cur.vox = +e.target.value; $('#vox').value = cur.vox; syncVox(); return; } if (e.target.id === 'pQ'){ P.q = e.target.value; pSongs(); } };
+$('#pScreen').oninput = e => { if (e.target.id === 'pVox' && cur){ cur.vox = +e.target.value; $('#vox').value = cur.vox; syncVox(); return; }
+  if (e.target.id === 'pVol'){ P.vol = +e.target.value; e.target.style.setProperty('--v', P.vol + '%'); e.target.nextElementSibling.textContent = P.vol + '%'; return; } if (e.target.id === 'pQ'){ P.q = e.target.value; pSongs(); } };
 $('#pAlert').onclick = e => { const b = e.target.closest('[data-perm]'); if (b) pGo(b.dataset.perm === '1' ? 'mic' : 'blocked'); };
 function pMicUi(){
   const tab = $('[data-tab="mic"] .i'); if (tab) tab.outerHTML = I(P.muted ? 'microphone-slash' : 'microphone-stage');
