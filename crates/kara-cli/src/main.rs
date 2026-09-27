@@ -210,12 +210,14 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
         Event::Stage { stage, .. } => eprintln!("{}", match stage {
             Stage::Fetching => "Getting the song…",
             Stage::Standardizing => "Preparing the audio…",
+            Stage::FindingLyrics => "Finding the lyrics…",
             Stage::Separating => "Taking the vocals out…",
         }),
         Event::Progress { chunks_done, chunks_total, .. } => {
             eprintln!("  {chunks_done}/{chunks_total} ready  ({:.1} s)", started.elapsed().as_secs_f64())
         }
         Event::Lyrics { .. } => eprintln!("Checked for lyrics.  ({:.1} s)", started.elapsed().as_secs_f64()),
+        Event::Added { .. } => {}
         Event::Ready { .. } => eprintln!("Ready to sing.  ({:.1} s)", started.elapsed().as_secs_f64()),
         Event::Failed { .. } => {} // `result?` below reports this once, in main.
     };

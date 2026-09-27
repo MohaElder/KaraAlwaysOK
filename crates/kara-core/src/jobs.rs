@@ -18,19 +18,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Stage {
     Fetching,
     Standardizing,
+    FindingLyrics,
     Separating,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Event {
     Stage { track_id: i64, stage: Stage },
     Progress { track_id: i64, chunks_done: u32, chunks_total: u32 },
     /// Lyrics were saved, including "none found"; read them from the library.
     Lyrics { track_id: i64 },
+    /// A newly added song's audio and lyrics are ready; it is separated when played.
+    Added { track_id: i64 },
     Ready { track_id: i64 },
     Failed { track_id: i64, message: String },
 }
@@ -67,17 +72,50 @@ pub fn prepare(
             }
             emit(Event::Ready { track_id });
         }
-        Err(e) => {
-            // Only the outermost context reaches the user.
-            let message = e.to_string();
-            if let Ok(Some(src)) = lib.selected_source(track_id) {
-                let _ = lib.set_source_status(src.id, SourceStatus::Failed, Some(&message));
-            }
-            emit(Event::Failed { track_id, message });
-        }
+        Err(e) => fail(lib, track_id, e, emit),
         Ok(Outcome::Cancelled) => {}
     }
     result
+}
+
+/// Marks the song's audio failed with the error's plain message and reports it.
+fn fail(lib: &Library, track_id: i64, e: &anyhow::Error, emit: &mut dyn FnMut(Event)) {
+    let message = e.to_string();
+    if let Ok(Some(src)) = lib.selected_source(track_id) {
+        let _ = lib.set_source_status(src.id, SourceStatus::Failed, Some(&message));
+    }
+    emit(Event::Failed { track_id, message });
+}
+
+/// Gets a newly added song's audio onto disk in the standard format and looks up
+/// its lyrics, without taking the vocals out. Emits `Added` when done.
+pub fn add(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<()> {
+    let result = add_inner(ctx, lib, fetcher, track_id, emit);
+    match &result {
+        Ok(()) => emit(Event::Added { track_id }),
+        Err(e) => fail(lib, track_id, e, emit),
+    }
+    result
+}
+
+fn add_inner(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<()> {
+    let track = lib.track(track_id).context("This song is no longer in your library.")?;
+    let source = lib
+        .selected_source(track_id)
+        .context("This song is no longer in your library.")?
+        .context("This song has no audio to play.")?;
+    let separated = match &source.audio_hash {
+        Some(hash) => is_ready(ctx, lib, hash)?,
+        None => false,
+    };
+    if !separated {
+        load_or_fetch(ctx, lib, &track, &source, emit)?;
+    }
+    emit(Event::Stage { track_id, stage: Stage::FindingLyrics });
+    if refresh_lyrics(lib, track_id, fetcher).unwrap_or(false) {
+        emit(Event::Lyrics { track_id });
+    }
+    Ok(())
 }
 
 /// Marked ready in the library, with the original and every chunk file still on disk.
@@ -341,6 +379,31 @@ fn separate_stage(
         }
     }
     Ok(outcome)
+}
+
+/// Adds songs one at a time on its own thread, so a download never waits for
+/// or holds up the song being prepared for singing.
+pub struct Adder {
+    requests: mpsc::Sender<i64>,
+}
+
+impl Adder {
+    pub fn spawn(ctx: Ctx, fetcher: Box<dyn LyricsFetcher + Send>, events: mpsc::Sender<Event>) -> Result<Self> {
+        let lib = Library::open(&ctx.store.db_path())?;
+        let (requests, rx) = mpsc::channel::<i64>();
+        std::thread::spawn(move || {
+            for track_id in rx {
+                let _ = add(&ctx, &lib, fetcher.as_ref(), track_id, &mut |e| {
+                    let _ = events.send(e);
+                });
+            }
+        });
+        Ok(Self { requests })
+    }
+
+    pub fn add(&self, track_id: i64) {
+        let _ = self.requests.send(track_id);
+    }
 }
 
 // ---------------------------------------------------------------- worker
@@ -872,6 +935,54 @@ mod tests {
                 return seen;
             }
         }
+    }
+
+    #[test]
+    fn adding_gets_the_audio_and_lyrics_ready_without_taking_the_vocals_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        lib.update_track_meta(t, "Title", Some("Artist"), None).unwrap();
+        let mut events = Vec::new();
+        add(&c, &lib, &MadeUpLyrics, t, &mut |e| events.push(e)).unwrap();
+        assert_eq!(
+            events,
+            vec![
+                Event::Stage { track_id: t, stage: Stage::Fetching },
+                Event::Stage { track_id: t, stage: Stage::Standardizing },
+                Event::Stage { track_id: t, stage: Stage::FindingLyrics },
+                Event::Lyrics { track_id: t },
+                Event::Added { track_id: t },
+            ]
+        );
+        let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
+        assert!(lib.separation(&hash, "test").unwrap().is_none());
+        assert_eq!(lib.lyrics(t).unwrap().unwrap().lines[0].text, "la la la");
+        let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
+        assert_eq!(events.first(), Some(&Event::Stage { track_id: t, stage: Stage::Separating }));
+    }
+
+    #[test]
+    fn the_adder_reports_a_song_it_cannot_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let p = song(dir.path(), "a.wav");
+        let t = ingest::add_file(&lib, &p).unwrap().track_id;
+        std::fs::remove_file(&p).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let adder = Adder::spawn(c, Box::new(NoLyrics), tx).unwrap();
+        adder.add(t);
+        wait_for(&rx, &Event::Failed { track_id: t, message: "The file was moved or deleted.".into() });
+    }
+
+    #[test]
+    fn events_serialize_for_the_app() {
+        let json = serde_json::to_value(Event::Progress { track_id: 1, chunks_done: 2, chunks_total: 3 }).unwrap();
+        assert_eq!(json, serde_json::json!({ "kind": "progress", "trackId": 1, "chunksDone": 2, "chunksTotal": 3 }));
+        let json = serde_json::to_value(Event::Stage { track_id: 1, stage: Stage::FindingLyrics }).unwrap();
+        assert_eq!(json["stage"], "findingLyrics");
     }
 
     fn titled(lib: &Library, title: &str) -> i64 {
