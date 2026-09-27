@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "$lib/i18n/index.svelte";
+  import { composing } from "$lib/keys";
 
   let { value, onDone }: { value: string; onDone: (name: string | null) => void } = $props();
   let done = false;
@@ -26,6 +27,7 @@
   onclick={(e) => e.stopPropagation()}
   onkeydown={(e) => {
     e.stopPropagation();
+    if (composing(e)) return;
     if (e.key === "Enter") finish(e.currentTarget.value.trim());
     if (e.key === "Escape") finish(null);
   }}

@@ -15,18 +15,24 @@
 
   const m = $derived(ui.menu?.kind === "playlist" ? ui.menu : null);
   let asking = $state(false);
+  /** The open playlist's songs that Sing and Shuffle would play. */
+  let singable = $state<number[]>([]);
 
   $effect(() => {
-    if (m) asking = false;
+    if (!m) return;
+    const menu = m;
+    asking = false;
+    singable = [];
+    void openCollection(menu.card.id).then((page) => {
+      if (ui.menu === menu) singable = adding.singable(library.visible(page));
+    });
   });
 
   const close = () => (ui.menu = null);
 
-  async function sing(id: number, shuffle: boolean) {
-    player.unlock();
+  function sing(shuffle: boolean) {
     close();
-    const page = await openCollection(id);
-    await player.playAll(adding.singable(page.tracks), shuffle);
+    void player.playAll(singable, shuffle);
   }
 
   async function rename(id: number) {
@@ -47,8 +53,8 @@
         <button class="btn accent" onclick={() => { close(); void manage.deletePlaylist(card); }}><TrashIcon />{t("common.delete")}</button>
       </div>
     {:else}
-      <button class="opt" disabled={!card.count} onclick={() => sing(card.id, false)}><PlayIcon size={18} /><span class="grow">{t("collection.sing")}</span></button>
-      <button class="opt" disabled={!card.count} onclick={() => sing(card.id, true)}><ShuffleIcon size={18} /><span class="grow">{t("collection.shuffle")}</span></button>
+      <button class="opt" disabled={!singable.length} onclick={() => sing(false)}><PlayIcon size={18} /><span class="grow">{t("collection.sing")}</span></button>
+      <button class="opt" disabled={!singable.length} onclick={() => sing(true)}><ShuffleIcon size={18} /><span class="grow">{t("collection.shuffle")}</span></button>
       {#if card.user}
         <div class="msep"></div>
         <button class="opt" onclick={() => rename(card.id)}><PencilSimpleIcon size={18} /><span class="grow">{t("playlist.rename")}</span></button>

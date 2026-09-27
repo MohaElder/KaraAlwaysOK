@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { composing } from "$lib/keys";
   import { untrack } from "svelte";
   import { linkPreview, search } from "$lib/api";
   import { fromOutcome, previewFailed, withPreview } from "$lib/search";
@@ -67,7 +68,7 @@
       bind:value={ui.query}
       oninput={changed}
       onkeydown={(e) => {
-        if (e.key !== "Escape") return;
+        if (e.key !== "Escape" || composing(e)) return;
         e.stopPropagation();
         clear();
         input?.blur();

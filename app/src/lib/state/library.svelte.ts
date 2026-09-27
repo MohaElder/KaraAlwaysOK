@@ -17,9 +17,12 @@ class LibraryState {
   hidden = new SvelteSet<string>();
 
   visibleCards = $derived(this.cards.filter((c) => !this.hidden.has(`playlist:${c.id}`)));
-  visibleTracks = $derived(
-    (this.page?.tracks ?? []).filter((t) => !this.hidden.has(`track:${t.id}`) && !this.hidden.has(`entry:${this.page?.card.id}:${t.id}`)),
-  );
+  visibleTracks = $derived(this.page ? this.visible(this.page) : []);
+
+  /** A collection's songs minus those waiting for an undo toast. */
+  visible(page: CollectionPage) {
+    return page.tracks.filter((t) => !this.hidden.has(`track:${t.id}`) && !this.hidden.has(`entry:${page.card.id}:${t.id}`));
+  }
 
   async setKind(kind: Kind) {
     this.kind = kind;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { composing } from "$lib/keys";
   import { ui } from "$lib/state/ui.svelte";
   import { manage } from "$lib/state/manage.svelte";
   import { t } from "$lib/i18n/index.svelte";
@@ -33,7 +34,7 @@
   }
 
   const focus = (node: HTMLInputElement) => node.focus();
-  const onEnter = (e: KeyboardEvent) => e.key === "Enter" && save();
+  const onEnter = (e: KeyboardEvent) => e.key === "Enter" && !composing(e) && save();
 </script>
 
 {#if s}

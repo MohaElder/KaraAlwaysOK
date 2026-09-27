@@ -27,12 +27,19 @@ import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 const failed = (e: unknown) => void toasts.show(say(e), { icon: WarningIcon });
 
 class Manage {
-  /** Hides an item now and runs `commit` when its toast runs out, unless Undo is pressed. */
-  undoable(key: string, text: string, icon: Icon, commit: () => Promise<unknown>) {
+  /** Hides an item now and runs `commit` when its toast runs out, unless Undo is pressed (which also runs `onUndo`). */
+  undoable(key: string, text: string, icon: Icon, commit: () => Promise<unknown>, onUndo?: () => void) {
     library.hidden.add(key);
     toasts.show(text, {
       icon,
-      action: { label: t("common.undo"), icon: ArrowCounterClockwiseIcon, run: () => library.hidden.delete(key) },
+      action: {
+        label: t("common.undo"),
+        icon: ArrowCounterClockwiseIcon,
+        run: () => {
+          library.hidden.delete(key);
+          onUndo?.();
+        },
+      },
       onExpire: async () => {
         await commit().catch(failed);
         await library.refresh();
@@ -61,7 +68,7 @@ class Manage {
 
   /** Hides a playlist now and deletes it when its Undo toast runs out. */
   async deletePlaylist(card: CollectionCard) {
-    this.undoable(`playlist:${card.id}`, t("toast.deleted", { name: cardName(card) }), TrashIcon, () => deletePlaylist(card.id));
+    this.undoable(`playlist:${card.id}`, t("toast.deleted", { name: cardName(card) }), TrashIcon, () => deletePlaylist(card.id), () => void library.show("playlist", card.id));
     await library.refresh();
   }
 
@@ -105,6 +112,7 @@ class Manage {
       else if (name) await renamePlaylist(r.id, name);
     } catch (e) {
       failed(e);
+      return library.refresh();
     }
     await library.refresh();
     if (r.isNew && name != null) toasts.show(t(r.withSongs ? "toast.addedTo" : "toast.created", { name: name || t("library.newPlaylist") }), { icon: PlaylistIcon });

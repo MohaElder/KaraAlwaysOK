@@ -26,10 +26,14 @@
 
   $effect(() => {
     if (!m) return;
+    const menu = m;
     asking = false;
     sub = null;
+    holding = [];
     void listCollections("playlist").then((cs) => (playlists = cs.filter((c) => c.user && !library.hidden.has(`playlist:${c.id}`))));
-    void playlistsWith(m.track.id).then((ids) => (holding = ids));
+    void playlistsWith(menu.track.id).then((ids) => {
+      if (ui.menu === menu) holding = ids;
+    });
   });
 
   const close = () => (ui.menu = null);
