@@ -3,6 +3,7 @@
 
 use crate::audio::{decode_range, encode_flac, is_damaged, read_flac, Stereo, SAMPLE_RATE};
 use crate::library::{Library, SepStatus, SourceKind};
+use crate::problem::Problem;
 use crate::separate::mdx::ChunkOut;
 use crate::store::{write_atomic, DataLock, Store};
 use anyhow::{Context, Result};
@@ -65,8 +66,8 @@ fn interleave(a: &Stereo) -> Vec<f32> {
 /// One chunk's vocals and instrumental, readable as soon as that chunk is written.
 /// Deletes a damaged original, so the next prepare fetches the song again.
 pub fn chunk_pcm(store: &Store, lib: &Library, hash: &str, model_id: &str, index: u32) -> Result<ChunkPcm> {
-    let row = lib.separation(hash, model_id)?.context("This song isn't prepared yet.")?;
-    let original = store.original_path(hash).context("This song isn't prepared yet.")?;
+    let row = lib.separation(hash, model_id)?.context(Problem::NotPrepared)?;
+    let original = store.original_path(hash).context(Problem::NotPrepared)?;
     let vocals = read_vocals(store, hash, model_id, index)?;
     let chunk_len = row.chunk_ms as usize * SAMPLE_RATE as usize / 1000;
     let mix = decode_range(&original, index as usize * chunk_len, vocals.len()).inspect_err(|e| {
@@ -81,8 +82,8 @@ pub fn chunk_pcm(store: &Store, lib: &Library, hash: &str, model_id: &str, index
 
 /// `chunk_pcm` for a track's selected audio.
 pub fn track_chunk_pcm(store: &Store, lib: &Library, model_id: &str, track_id: i64, index: u32) -> Result<ChunkPcm> {
-    let hash = lib.selected_source(track_id)?.and_then(|s| s.audio_hash).context("This song isn't prepared yet.")?;
-    chunk_pcm(store, lib, &hash, model_id, index).context("This part of the song isn't ready yet.")
+    let hash = lib.selected_source(track_id)?.and_then(|s| s.audio_hash).context(Problem::NotPrepared)?;
+    chunk_pcm(store, lib, &hash, model_id, index).context(Problem::PartNotReady)
 }
 
 /// Chunk files on disk, counting up from 0 and stopping at the first gap.

@@ -9,6 +9,7 @@ use crate::ingest;
 use crate::library::{AudioSource, Library, LyricsSource, SepStatus, SeparationRow, SourceKind, SourceStatus, Track};
 use crate::lyrics::{self, LyricsFetcher};
 use crate::now_ms;
+use crate::problem::Problem;
 use crate::separate::mdx::{self, MdxParams, Outcome, VocalModel};
 use crate::store::{copy_atomic, DataLock, Store};
 use anyhow::{Context, Result};
@@ -37,7 +38,7 @@ pub enum Event {
     /// A newly added song's audio and lyrics are ready; it is separated when played.
     Added { track_id: i64 },
     Ready { track_id: i64 },
-    Failed { track_id: i64, message: String },
+    Failed { track_id: i64, message: String, problem: Option<Problem> },
 }
 
 #[derive(Clone, Debug)]
@@ -84,7 +85,7 @@ fn fail(lib: &Library, track_id: i64, e: &anyhow::Error, emit: &mut dyn FnMut(Ev
     if let Ok(Some(src)) = lib.selected_source(track_id) {
         let _ = lib.set_source_status(src.id, SourceStatus::Failed, Some(&message));
     }
-    emit(Event::Failed { track_id, message });
+    emit(Event::Failed { track_id, message, problem: crate::problem::problem(e) });
 }
 
 /// Gets a newly added song's audio onto disk in the standard format and looks up
@@ -99,11 +100,11 @@ pub fn add(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64,
 }
 
 fn add_inner(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<()> {
-    let track = lib.track(track_id).context("This song is no longer in your library.")?;
+    let track = lib.track(track_id).context(Problem::SongGone)?;
     let source = lib
         .selected_source(track_id)
-        .context("This song is no longer in your library.")?
-        .context("This song has no audio to play.")?;
+        .context(Problem::SongGone)?
+        .context(Problem::NoAudio)?;
     let separated = match &source.audio_hash {
         Some(hash) => is_ready(ctx, lib, hash)?,
         None => false,
@@ -249,11 +250,11 @@ fn prepare_inner(
     cancel: &AtomicBool,
     emit: &mut dyn FnMut(Event),
 ) -> Result<Outcome> {
-    let track = lib.track(track_id).context("This song is no longer in your library.")?;
+    let track = lib.track(track_id).context(Problem::SongGone)?;
     let source = lib
         .selected_source(track_id)
-        .context("This song is no longer in your library.")?
-        .context("This song has no audio to play.")?;
+        .context(Problem::SongGone)?
+        .context(Problem::NoAudio)?;
 
     if let Some(hash) = &source.audio_hash {
         if is_ready(ctx, lib, hash)? {
@@ -280,8 +281,8 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
         if let Some(p) = ctx.store.original_path(hash) {
             match audio::decode_file(&p) {
                 Ok(d) => return Ok((hash.clone(), d.audio)),
-                Err(e) if audio::is_damaged(&e) => std::fs::remove_file(&p).context("Couldn't read this song's audio.")?,
-                Err(e) => return Err(e.context("Couldn't read this song's audio.")),
+                Err(e) if audio::is_damaged(&e) => std::fs::remove_file(&p).context(Problem::SongAudio)?,
+                Err(e) => return Err(e.context(Problem::SongAudio)),
             }
         }
     }
@@ -310,14 +311,14 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
 
 /// Decodes a fetched file and keeps a copy of it as the song's original.
 fn decode_and_keep(ctx: &Ctx, path: &Path) -> Result<(String, audio::Decoded)> {
-    let decoded = audio::decode_file(path).map_err(|e| audio::describe_read_failure(e, "Couldn't read this audio. The format may not be supported."))?;
-    anyhow::ensure!(!decoded.audio.is_empty(), "This audio is empty.");
+    let decoded = audio::decode_file(path).map_err(|e| audio::describe_read_failure(e, Problem::Unreadable))?;
+    anyhow::ensure!(!decoded.audio.is_empty(), Problem::Empty);
     let hash = audio::audio_hash(&decoded.audio);
     if ctx.store.original_path(&hash).is_none() {
         let dst = ctx.store.original_dest(&hash, path.extension().and_then(|e| e.to_str()));
         copy_atomic(path, &dst).map_err(|e| {
             let full = e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::StorageFull);
-            e.context(if full { "Couldn't save the audio. The disk is full." } else { "Couldn't save the audio." })
+            e.context(if full { Problem::DiskFull } else { Problem::Save })
         })?;
     }
     Ok((hash, decoded))
@@ -365,7 +366,7 @@ fn separate_stage(
         Err(e) => {
             row.status = SepStatus::Failed;
             let _ = lib.upsert_separation(&row);
-            return Err(e.context("Couldn't take the vocals out of this song."));
+            return Err(e.context(Problem::Separate));
         }
     };
 
@@ -733,7 +734,7 @@ mod tests {
 
         let (r, events) = run(&c, &lib, t, &AtomicBool::new(false));
         assert!(r.is_err());
-        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "KaraAlwaysOK isn't allowed to read this file.".into() }));
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "KaraAlwaysOK isn't allowed to read this file.".into(), problem: Some(Problem::FileNotAllowed) }));
     }
 
     #[test]
@@ -746,7 +747,7 @@ mod tests {
         std::fs::remove_file(&p).unwrap();
         let (r, events) = run(&c, &lib, t, &AtomicBool::new(false));
         assert!(r.is_err());
-        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "The file was moved or deleted.".into() }));
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "The file was moved or deleted.".into(), problem: Some(Problem::FileMoved) }));
         let s = lib.selected_source(t).unwrap().unwrap();
         assert_eq!((s.status, s.error.as_deref()), (SourceStatus::Failed, Some("The file was moved or deleted.")));
     }
@@ -759,7 +760,7 @@ mod tests {
         let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
         std::fs::write(c.store.audio_root(), b"not a folder").unwrap();
         let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
-        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "Couldn't save the audio.".into() }));
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "Couldn't save the audio.".into(), problem: Some(Problem::Save) }));
     }
 
     #[test]
@@ -769,7 +770,7 @@ mod tests {
         let lib = Library::open(&c.store.db_path()).unwrap();
         let (r, events) = run(&c, &lib, 999, &AtomicBool::new(false));
         assert!(r.is_err());
-        assert_eq!(events.last(), Some(&Event::Failed { track_id: 999, message: "This song is no longer in your library.".into() }));
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: 999, message: "This song is no longer in your library.".into(), problem: Some(Problem::SongGone) }));
     }
 
     #[test]
@@ -973,7 +974,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let adder = Adder::spawn(c, Box::new(NoLyrics), tx).unwrap();
         adder.add(t);
-        wait_for(&rx, &Event::Failed { track_id: t, message: "The file was moved or deleted.".into() });
+        wait_for(&rx, &Event::Failed { track_id: t, message: "The file was moved or deleted.".into(), problem: Some(Problem::FileMoved) });
     }
 
     #[test]
@@ -982,6 +983,8 @@ mod tests {
         assert_eq!(json, serde_json::json!({ "kind": "progress", "trackId": 1, "chunksDone": 2, "chunksTotal": 3 }));
         let json = serde_json::to_value(Event::Stage { track_id: 1, stage: Stage::FindingLyrics }).unwrap();
         assert_eq!(json["stage"], "findingLyrics");
+        let json = serde_json::to_value(Event::Failed { track_id: 1, message: String::new(), problem: Some(Problem::FileMoved) }).unwrap();
+        assert_eq!(json["problem"], "fileMoved");
     }
 
     fn titled(lib: &Library, title: &str) -> i64 {

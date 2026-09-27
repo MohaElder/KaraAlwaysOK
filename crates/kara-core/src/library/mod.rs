@@ -2,6 +2,7 @@
 //! progress, lyrics and settings. One SQLite file (WAL), search via FTS5.
 
 use crate::lyrics::Line;
+use crate::problem::Problem;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
 use std::path::Path;
@@ -215,12 +216,12 @@ impl Library {
         conn.pragma_update(None, "foreign_keys", "OFF")?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: usize = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        anyhow::ensure!(version <= steps.len(), "This library was made by a newer version of KaraAlwaysOK. Update KaraAlwaysOK to open it.");
+        anyhow::ensure!(version <= steps.len(), Problem::NewerLibrary);
         for step in &steps[version..] {
             step(&tx)?;
         }
         tx.pragma_update(None, "user_version", steps.len())?;
-        anyhow::ensure!(no_foreign_key_violations(&tx)?, "This library couldn't be upgraded safely.");
+        anyhow::ensure!(no_foreign_key_violations(&tx)?, Problem::UpgradeFailed);
         tx.commit()?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         Ok(Self { conn })

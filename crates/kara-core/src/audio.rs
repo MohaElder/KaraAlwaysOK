@@ -1,6 +1,7 @@
 //! Everything becomes one standard format: 44.1 kHz stereo f32 in memory,
 //! 16-bit FLAC for stored vocals. Also tag reading and content hashing.
 
+use crate::problem::Problem;
 use anyhow::{anyhow, Context, Result};
 use rubato::{FftFixedIn, Resampler};
 use sha2::{Digest, Sha256};
@@ -149,14 +150,14 @@ pub fn is_damaged(e: &anyhow::Error) -> bool {
     e.downcast_ref::<std::io::Error>().is_none()
 }
 
-/// Explains a `read_tags`/`decode_file` failure: `unsupported` for a damaged or unrecognized
-/// file, that it's missing, that KaraAlwaysOK isn't allowed to read it, or a generic read error.
-pub fn describe_read_failure(e: anyhow::Error, unsupported: &'static str) -> anyhow::Error {
+/// Explains a failure reading a song file: `unsupported` for a damaged or unrecognized
+/// file, that it's missing, that KaraAlwaysOK isn't allowed to read it, or that reading failed.
+pub fn describe_read_failure(e: anyhow::Error, unsupported: Problem) -> anyhow::Error {
     match e.downcast_ref::<std::io::Error>().map(std::io::Error::kind) {
         None => e.context(unsupported),
-        Some(std::io::ErrorKind::NotFound) => e.context("The file was moved or deleted."),
-        Some(std::io::ErrorKind::PermissionDenied) => e.context("KaraAlwaysOK isn't allowed to read this file."),
-        Some(_) => e.context("Couldn't read this file."),
+        Some(std::io::ErrorKind::NotFound) => e.context(Problem::FileMoved),
+        Some(std::io::ErrorKind::PermissionDenied) => e.context(Problem::FileNotAllowed),
+        Some(_) => e.context(Problem::ReadFailed),
     }
 }
 
@@ -430,8 +431,9 @@ mod tests {
     #[test]
     fn a_missing_file_is_reported_as_moved_or_deleted() {
         let dir = tempfile::tempdir().unwrap();
-        let e = read_tags(&dir.path().join("gone.wav")).unwrap_err();
-        assert_eq!(describe_read_failure(e, "unsupported").to_string(), "The file was moved or deleted.");
+        let e = describe_read_failure(read_tags(&dir.path().join("gone.wav")).unwrap_err(), Problem::NotAudio);
+        assert_eq!(e.to_string(), "The file was moved or deleted.");
+        assert_eq!(crate::problem::problem(&e), Some(Problem::FileMoved));
     }
 
     #[cfg(unix)]
@@ -440,7 +442,7 @@ mod tests {
         use std::os::unix::ffi::OsStrExt;
         let bad = Path::new(std::ffi::OsStr::from_bytes(b"a\0b"));
         let e = read_tags(bad).unwrap_err();
-        assert_eq!(describe_read_failure(e, "unsupported").to_string(), "Couldn't read this file.");
+        assert_eq!(describe_read_failure(e, Problem::NotAudio).to_string(), "Couldn't read this file.");
     }
 
     #[test]

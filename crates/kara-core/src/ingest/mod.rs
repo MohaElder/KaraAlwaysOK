@@ -6,6 +6,7 @@ pub mod ytdlp;
 
 use crate::audio;
 use crate::library::{AudioSource, CollectionKind, Library, NewTrack, ProviderId, SourceKind, Track};
+use crate::problem::Problem;
 use crate::store::{write_atomic, Store};
 use anyhow::{bail, Context, Result};
 use link::LinkVerdict;
@@ -94,12 +95,12 @@ fn download_artwork(lib: &Library, store: &Store, track_id: i64, url: &str) -> R
 
 /// Adds a local file; a file that is already in the library returns its existing track.
 pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
-    let path = &path.canonicalize().map_err(|e| audio::describe_read_failure(e.into(), "This file isn't audio we can play."))?;
+    let path = &path.canonicalize().map_err(|e| audio::describe_read_failure(e.into(), Problem::NotAudio))?;
     let uri = path.display().to_string();
     if let Some(s) = lib.source_by_uri(SourceKind::File, &uri)? {
         return Ok(Ingested { track_id: s.track_id, source_id: s.id });
     }
-    let (tags, duration_ms) = audio::read_tags(path).map_err(|e| audio::describe_read_failure(e, "This file isn't audio we can play."))?;
+    let (tags, duration_ms) = audio::read_tags(path).map_err(|e| audio::describe_read_failure(e, Problem::NotAudio))?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
     let title = tags.title.clone().unwrap_or_else(|| title_from_file_name(name));
     let track_id = lib.add_track(&NewTrack {
@@ -120,8 +121,8 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
 
 /// Adds a link as a track right away; its real title arrives when the audio is fetched.
 pub fn add_link(lib: &Library, url: &Url) -> Result<Ingested> {
-    if let Some(msg) = link::rejection_message(url) {
-        bail!(msg);
+    if let Some(p) = link::rejection(url) {
+        bail!(p);
     }
     let host = url.host_str().unwrap_or("link").trim_start_matches("www.");
     let title = match link::verdict(url) {
@@ -151,11 +152,11 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
         SourceKind::Link => {
             let url = Url::parse(&source.uri)?;
             match link::verdict(&url) {
-                LinkVerdict::AudioFile => download_file(&url, &store.tmp_dir()).context("Couldn't download this song. Check the link and your connection."),
+                LinkVerdict::AudioFile => download_file(&url, &store.tmp_dir()).context(Problem::Download),
                 LinkVerdict::Extractable => {
-                    let bin = ytdlp::ensure(&store.bin_dir()).context("Couldn't set up downloading. Check your connection.")?;
+                    let bin = ytdlp::ensure(&store.bin_dir()).context(Problem::DownloaderSetup)?;
                     let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir())
-                        .context("Couldn't download this song. Check the link and your connection.")?;
+                        .context(Problem::Download)?;
                     lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
                     let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
                     texts.extend(f.tags.iter().map(String::as_str));
@@ -168,10 +169,10 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                     }
                     Ok(f.path)
                 }
-                _ => bail!(link::rejection_message(&url).unwrap_or_default()),
+                _ => bail!(link::rejection(&url).unwrap_or(Problem::LinkUnsupported)),
             }
         }
-        SourceKind::Match => bail!("Songs from streaming libraries arrive in a later version."),
+        SourceKind::Match => bail!(Problem::StreamingLater),
     }
 }
 

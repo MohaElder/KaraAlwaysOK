@@ -1,5 +1,6 @@
 //! Which pasted links we can get audio from, and what to tell the user otherwise.
 
+use crate::problem::Problem;
 use url::Url;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,15 +51,12 @@ pub fn verdict(url: &Url) -> LinkVerdict {
     }
 }
 
-/// What to show under the search bar for a link we won't process.
-pub fn rejection_message(url: &Url) -> Option<String> {
-    let host = url.host_str().unwrap_or("").trim_end_matches('.').trim_start_matches("www.").trim_start_matches("open.");
+/// Why a pasted link can't be used, if it can't.
+pub fn rejection(url: &Url) -> Option<Problem> {
     match verdict(url) {
         LinkVerdict::AudioFile | LinkVerdict::Extractable => None,
-        LinkVerdict::Streaming => Some(format!("{host} links can't be downloaded. Search for the song instead.")),
-        LinkVerdict::Unsupported => Some(format!(
-            "Can't get audio from {host}. Paste a YouTube, SoundCloud or Bandcamp link, or a direct link to an audio file."
-        )),
+        LinkVerdict::Streaming => Some(Problem::LinkStreaming),
+        LinkVerdict::Unsupported => Some(Problem::LinkUnsupported),
     }
 }
 
@@ -92,11 +90,10 @@ mod tests {
     }
 
     #[test]
-    fn rejection_messages_are_plain() {
-        let m = rejection_message(&parse_link("https://open.spotify.com/track/x").unwrap()).unwrap();
-        assert!(m.contains("spotify.com links can't be downloaded"));
-        let m = rejection_message(&parse_link("https://example.com/page").unwrap()).unwrap();
-        assert!(m.contains("Can't get audio from example.com"));
-        assert!(rejection_message(&parse_link("https://youtu.be/x").unwrap()).is_none());
+    fn links_we_refuse_say_why() {
+        let rejection_of = |url: &str| rejection(&parse_link(url).unwrap());
+        assert_eq!(rejection_of("https://open.spotify.com/track/x"), Some(Problem::LinkStreaming));
+        assert_eq!(rejection_of("https://example.com/page"), Some(Problem::LinkUnsupported));
+        assert_eq!(rejection_of("https://youtu.be/x"), None);
     }
 }

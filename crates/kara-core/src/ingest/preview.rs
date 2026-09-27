@@ -1,6 +1,7 @@
 //! What a pasted link points to, shown before anything is downloaded.
 
 use super::link::host_is;
+use crate::problem::Problem;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -98,12 +99,12 @@ fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPr
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            bail!("Couldn't find a song at this link.");
+            bail!(Problem::NoSongAtLink);
         }
         std::thread::sleep(Duration::from_millis(50));
     };
     if !status.success() {
-        bail!("Couldn't find a song at this link.");
+        bail!(Problem::NoSongAtLink);
     }
     let stdout = reader.join().unwrap_or_default();
     let stdout = String::from_utf8_lossy(&stdout);

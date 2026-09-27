@@ -1,5 +1,6 @@
 //! Where everything lives on disk (spec §4).
 
+use crate::problem::Problem;
 use anyhow::{bail, Context, Result};
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
@@ -27,12 +28,12 @@ impl Store {
     }
     /// Takes the data folder for writing; fails with a plain message while another copy of KaraAlwaysOK holds it.
     pub fn lock(&self) -> Result<DataLock> {
-        let unusable = "Couldn't open KaraAlwaysOK's data folder.";
+        let unusable = Problem::DataFolder;
         std::fs::create_dir_all(&self.root).context(unusable)?;
         let file = File::options().write(true).create(true).truncate(false).open(self.root.join("kara.lock")).context(unusable)?;
         match file.try_lock() {
             Ok(()) => Ok(DataLock { _file: file }),
-            Err(TryLockError::WouldBlock) => bail!("Another copy of KaraAlwaysOK is using your library. Close it and try again."),
+            Err(TryLockError::WouldBlock) => bail!(Problem::InUse),
             Err(TryLockError::Error(e)) => Err(anyhow::Error::from(e).context(unusable)),
         }
     }
