@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/kara-core", "crates/kara-cli"]
+members = ["crates/kara-core", "crates/kara-cli", "app/src-tauri"]
 
 [workspace.dependencies]
 anyhow = "1"
@@ -10,6 +10,9 @@ serde_json = "1"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[profile.dev]
+opt-level = 1
 
 # ML and DSP code is unusably slow unoptimized; optimize dependencies in dev too.
 [profile.dev.package."*"]

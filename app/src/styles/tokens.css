@@ -1,0 +1,44 @@
+:root {
+  color-scheme: light;
+  --bg: #EEF1F4; --side: #D6DFE8; --surface: #FFFFFF; --raised: #DCE4EC; --line: #C9D3DE;
+  --text: #1B2430; --muted: #5B6878; --faint: #97A3B1;
+  --accent: #DE6414; --on-accent: #FFFFFF; --ready: #2F7D5B; --busy: #A86B12;
+  --shadow: rgba(27, 36, 48, .2); --scrim: rgba(27, 36, 48, .28);
+  --glass: rgba(255, 255, 255, .5); --glass-btn: rgba(255, 255, 255, .4); --glass-hi: rgba(255, 255, 255, .8);
+  --glass-edge: rgba(255, 255, 255, .8); --glass-line: rgba(27, 36, 48, .12);
+  --thumb: #FFFFFF; --bezel: #0B0F14;
+  --blur: blur(30px) saturate(1.9);
+  --body: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --display: "Bricolage Grotesque", "Geist", ui-sans-serif, sans-serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px;
+  --r-sm: 8px; --r-lg: 14px; --row: 52px; --side-w: 260px;
+  --ease: cubic-bezier(.2, .7, .2, 1); --t: 240ms; --sy: 8px; --motion: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #10151B; --side: #18212B; --surface: #1B232D; --raised: #243040; --line: #2D3948;
+    --text: #E8EEF4; --muted: #8C9AAB; --faint: #566374;
+    --accent: #FF8C2E; --on-accent: #1F0E02; --ready: #5FBF93; --busy: #E3A948;
+    --shadow: rgba(0, 0, 0, .55); --scrim: rgba(0, 0, 0, .5);
+    --glass: rgba(28, 38, 52, .5); --glass-btn: rgba(255, 255, 255, .07); --glass-hi: rgba(255, 255, 255, .17);
+    --glass-edge: rgba(255, 255, 255, .15); --glass-line: rgba(0, 0, 0, .3);
+  }
+}
+
+.dk {
+  color-scheme: dark;
+  --bg: #10151B; --side: #18212B; --surface: #1B232D; --raised: #243040; --line: #2D3948;
+  --text: #E8EEF4; --muted: #8C9AAB; --faint: #566374;
+  --accent: #FF8C2E; --on-accent: #1F0E02; --ready: #5FBF93; --busy: #E3A948;
+  --shadow: rgba(0, 0, 0, .55); --scrim: rgba(0, 0, 0, .5);
+  --glass: rgba(28, 38, 52, .5); --glass-btn: rgba(255, 255, 255, .07); --glass-hi: rgba(255, 255, 255, .17);
+  --glass-edge: rgba(255, 255, 255, .15); --glass-line: rgba(0, 0, 0, .3);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --sy: 0px; --motion: 0; }
+}
