@@ -3,7 +3,7 @@
 
 use crate::lyrics::Line;
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
 use std::path::Path;
 
 /// A string-backed enum with `as_str`, `FromStr`, and SQLite conversions.
@@ -156,6 +156,12 @@ fn enable_wal(conn: &Connection) -> Result<()> {
     Ok(switch()?)
 }
 
+/// Upgrades the library's tables (and files, found beside `tx.path()`) by one version.
+type Step = fn(&Transaction) -> Result<()>;
+
+/// The upgrade steps in order; after step `i` the library is at version `i + 1`.
+const STEPS: &[Step] = &[|tx| Ok(tx.execute_batch(include_str!("schema.sql"))?)];
+
 pub struct Library {
     conn: Connection,
 }
@@ -165,22 +171,24 @@ impl Library {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        Self::init(Connection::open(path).with_context(|| format!("open {}", path.display()))?)
+        Self::init(Connection::open(path).with_context(|| format!("open {}", path.display()))?, STEPS)
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(Connection::open_in_memory()?)
+        Self::init(Connection::open_in_memory()?, STEPS)
     }
 
-    fn init(mut conn: Connection) -> Result<Self> {
+    /// Opens the database, bringing it up to the latest version with the `steps` it hasn't had, in one transaction.
+    fn init(mut conn: Connection, steps: &[Step]) -> Result<Self> {
         enable_wal(&conn)?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let version: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version == 0 {
-            tx.execute_batch(include_str!("schema.sql"))?;
-            tx.pragma_update(None, "user_version", 1)?;
+        let version: usize = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        anyhow::ensure!(version <= steps.len(), "This library was made by a newer version of kara. Update kara to open it.");
+        for step in &steps[version..] {
+            step(&tx)?;
         }
+        tx.pragma_update(None, "user_version", steps.len())?;
         tx.commit()?;
         Ok(Self { conn })
     }
@@ -542,5 +550,27 @@ mod tests {
         let p = dir.path().join("kara.db");
         let id = Library::open(&p).unwrap().add_track(&local("A", None)).unwrap();
         assert_eq!(Library::open(&p).unwrap().track(id).unwrap().title, "A");
+    }
+
+    #[test]
+    fn opening_runs_the_steps_a_library_has_not_had() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("kara.db");
+        let id = Library::open(&p).unwrap().add_track(&local("A", None)).unwrap();
+        let steps = [STEPS, &[|tx: &Transaction| Ok(tx.execute_batch("CREATE TABLE added (x INTEGER)")?)]].concat();
+        let lib = Library::init(Connection::open(&p).unwrap(), &steps).unwrap();
+        assert_eq!(lib.track(id).unwrap().title, "A");
+        let version: usize = lib.conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, 2);
+        lib.conn.execute("INSERT INTO added (x) VALUES (1)", []).unwrap();
+    }
+
+    #[test]
+    fn a_library_from_a_newer_kara_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("kara.db");
+        Connection::open(&p).unwrap().pragma_update(None, "user_version", STEPS.len() + 1).unwrap();
+        let err = Library::open(&p).err().unwrap();
+        assert_eq!(err.to_string(), "This library was made by a newer version of kara. Update kara to open it.");
     }
 }
