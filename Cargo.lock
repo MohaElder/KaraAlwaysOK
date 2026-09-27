@@ -800,6 +800,7 @@ dependencies = [
  "hound",
  "kara-core",
  "libc",
+ "tempfile",
 ]
 
 [[package]]

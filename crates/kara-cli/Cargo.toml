@@ -13,3 +13,7 @@ kara-core = { path = "../kara-core" }
 clap = { version = "4", features = ["derive"] }
 hound = "3"
 libc = "0.2"
+
+[dev-dependencies]
+hound = "3"
+tempfile = "3"
