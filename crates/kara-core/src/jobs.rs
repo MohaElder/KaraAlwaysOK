@@ -158,14 +158,18 @@ fn look_up_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> 
     lyrics::find(None, &t.title, t.artist.as_deref(), t.duration_ms.unwrap_or(0), fetcher)
 }
 
-/// Looks up a song's lyrics now, even when it has some or none were found lately; saves any it finds
-/// and lines them up with the singing if the song is separated. Returns whether it found any.
+/// Looks up a song's lyrics now, even when it has some or none were found lately; saves any it finds,
+/// forgets the timing set for the old ones and lines the new ones up with the singing if the song is separated.
+/// Returns whether it found any.
 pub fn find_lyrics_again(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<bool> {
     let (src, lines) = look_up_lyrics(lib, track_id, fetcher).context(Problem::LyricsLookup)?;
     if src == LyricsSource::None {
         return Ok(false);
     }
     lib.set_lyrics(track_id, src, &lines, now_ms())?;
+    if lib.reset_lyric_offset(track_id)? {
+        emit(Event::LyricOffset { track_id });
+    }
     emit(Event::Lyrics { track_id });
     let _ = sync_whole_song(ctx, lib, track_id, emit);
     Ok(true)
@@ -1066,15 +1070,16 @@ mod tests {
     }
 
     #[test]
-    fn finding_lyrics_again_replaces_none_found_and_lines_them_up_but_keeps_lyrics_when_nothing_is_found() {
+    fn finding_lyrics_again_replaces_none_found_and_lines_them_up_afresh_but_keeps_lyrics_when_nothing_is_found() {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
-        let (t, _, lrc) = separated_singing_song(&c, &lib);
+        let (t, s, lrc) = separated_singing_song(&c, &lib);
         lib.set_lyrics(t, LyricsSource::None, &[], now_ms()).unwrap();
+        lib.set_lyric_offset(s, 200).unwrap();
         let mut events = Vec::new();
         assert!(find_lyrics_again(&c, &lib, &Lrc(lrc), t, &mut |e| events.push(e)).unwrap());
-        assert_eq!(events, [Event::Lyrics { track_id: t }, Event::LyricOffset { track_id: t }]);
+        assert_eq!(events, [Event::LyricOffset { track_id: t }, Event::Lyrics { track_id: t }, Event::LyricOffset { track_id: t }]);
         assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 1_500);
         assert!(!find_lyrics_again(&c, &lib, &NoLyrics, t, &mut |_| {}).unwrap());
         assert_eq!(lib.lyrics(t).unwrap().unwrap().source, LyricsSource::Lrclib);

@@ -479,6 +479,15 @@ impl Library {
         Ok(n > 0)
     }
 
+    /// Forgets a song's lyric timing, the user's too; returns whether it changed.
+    pub fn reset_lyric_offset(&self, track_id: i64) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE audio_source SET lyric_offset_ms = 0, lyric_offset_manual = 0 WHERE track_id = ?1 AND (lyric_offset_ms != 0 OR lyric_offset_manual = 1)",
+            [track_id],
+        )?;
+        Ok(n > 0)
+    }
+
     pub fn set_lyric_synced_at(&self, source_id: i64, lyrics_fetched_at: i64) -> Result<()> {
         self.conn.execute("UPDATE audio_source SET lyric_synced_at = ?2 WHERE id = ?1", params![source_id, lyrics_fetched_at])?;
         Ok(())

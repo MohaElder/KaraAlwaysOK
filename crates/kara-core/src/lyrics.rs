@@ -4,7 +4,7 @@ use crate::fuzzy::{fold, Fuzzy};
 use crate::library::LyricsSource;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Word {
@@ -145,7 +145,7 @@ impl Lrclib {
     pub fn new() -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .user_agent(concat!("kara-always-oki/", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(4))
             .build()?;
         Ok(Self { client })
     }
@@ -189,8 +189,13 @@ impl std::fmt::Display for Transient {
 
 /// Pauses before asking a busy service again.
 const RETRY_WAITS_MS: [u64; 2] = if cfg!(test) { [1, 1] } else { [700, 2_000] };
-/// A recording further than this from the song's length is another version.
-const MAX_LENGTH_OFF_S: f64 = 60.0;
+/// A busy service is asked again only within this time from the start of a lookup.
+const RETRY_WITHIN: Duration = Duration::from_secs(3);
+/// A recording further than this from the song's length is another version: by the same singer,
+/// with no singer known, and by another singer.
+const SAME_SINGER_OFF_S: f64 = 60.0;
+const UNKNOWN_SINGER_OFF_S: f64 = 10.0;
+const OTHER_SINGER_OFF_S: f64 = 3.0;
 
 /// Words that mark a version, a video or an upload rather than the song's name.
 const NOISE: &[&str] = &[
@@ -201,11 +206,11 @@ const NOISE: &[&str] = &[
 /// Endings channels add to a singer's name.
 const ARTIST_SUFFIXES: &[&str] = &["- topic", "- 主題", "vevo", "官方", "official"];
 
-/// Runs `f`, asking again after a short pause while the service is busy or unreachable.
-fn retrying<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
-    for wait in RETRY_WAITS_MS {
+/// Runs `f`, asking again after a short pause while the service is busy or unreachable and `deadline` allows.
+fn retrying<T>(deadline: Instant, mut f: impl FnMut() -> Result<T>) -> Result<T> {
+    for wait in RETRY_WAITS_MS.map(Duration::from_millis) {
         match f() {
-            Err(e) if e.is::<Transient>() => std::thread::sleep(Duration::from_millis(wait)),
+            Err(e) if e.is::<Transient>() && Instant::now() + wait < deadline => std::thread::sleep(wait),
             done => return done,
         }
     }
@@ -214,19 +219,21 @@ fn retrying<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
 
 /// Looks the song up by title and singer, then by title alone, and returns the best matching synced lyrics.
 fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+    let deadline = Instant::now() + RETRY_WITHIN;
     let (title, hint) = clean_title(title, artist);
     let artists: Vec<String> = hint.iter().map(String::as_str).chain(artist).flat_map(clean_artist).collect();
     if let Some(a) = artists.first() {
-        let hits = retrying(|| search(&[("track_name", &title), ("artist_name", a)]))?;
+        let hits = retrying(deadline, || search(&[("track_name", &title), ("artist_name", a)]))?;
         if let Some(lyrics) = best_match(hits, &title, &artists, duration_s) {
             return Ok(Some(lyrics));
         }
     }
-    Ok(best_match(retrying(|| search(&[("q", &title)]))?, &title, &artists, duration_s))
+    Ok(best_match(retrying(deadline, || search(&[("q", &title)]))?, &title, &artists, duration_s))
 }
 
-/// The synced lyrics of the hit that best matches the song: the same title (or a close one by the same singer)
-/// within a minute of its length; the singer's own first, then the same title, then the closest length.
+/// The synced lyrics of the hit that best matches the song: by the same singer, the same or a close title within
+/// a minute of its length; by another singer, the same title and nearly the same length.
+/// The singer's own first, then the same title, then the closest length.
 fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<String> {
     let title_key = key(title);
     hits.into_iter()
@@ -235,9 +242,13 @@ fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) 
             let off = if duration_s == 0 { 0.0 } else { (h.duration - duration_s as f64).abs() };
             let (their_title, _) = clean_title(&h.track_name, Some(&h.artist_name));
             let same_title = key(&their_title) == title_key;
-            let same_singer = clean_artist(&h.artist_name).iter().any(|a| artists.iter().any(|b| similar(a, b) || similar(b, a)));
-            let close_title = similar(title, &their_title) && similar(&their_title, title);
-            (off <= MAX_LENGTH_OFF_S && (same_title || (close_title && same_singer))).then_some(((!same_singer, !same_title, off as u64), lyrics))
+            let same_singer = clean_artist(&h.artist_name).iter().any(|a| artists.iter().any(|b| key(a) == key(b)));
+            let fits = if same_singer {
+                off <= SAME_SINGER_OFF_S && (same_title || (similar(title, &their_title) && similar(&their_title, title)))
+            } else {
+                same_title && off <= if artists.is_empty() { UNKNOWN_SINGER_OFF_S } else { OTHER_SINGER_OFF_S }
+            };
+            fits.then_some(((!same_singer, !same_title, off as u64), lyrics))
         })
         .min_by_key(|(rank, _)| *rank)
         .map(|(_, lyrics)| lyrics)
@@ -290,12 +301,16 @@ fn strip_suffix_ci<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
 
 /// A song's name as a lyrics service knows it, from a file's or upload's title: without tags like
 /// 【4K】 or (Official Video), version words and anything after " | "; the name in 《》「」『』 when there is one;
-/// the part after " - " when the part before is the singer. Also returns a singer named before 《》「」『』.
+/// for "A - B", A unless B is the singer or a version, else B. Also returns a singer named in the title
+/// (before 《》「」『』 or " - ").
 pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>) {
+    let singer = |s: &str| Some(s.trim_matches(|c: char| c.is_whitespace() || "-|:：".contains(c)).to_string()).filter(|s| !s.is_empty());
     if let Some((before, rest)) = title.split_once(['《', '「', '『']) {
-        if let Some((name, _)) = rest.split_once(['》', '」', '』']).filter(|(n, _)| !n.trim().is_empty()) {
-            let singer = brackets(before).0;
-            return (name.trim().to_string(), (!singer.is_empty()).then_some(singer));
+        if let Some((name, after)) = rest.split_once(['》', '」', '』']).filter(|(n, _)| !n.trim().is_empty()) {
+            let after = brackets(after).0;
+            if after.is_empty() || noisy(&after) {
+                return (name.trim().to_string(), singer(&brackets(before).0));
+            }
         }
     }
     let (outside, parts) = brackets(title);
@@ -305,26 +320,28 @@ pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>
             name = format!("{name} ({part})");
         }
     }
-    if let Some((left, right)) = name.split_once(" - ") {
-        let is_singer = |part: &str| artist.into_iter().flat_map(clean_artist).any(|a| key(&a) == key(part));
-        name = if is_singer(left) { right } else { left }.to_string();
-    }
+    let is_singer = |part: &str| artist.into_iter().flat_map(clean_artist).any(|a| key(&a) == key(part));
+    let (name, named) = match name.split_once(" - ") {
+        Some((left, right)) if is_singer(right) || noisy(right) => (left, None),
+        Some((left, right)) => (right, singer(left).filter(|_| !is_singer(left))),
+        None => (name.as_str(), None),
+    };
     let mut name = name.trim();
     while let Some(rest) = NOISE.iter().filter(|n| !n.is_ascii()).find_map(|n| name.strip_suffix(n)).filter(|r| !r.trim().is_empty()) {
         name = rest.trim_end();
     }
-    if name.is_empty() { (title.trim().to_string(), None) } else { (name.to_string(), None) }
+    if name.is_empty() { (title.trim().to_string(), None) } else { (name.to_string(), named) }
 }
 
 /// A singer's names as a lyrics service knows them: without endings like " - Topic" or "VEVO" and
-/// bracketed version words; a name in brackets is another name for the same singer.
+/// bracketed version words; a name in brackets is another name for the same singer. Single letters are no name.
 pub fn clean_artist(artist: &str) -> Vec<String> {
     let (outside, parts) = brackets(artist);
     let mut name = outside.as_str();
     while let Some(rest) = ARTIST_SUFFIXES.iter().find_map(|s| strip_suffix_ci(name, s)).filter(|r| !r.is_empty()) {
         name = rest;
     }
-    std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| !n.is_empty()).map(String::from).collect()
+    std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| key(n).chars().count() > 1).map(String::from).collect()
 }
 
 /// Embedded synced lyrics first, then the online service, else none.
@@ -420,11 +437,16 @@ mod tests {
         assert_eq!(title("Juniper Row - Paper Boats (Official Video)", Some("JuniperRowVEVO")), ("Paper Boats".into(), None));
         assert_eq!(title("Paper Boats - Remastered 2011", Some("Juniper Row")), ("Paper Boats".into(), None));
         assert_eq!(title("Paper Boats (Part 2) [HD]", None), ("Paper Boats (Part 2)".into(), None));
+        assert_eq!(title("Juniper Row - Paper Boats", Some("Some Uploader")), ("Paper Boats".into(), Some("Juniper Row".into())));
+        assert_eq!(title("Paper Boats - Juniper Row", Some("Juniper Row")), ("Paper Boats".into(), None));
+        assert_eq!(title("张学友 - 《李香兰》", None), ("李香兰".into(), Some("张学友".into())));
+        assert_eq!(title("「さよなら」の意味", None), ("「さよなら」の意味".into(), None));
         assert_eq!(clean_artist("盧廣仲(版本)"), ["盧廣仲"]);
         assert_eq!(clean_artist("盧廣仲 (Crowd Lu)"), ["盧廣仲", "Crowd Lu"]);
         assert_eq!(clean_artist("Crowd Lu - Topic"), ["Crowd Lu"]);
         assert_eq!(clean_artist("盧廣仲 - 主題"), ["盧廣仲"]);
         assert_eq!(clean_artist("JuniperRowVEVO"), ["JuniperRow"]);
+        assert_eq!(clean_artist("(G)I-DLE"), ["I-DLE"]);
     }
 
     fn hit(track: &str, artist: &str, duration: f64, lyrics: Option<&str>) -> Hit {
@@ -448,8 +470,13 @@ mod tests {
                 hit("Paper Boats", "C", 215.0, Some("[00:01.00]nearest")),
             ]
         };
-        assert_eq!(best_match(boats(), "Paper Boats", &[], 200).as_deref(), Some("[00:01.00]nearest"));
-        assert_eq!(best_match(boats(), "Paper Boats", &[], 100), None);
+        assert_eq!(best_match(boats(), "Paper Boats", &[], 208).as_deref(), Some("[00:01.00]nearest"));
+        assert_eq!(best_match(boats(), "Paper Boats", &[], 200), None);
+        assert_eq!(best_match(boats(), "Paper Boats", &["Nobody Real".into()], 213).as_deref(), Some("[00:01.00]nearest"));
+        assert_eq!(best_match(boats(), "Paper Boats", &["Nobody Real".into()], 208), None);
+
+        let stay = vec![hit("Stay - Big Star", "Big Star", 239.0, Some("[00:01.00]theirs")), hit("STAY", "Home Crew", 205.0, Some("[00:01.00]other"))];
+        assert_eq!(best_match(stay, "Stay", &["Nobody Real".into()], 200), None);
 
         let close_title = || vec![hit("Paper Boat", "Juniper Row", 200.0, Some("[00:01.00]close title"))];
         assert_eq!(best_match(close_title(), "Paper Boats", &[], 200), None);
