@@ -1,4 +1,4 @@
-//! Feedback control for one mic: spots a single pure tone that lasts and keeps growing (or already screams) and turns the mic down until it settles.
+//! Feedback control for one mic: spots a single pure tone that lasts and keeps growing, or one or two tones that already scream, and turns the mic down until it settles.
 
 use realfft::num_complex::Complex32;
 use realfft::{RealFftPlanner, RealToComplex};
@@ -31,6 +31,7 @@ pub struct Howl {
     bins: Range<usize>,
     bin: usize,
     run: u32,
+    screams: u32,
     first_power: f32,
     quiet: u32,
     gain: f32,
@@ -46,12 +47,13 @@ impl Howl {
             input: fft.make_input_vec(),
             spectrum: fft.make_output_vec(),
             scratch: fft.make_scratch_vec(),
-            bins: (LOW_HZ / hz) as usize..(HIGH_HZ / hz) as usize,
+            bins: (LOW_HZ / hz).max(1.0) as usize..(HIGH_HZ / hz).min((N / 2) as f32) as usize,
             fft,
             window,
             frame: Vec::with_capacity(N),
             bin: 0,
             run: 0,
+            screams: 0,
             first_power: 0.0,
             quiet: 0,
             gain: 1.0,
@@ -77,7 +79,7 @@ impl Howl {
         }
     }
 
-    /// Looks at one frame: a lasting single tone that grew or screams cuts the gain; two quiet seconds let it come back.
+    /// Looks at one frame: one or two tones screaming for a while, or a lasting single tone that grew, cuts the gain; two quiet seconds let it come back.
     fn analyze(&mut self) {
         for ((x, s), w) in self.input.iter_mut().zip(&self.frame).zip(&self.window) {
             *x = s * w;
@@ -86,27 +88,42 @@ impl Howl {
             return;
         }
         let power = |k: usize| self.spectrum[k].norm_sqr();
-        let Some((bin, peak)) = self.bins.clone().map(|k| (k, power(k))).max_by(|a, b| a.1.total_cmp(&b.1)) else { return };
-        let others = self.bins.clone().filter(|k| k.abs_diff(bin) > 2).map(power).fold(0.0, f32::max);
+        let loudest_away_from = |near: &[usize]| {
+            self.bins.clone().filter(|k| near.iter().all(|n| k.abs_diff(*n) > 2)).map(|k| (k, power(k))).max_by(|a, b| a.1.total_cmp(&b.1)).unwrap_or((0, 0.0))
+        };
+        let (bin, peak) = loudest_away_from(&[]);
+        let (second_bin, second) = loudest_away_from(&[bin]);
+        let (_, third) = loudest_away_from(&[bin, second_bin]);
         let amplitude = 2.0 * peak.sqrt() / self.window_sum;
-        if amplitude < LOUD || peak < DOMINANCE * others || peak < power(bin - 1).max(power(bin + 1)) {
+        let tonal = amplitude >= LOUD && peak >= power(bin - 1).max(power(bin + 1));
+        let lone = tonal && peak >= DOMINANCE * second;
+        let octave = |low: usize, high: usize| (2 * low).abs_diff(high) <= 2;
+        let two_tones = peak >= DOMINANCE * third && !octave(bin, second_bin) && !octave(second_bin, bin);
+        let screaming = tonal && amplitude >= SCREAMING && (lone || two_tones);
+
+        self.screams = if screaming { self.screams + 1 } else { 0 };
+        if !lone {
             self.run = 0;
+        } else {
+            if self.run == 0 || bin.abs_diff(self.bin) > 1 {
+                self.run = 0;
+                self.first_power = peak;
+            }
+            self.run += 1;
+            self.bin = bin;
+        }
+        if lone || screaming {
+            self.quiet = 0;
+        } else {
             self.quiet += 1;
             if self.quiet >= SETTLE {
                 self.gain = (self.gain * RECOVER).min(1.0);
             }
-            return;
         }
-        self.quiet = 0;
-        if self.run == 0 || bin.abs_diff(self.bin) > 1 {
-            self.run = 0;
-            self.first_power = peak;
-        }
-        self.run += 1;
-        self.bin = bin;
-        if self.run >= RUN && (peak >= GROWN * self.first_power || amplitude >= SCREAMING) {
+        if self.screams >= RUN || (self.run >= RUN && peak >= GROWN * self.first_power) {
             self.gain = (self.gain * CUT).max(MIN_GAIN);
             self.run = 0;
+            self.screams = 0;
         }
     }
 }
@@ -153,10 +170,14 @@ mod tests {
     }
 
     #[test]
-    fn a_growing_or_screaming_tone_is_turned_down_within_a_second_then_comes_back() {
+    fn a_growing_or_screaming_howl_is_turned_down_within_a_second_then_comes_back() {
         let growing = tone(2_500.0, 2.0, |t| (0.01 * 10f32.powf(1.5 * t)).min(0.9));
         let screaming = tone(2_500.0, 2.0, |_| 0.8);
-        for (what, signal) in [("growing", growing), ("screaming", screaming)] {
+        let two_tones = |gap: f32| {
+            let build = |t: f32| (0.01 * 10f32.powf(3.0 * t)).min(0.9);
+            tone(1_000.0, 2.0, build).iter().zip(tone(2_700.0, 2.0, move |t| gap * build(t))).map(|(a, b)| a + b).collect::<Vec<_>>()
+        };
+        for (what, signal) in [("growing", growing), ("screaming", screaming), ("two equal tones", two_tones(1.0)), ("two tones 6 dB apart", two_tones(0.5))] {
             let mut h = Howl::new(48_000);
             let when = turned_down_after(&mut h, &signal).unwrap_or(f32::INFINITY);
             assert!(when <= 1.0, "{what}: turned down after {when} s");
@@ -165,14 +186,14 @@ mod tests {
         }
     }
 
-    /// Five seconds of a `hz` voice with vibrato and 12 harmonics falling as 1/h^`rolloff`, swelling for a second then held.
-    fn sung(hz: f32, rolloff: f32) -> Vec<f32> {
+    /// Five seconds of a `hz` voice with vibrato and 12 harmonics falling as 1/h^`rolloff`, swelling for a second to `level` then held.
+    fn sung(hz: f32, rolloff: f32, level: f32) -> Vec<f32> {
         let mut voice = hiss((5.0 * RATE) as usize);
         let mut phase = 0.0f32;
         for (i, x) in voice.iter_mut().enumerate() {
             let t = i as f32 / RATE;
             phase += TAU * hz * (1.0 + 0.02 * (TAU * 5.5 * t).sin()) / RATE;
-            let crescendo_then_held = 0.02 + 0.08 * t.min(1.0);
+            let crescendo_then_held = 0.02 + (level - 0.02) * t.min(1.0);
             *x += crescendo_then_held * (1..=12).map(|h| (phase * h as f32).sin() / (h as f32).powf(rolloff)).sum::<f32>();
         }
         voice
@@ -181,8 +202,9 @@ mod tests {
     #[test]
     fn singing_and_a_steady_held_note_are_left_alone() {
         let mut h = Howl::new(48_000);
-        assert_eq!(turned_down_after(&mut h, &sung(220.0, 1.0)), None, "singing");
-        assert_eq!(turned_down_after(&mut h, &sung(100.0, 3.0)), None, "a soft low note");
+        assert_eq!(turned_down_after(&mut h, &sung(220.0, 1.0, 0.1)), None, "singing");
+        assert_eq!(turned_down_after(&mut h, &sung(100.0, 3.0, 0.1)), None, "a soft low note");
+        assert_eq!(turned_down_after(&mut h, &sung(440.0, 3.0, 0.7)), None, "a loud round vowel");
         assert_eq!(turned_down_after(&mut h, &tone(1_000.0, 3.0, |_| 0.1)), None, "a held note");
     }
 }
