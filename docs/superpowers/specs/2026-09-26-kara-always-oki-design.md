@@ -48,6 +48,8 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Karaoke view** — full screen, blurred artwork background, big lyrics with word-by-word fill, current line centered. Top-right: the mic pill. Collapse chevron returns to the library; music keeps playing.
 
+**Managing the library** — local songs can be edited (title, artist, album, artwork) and deleted (which frees their storage; undo via toast). Playlists are user-made, live under Local, and can hold songs from any source (Apple Music, Spotify and Local mixed); they can be created, renamed, reordered, and deleted, and removing a song from a playlist never deletes the song. Every song row has a menu: Play next, Add to queue, Add to playlist, and for local songs Edit info and Delete. Streaming providers' own playlists stay read-only.
+
 **Queue** — tapping a song row adds it to the end of the queue. If nothing is playing (empty or finished queue), it starts right away and opens the full karaoke view. A second button on each row, "Play next", puts it right after the current song. The player bar has a queue button on its right: it opens the queue list, where songs can be dragged to reorder or removed. Guests can also search and add songs to the queue from their phone.
 
 **Karaoke view, details** — lyrics are centered. Before every sung part (the intro and each instrumental gap longer than ~3 s) show a 3-dot countdown, like Apple Music. The background is an animated gradient built from the album artwork's colors, slowly moving, like Apple Music. Duets: when the lyrics mark who sings a line (e.g. male / female / together, from LRC or TTML voice tags), show the parts distinctly (different alignment and tint); without such marks, lines show normally.
