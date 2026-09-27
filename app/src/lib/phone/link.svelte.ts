@@ -1,5 +1,6 @@
-import type { Lyrics, PlayerSnapshot, ProblemCode } from "$lib/api";
+import type { Lyrics, PlayerSnapshot, ProblemCode, SearchOutcome } from "$lib/api";
 import { say } from "$lib/i18n/engine";
+import { t } from "$lib/i18n/index.svelte";
 import { toasts } from "$lib/state/toasts.svelte";
 import { openMic, type Mic } from "./mic";
 import WarningIcon from "phosphor-svelte/lib/WarningIcon";
@@ -21,6 +22,7 @@ type FromMac =
   | { t: "clock"; key: number | null; positionMs: number; playing: boolean }
   | { t: "lyrics"; trackId: number; lyrics: Lyrics }
   | { t: "lyricsChanged"; trackId: number }
+  | { t: "results"; q: string; outcome: SearchOutcome }
   | { t: "level"; v: number }
   | { t: "refused"; problem: ProblemCode | null };
 
@@ -66,6 +68,7 @@ class PhoneLink {
   lyrics = $state<{ trackId: number; lyrics: Lyrics } | null>(null);
   voice = $state(Number(recall(() => localStorage, "phone.voice") ?? 80));
   effect = $state(savedEffect());
+  results = $state<{ q: string; outcome: SearchOutcome } | null>(null);
   current = $derived(this.entryAt(0));
   next = $derived(this.entryAt(1));
 
@@ -78,6 +81,7 @@ class PhoneLink {
   private retry: ReturnType<typeof setTimeout> | undefined;
   private asking = false;
   private asked: number | null = null;
+  private query: string | null = null;
   private sentAt = new Map<string, number>();
   private later = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -182,6 +186,8 @@ class PhoneLink {
         this.asked = null;
         this.wantLyrics();
       }
+    } else if (m.t === "results") {
+      if (m.q === this.query) this.results = m;
     } else if (m.t === "level") this.level = m.v;
     else if (m.t === "refused") toasts.show(say(m), { icon: WarningIcon });
   }
@@ -261,6 +267,28 @@ class PhoneLink {
     this.effect = { kind, amount };
     keep(() => localStorage, "phone.effect", JSON.stringify(this.effect));
     this.sendSoon({ t: "effect", kind, amount });
+  }
+
+  /** Asks the computer to search; only the answer to the latest search is kept. */
+  search(q: string) {
+    this.query = q;
+    this.send({ t: "search", q, imported: t("library.imported") });
+  }
+
+  add(trackId: number, next: boolean) {
+    this.send({ t: "add", trackId, next });
+  }
+
+  addLink(url: string, next: boolean) {
+    this.send({ t: "addLink", url, next });
+  }
+
+  move(key: number, to: number) {
+    this.send({ t: "move", key, to });
+  }
+
+  remove(key: number) {
+    this.send({ t: "remove", key });
   }
 
   private entryAt(offset: number) {

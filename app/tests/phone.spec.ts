@@ -160,3 +160,40 @@ test("Effect picks a preset and its strength, and the phone remembers it", async
   await page.getByRole("button", { name: "Effect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Auto-tune" })).toHaveAttribute("aria-pressed", "true");
 });
+
+test("Songs lists every song, searches as you type, and queues with Play next or Add to queue", async ({ page }) => {
+  await joinAs(page);
+  await page.getByRole("button", { name: "Songs", exact: true }).click();
+  await expect(page.getByText("All songs")).toBeVisible();
+  await expect(page.locator(".prow")).toHaveCount(3);
+  const box = page.getByPlaceholder("Search songs");
+  await box.fill("lem");
+  await expect(page.locator(".prow")).toHaveText([/Lemon Skies/]);
+  await page.getByRole("button", { name: "Play next" }).dblclick();
+  expect((await sent(page)).filter((m) => m.t === "add")).toEqual([{ t: "add", trackId: 3, next: true }]);
+  await expect(page.locator(".pib.done")).toHaveCount(1);
+  await server(page, { t: "results", q: "old", outcome: { kind: "text", tracks: [], collections: [] } });
+  await expect(page.locator(".prow")).toHaveText([/Lemon Skies/]);
+  await box.fill("https://youtu.be/abc");
+  await expect(page.getByText("Song from youtu.be")).toBeVisible();
+  await page.getByRole("button", { name: /Add .* to the queue/ }).click();
+  expect(await sent(page)).toContainEqual({ t: "addLink", url: "https://youtu.be/abc", next: false });
+  await box.fill("https://open.spotify.com/track/x");
+  await expect(page.getByText("spotify.com links can't be downloaded")).toBeVisible();
+});
+
+test("Queue shows who added songs, reorders by dragging and removes", async ({ page }) => {
+  await joinAs(page);
+  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  const rows = page.locator("[data-qi]");
+  await expect(rows).toHaveText([/Lemon Skies/, /Kettle Duet/]);
+  await expect(rows.first()).toContainText("added by Ben");
+  await rows.filter({ hasText: "Kettle Duet" }).locator(".grip").hover();
+  await page.mouse.down();
+  const target = (await rows.filter({ hasText: "Lemon Skies" }).boundingBox())!;
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 5 });
+  await page.mouse.up();
+  expect(await sent(page)).toContainEqual({ t: "move", key: 3, to: 1 });
+  await rows.filter({ hasText: "Lemon Skies" }).getByRole("button", { name: "Remove" }).click();
+  expect(await sent(page)).toContainEqual({ t: "remove", key: 2 });
+});

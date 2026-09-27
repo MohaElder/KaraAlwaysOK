@@ -241,6 +241,8 @@ const en = {
   "phone.reconnecting": "Wi-Fi dropped. Reconnecting…",
   "phone.waitingSong": "Waiting for a song",
   "phone.addFromSongs": "Add a song from Songs.",
+  "phone.searchPlaceholder": "Search songs",
+  "phone.allSongs": "All songs",
   "phone.upNext": "Up next: {song}",
   "phone.voice": "Voice",
   "phone.voiceAria": "Your voice volume",

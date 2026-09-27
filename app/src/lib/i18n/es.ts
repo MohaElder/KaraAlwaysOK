@@ -243,6 +243,8 @@ const es: Record<Key, string> = {
   "phone.reconnecting": "Se cortó la wifi. Reconectando…",
   "phone.waitingSong": "Esperando una canción",
   "phone.addFromSongs": "Añade una canción desde Canciones.",
+  "phone.searchPlaceholder": "Buscar canciones",
+  "phone.allSongs": "Todas las canciones",
   "phone.upNext": "A continuación: {song}",
   "phone.voice": "Voz",
   "phone.voiceAria": "Volumen de tu voz",

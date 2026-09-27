@@ -8,16 +8,22 @@
   import Center from "$lib/phone/Center.svelte";
   import JoinScreen from "$lib/phone/JoinScreen.svelte";
   import MicTab from "$lib/phone/MicTab.svelte";
+  import SongsTab from "$lib/phone/SongsTab.svelte";
+  import QueueList from "$lib/components/QueueList.svelte";
   import AndroidLogoIcon from "phosphor-svelte/lib/AndroidLogoIcon";
   import AppleLogoIcon from "phosphor-svelte/lib/AppleLogoIcon";
   import ArrowClockwiseIcon from "phosphor-svelte/lib/ArrowClockwiseIcon";
   import HandWavingIcon from "phosphor-svelte/lib/HandWavingIcon";
+  import MagnifyingGlassIcon from "phosphor-svelte/lib/MagnifyingGlassIcon";
   import MicrophoneIcon from "phosphor-svelte/lib/MicrophoneIcon";
   import MicrophoneSlashIcon from "phosphor-svelte/lib/MicrophoneSlashIcon";
   import MicrophoneStageIcon from "phosphor-svelte/lib/MicrophoneStageIcon";
+  import QueueIcon from "phosphor-svelte/lib/QueueIcon";
   import ShieldWarningIcon from "phosphor-svelte/lib/ShieldWarningIcon";
   import SignOutIcon from "phosphor-svelte/lib/SignOutIcon";
   import WifiSlashIcon from "phosphor-svelte/lib/WifiSlashIcon";
+
+  let tab = $state<"mic" | "songs" | "queue">("mic");
 
   onMount(() => link.start());
 </script>
@@ -51,9 +57,19 @@
           <span class="grow"></span>
           <button class="btn ghost" onclick={() => link.leave()}><SignOutIcon size={16} />{t("phone.leave")}</button>
         </header>
-        <div class="ptab"><MicTab /></div>
+        <div class="ptab">
+          {#if tab === "mic"}
+            <MicTab />
+          {:else if tab === "songs"}
+            <SongsTab />
+          {:else if link.snapshot}
+            <QueueList snapshot={link.snapshot} art={44} nothingBody={t("phone.addFromSongs")} emptyBody={t("phone.addFromSongs")} onMove={(key, to) => link.move(key, to)} onRemove={(key) => link.remove(key)} />
+          {/if}
+        </div>
         <nav class="ptabs glass">
-          <button aria-pressed="true">{#if link.live}<MicrophoneStageIcon size={24} />{:else}<MicrophoneSlashIcon size={24} />{/if}<span>{t("phone.tabMic")}</span></button>
+          <button aria-pressed={tab === "mic"} onclick={() => (tab = "mic")}>{#if link.live}<MicrophoneStageIcon size={24} />{:else}<MicrophoneSlashIcon size={24} />{/if}<span>{t("phone.tabMic")}</span></button>
+          <button aria-pressed={tab === "songs"} onclick={() => (tab = "songs")}><MagnifyingGlassIcon size={24} /><span>{t("search.songs")}</span></button>
+          <button aria-pressed={tab === "queue"} onclick={() => (tab = "queue")}><QueueIcon size={24} /><span>{t("queue.title")}</span></button>
         </nav>
         {#if link.reconnecting}
           <div class="pbanner glass" role="status" transition:slide={{ y: -8 }}><span class="spin"></span><WifiSlashIcon size={18} /><span>{t("phone.reconnecting")}</span></div>

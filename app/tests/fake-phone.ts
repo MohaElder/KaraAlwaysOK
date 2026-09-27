@@ -1,4 +1,4 @@
-import type { LyricLine, Lyrics, PlayerSnapshot, Track } from "$lib/api";
+import type { LyricLine, Lyrics, PlayerSnapshot, SearchOutcome, Track } from "$lib/api";
 
 declare global {
   interface Window {
@@ -28,6 +28,15 @@ const lyrics: Record<number, Lyrics> = {
     line("both", ["Tea", 5000, 5500], ["for", 5500, 6000], ["two", 6000, 7000]),
   ] },
 };
+
+function search(q: string): SearchOutcome {
+  if (/^https?:\/\//.test(q)) {
+    const host = new URL(q).hostname.replace(/^(www|open)\./, "");
+    return /spotify/.test(host) ? { kind: "rejected", streaming: true, host } : { kind: "link", url: q, host };
+  }
+  const words = q.trim().toLowerCase();
+  return { kind: "text", tracks: songs.filter((s) => s.title.toLowerCase().includes(words)), collections: [] };
+}
 
 let socket: FakeSocket | null = null;
 let worklet: { port: { onmessage: ((e: MessageEvent) => void) | null } } | null = null;
@@ -104,6 +113,7 @@ class FakeSocket {
 
   /** The computer's answers. */
   reply(m: Record<string, unknown>) {
+    if (m.t === "search") return this.deliver({ t: "results", q: m.q, outcome: search(String(m.q)) });
     if (m.t === "lyrics") return this.deliver({ t: "lyrics", trackId: m.trackId, lyrics: lyrics[Number(m.trackId)] ?? { source: "none", lines: [] } });
     if (m.t !== "join") return;
     if (m.code !== "4827") return this.shut(4003);

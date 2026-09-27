@@ -243,6 +243,8 @@ const zhHant: Record<Key, string> = {
   "phone.reconnecting": "Wi-Fi 斷線了。正在重新連線…",
   "phone.waitingSong": "正在等待歌曲",
   "phone.addFromSongs": "從「歌曲」新增一首歌。",
+  "phone.searchPlaceholder": "搜尋歌曲",
+  "phone.allSongs": "所有歌曲",
   "phone.upNext": "下一首：{song}",
   "phone.voice": "人聲",
   "phone.voiceAria": "你的人聲音量",
