@@ -68,7 +68,8 @@
       bind:value={ui.query}
       oninput={changed}
       onkeydown={(e) => {
-        if (e.key !== "Escape" || composing(e)) return;
+        if (composing(e)) return e.key === "Enter" && e.preventDefault();
+        if (e.key !== "Escape") return;
         e.stopPropagation();
         clear();
         input?.blur();
