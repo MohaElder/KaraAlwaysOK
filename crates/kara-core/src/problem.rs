@@ -34,6 +34,8 @@ pub enum Problem {
     LinkStreaming,
     LinkUnsupported,
     NoSongAtLink,
+    PhonesStart,
+    NoNetwork,
     LyricsLookup,
 }
 
@@ -69,6 +71,8 @@ impl std::fmt::Display for Problem {
             Self::LinkStreaming => "Links from streaming services can't be downloaded. Search for the song instead.",
             Self::LinkUnsupported => "Can't get audio from this link. Paste a YouTube, SoundCloud or Bandcamp link, or a direct link to an audio file.",
             Self::NoSongAtLink => "Couldn't find a song at this link.",
+            Self::PhonesStart => "Couldn't start phone mics.",
+            Self::NoNetwork => "Connect this computer to Wi-Fi to use phone mics.",
             Self::LyricsLookup => "Couldn't look for lyrics. Check your connection.",
         })
     }

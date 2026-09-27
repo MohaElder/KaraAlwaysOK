@@ -2,6 +2,7 @@ mod adding;
 mod engine;
 mod library;
 mod player;
+mod phones;
 mod settings;
 mod state;
 
@@ -25,6 +26,16 @@ pub fn run() {
             });
             app.manage(engine::Startup(events));
             let _ = engine::open_library(app.handle());
+            app.manage(phones::Phones::default());
+            #[cfg(debug_assertions)]
+            {
+                if let Ok(code) = std::env::var("KARA_PHONE_CODE") {
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = phones::open(&handle, code).await;
+                    });
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -69,12 +80,15 @@ pub fn run() {
             player::retry_prepare,
             player::playback_info,
             player::chunk_pcm,
+            phones::phones_open,
+            phones::phones_close,
+            phones::phone_remove,
         ])
         .build(tauri::generate_context!())
         .expect("error while running KaraAlwaysOK")
-        .run(|_, event| {
-            if let tauri::RunEvent::Exit = event {
-                kara_core::quiet::silence_output();
-            }
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { .. } => phones::end(app),
+            tauri::RunEvent::Exit => kara_core::quiet::silence_output(),
+            _ => {}
         });
 }

@@ -57,7 +57,7 @@ pub fn coded(e: anyhow::Error, fallback: Problem) -> anyhow::Error {
 /// An error as the UI receives it: a problem code to show in the user's language, and the English text.
 #[derive(Clone, Debug, Serialize)]
 pub struct AppError {
-    problem: Option<Problem>,
+    pub(crate) problem: Option<Problem>,
     message: String,
 }
 
