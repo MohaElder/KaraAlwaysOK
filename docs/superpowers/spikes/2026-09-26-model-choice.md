@@ -143,7 +143,7 @@ CPU is not viable under any tried configuration.
 | `--compute-units cpu` (`CPUOnly`) | 7333 | 5.30 | worse on both axes |
 | `--static-shapes` (`RequireStaticInputShapes(true)`) | 14738 | 5.10 | the model's input has a symbolic `batch_size` dim, so this disqualifies CoreML entirely and silently falls back to plain CPU (confirmed: session-load RSS and speed both match the CPU baseline, not CoreML's) |
 | **`--mlprogram` (`ModelFormat::MLProgram`)** | **735–1000** (short songs) | **44–46** | **the winner — see below** |
-| `--mlprogram --compute-units ane` | 1359 | 5.74 | passes the gate too, but worse than plain MLProgram on both axes |
+| `--mlprogram --compute-units ane` | 1359 | 5.74 | also low-memory, but worse than plain MLProgram on both axes |
 
 `ModelFormat::MLProgram` (Core ML 5+/macOS 12+ model format, vs. the EP's default legacy `NeuralNetwork` format) cuts CoreML's peak memory by roughly 7x and, unexpectedly, makes it 3x *faster* — both improvements together, no tradeoff found.
 
@@ -174,25 +174,37 @@ Error: Got invalid dimensions for input: input for the following indices
 ```
 So this lever is closed: `dim_t` would require re-exporting the model, not a runtime option, and per the ruling's own gate note this makes MLProgram's "stay at dim_t 256" outcome the preferred one anyway.
 
-### Gate check with `ModelFormat::MLProgram`
+### Memory metric fix (fix round 1)
 
-Revised gate: target ≤ 1500 MB peak, acceptable ≤ 3000 MB, ≥ 2x real time.
+A reviewer caught that `kara bench`'s memory number understated real usage: it read `ru_maxrss` via `getrusage()`, which macOS does not keep in step with actual physical footprint. The reviewer measured `/usr/bin/time -l`'s "peak memory footprint" line at 1.4–1.8x the number `kara bench` printed for the same runs.
 
-| Model | Song | Length | x real time | Peak MB |
+Fixed `crates/kara-cli/src/main.rs` to read `ri_lifetime_max_phys_footprint` from `proc_pid_rusage(getpid(), RUSAGE_INFO_V4, ...)` instead (the same counter macOS's own tools use), keeping the output line labeled `peak memory`. Probed the fix against `/usr/bin/time -l` on the Infinity song, back to back:
+```
+kara bench:            peak memory      1415 MB
+/usr/bin/time -l:      1483687400  peak memory footprint   (= 1414.9 MB)
+```
+and a second run:
+```
+kara bench:            peak memory      1437 MB
+/usr/bin/time -l:      1506854352  peak memory footprint   (= 1436.7 MB)
+```
+Agreement is within measurement noise both times. All memory numbers below this point use the fixed metric; the exploratory tables above (round 1's benchmark table, and round 2's CPU/CoreML lever tables) were measured with the old, undercounting metric and are **not** re-stated here — their *relative* comparisons (CPU unsalvageable at any lever, MLProgram ~7x under any other CoreML config) still hold since every number in those tables undercounts by roughly the same factor, but their absolute MB figures should not be read as physical footprint.
+
+### Numbers for the chosen config, re-measured with the fixed metric
+
+| Model | Song | Length | x real time | Peak MB (physical footprint) |
 |---|---|---|---|---|
-| Kim_Vocal_2 | To Infinity N Beyond | 184.3 s | 43.91x | 847 |
-| Kim_Vocal_2 | To Nara From Eurasia | 332.9 s | 45.97x | 996 |
-| Kim_Vocal_2 | DiscA (speed/mem only) | 1101.0 s | 46.02x | 1572 |
-| Voc_FT | To Infinity N Beyond | 184.3 s | 45.00x | 850 |
-| Voc_FT | To Nara From Eurasia | 332.9 s | 46.07x | 979 |
+| Kim_Vocal_2 | To Infinity N Beyond | 184.3 s | 45.3x | 1421 |
+| Kim_Vocal_2 | To Nara From Eurasia | 332.9 s | 46.3x | 1567 |
+| Kim_Vocal_2 | DiscA (speed/mem only) | 1101.0 s | 46.2x | 2152 |
+| Voc_FT | To Infinity N Beyond | 184.3 s | 45.1x | 1437 |
+| Voc_FT | To Nara From Eurasia | 332.9 s | 46.3x | 1570 |
 
-(Numbers via the real `kara bench` binary after the `onnx.rs` change, not just the scratch probe, except DiscA which used the probe since `kara bench` and the probe agree to within noise elsewhere.) All comfortably clear ≥ 2x real time. All clear the 1500 MB target on realistic song lengths (3–5.5 min); the 18-minute DiscA run lands at 1572 MB — just over the strict target but well inside the 3000 MB acceptable ceiling. Note `kara bench` (and the probe) both hold the whole song's separated audio in RAM to write the listening WAVs at the end, which is not what the real chunked pipeline does (it writes each 10 s chunk to disk as it goes) — so production peak memory on long songs should be lower than this harness reports, not higher.
-
-Quality still ties (mean gain-matched SDR essentially unchanged from round 1: Kim_Vocal_2 5.12 dB, Voc_FT ~5.15 dB), so per the ruling, prefer **Kim_Vocal_2**.
+Via the real `kara bench` binary. There is no enforced memory limit for this pipeline — the user's decision is that these measured numbers become README recommendations, not a hard pass/fail gate, so the table above is reported as-is rather than checked against a threshold. `kara bench` holds the whole song's separated audio in RAM to write the listening WAVs at the end, which the real chunked pipeline does not do (it writes each 10 s chunk to disk as it goes) — production peak memory on long songs should be lower than this harness reports, not higher.
 
 ### Final decision
 
-**Kim_Vocal_2, CoreML with `ModelFormat::MLProgram`.** Changed `crates/kara-core/src/separate/onnx.rs` to set `.with_model_format(ModelFormat::MLProgram)` on the CoreML execution provider (nothing else — no thread/arena/compute-unit overrides, since none of those helped and MLProgram alone already clears the gate with margin). `DEFAULT_MODEL` added to `crates/kara-core/src/separate/mod.rs`:
+**Kim_Vocal_2, CoreML with `ModelFormat::MLProgram`.** Changed `crates/kara-core/src/separate/onnx.rs` to set `.with_model_format(ModelFormat::MLProgram)` on the CoreML execution provider (nothing else — no thread/arena/compute-unit overrides, since none of those helped and MLProgram alone already gives a large win on both memory and speed). `DEFAULT_MODEL` added to `crates/kara-core/src/separate/mod.rs`:
 
 ```
 id: "kim-vocal-2"
@@ -201,6 +213,8 @@ asset.url: https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr
 asset.sha256: ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b
 params: n_fft 7680, hop 1024, dim_f 3072, dim_t 256, compensate 1.009
 ```
+
+**Why Kim_Vocal_2 and not Voc_FT:** the controller's instruction was to prefer Kim_Vocal_2 unless the probes separate the two models — and they don't. Quality ties (mean gain-matched SDR 5.12 dB vs. 5.15 dB, a 0.03 dB gap). Speed ties too: a reviewer ran a back-to-back A/B and got 44.89x vs. 44.98x, within run-to-run noise (this session's own numbers above show the same ±1x noise band across repeated runs of the *same* model). Memory ties as well (1421–2152 MB vs. 1437–1570 MB across the same songs). With nothing separating them, Kim_Vocal_2 is the pick by the controller's stated tiebreak, not because either candidate lost on any measured axis.
 
 Ear-checking is still pending for the user. Bench WAVs are at `~/Library/Application Support/kara-always-oki/bench/{kim-vocal-2,voc-ft}/{to-infinity,to-nara}/` (round 1, `NeuralNetwork` format) and `~/Library/Application Support/kara-always-oki/bench/kim-vocal-2-mlprogram/{to-infinity,to-nara}/` (round 2, `MLProgram` format, quality-confirmed equivalent to round 1's).
 

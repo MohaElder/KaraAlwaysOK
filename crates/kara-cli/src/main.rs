@@ -62,11 +62,13 @@ pub(crate) fn runtime_lib(store: &Store, over: Option<PathBuf>) -> Result<PathBu
     }
 }
 
-fn peak_rss_mb() -> f64 {
-    // macOS reports ru_maxrss in bytes.
-    let mut u: libc::rusage = unsafe { std::mem::zeroed() };
-    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut u) };
-    u.ru_maxrss as f64 / (1024.0 * 1024.0)
+/// Peak physical memory footprint, matching `/usr/bin/time -l`'s "peak memory footprint"
+/// (`ru_maxrss` undercounts this on macOS).
+fn peak_footprint_mb() -> f64 {
+    let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
+    let buffer = &mut info as *mut libc::rusage_info_v4 as *mut libc::rusage_info_t;
+    unsafe { libc::proc_pid_rusage(libc::getpid(), libc::RUSAGE_INFO_V4, buffer) };
+    info.ri_lifetime_max_phys_footprint as f64 / (1024.0 * 1024.0)
 }
 
 fn write_wav(path: &Path, a: &Stereo) -> Result<()> {
@@ -105,7 +107,7 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
     println!("model load       {:.2} s  ({})", load_s, if coreml { "CoreML" } else { "CPU" });
     println!("first 10 s chunk {:.2} s", first_chunk_s.unwrap_or(0.0));
     println!("separation       {:.1} s  = {:.2}x real time", sep_s, audio_s / sep_s);
-    println!("peak memory      {:.0} MB", peak_rss_mb());
+    println!("peak memory      {:.0} MB", peak_footprint_mb());
     if let Some(dir) = out {
         std::fs::create_dir_all(dir)?;
         write_wav(&dir.join("vocals.wav"), &vocals)?;
