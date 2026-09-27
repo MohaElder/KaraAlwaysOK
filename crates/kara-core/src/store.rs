@@ -1,6 +1,6 @@
 //! Where everything lives on disk (spec §4).
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 
@@ -42,12 +42,13 @@ impl Store {
     }
     /// Takes the data folder for writing; fails with a plain message while another kara holds it.
     pub fn lock(&self) -> Result<DataLock> {
-        std::fs::create_dir_all(&self.root)?;
-        let file = File::options().write(true).create(true).truncate(false).open(self.root.join("kara.lock"))?;
+        let unusable = "Couldn't open kara's data folder.";
+        std::fs::create_dir_all(&self.root).context(unusable)?;
+        let file = File::options().write(true).create(true).truncate(false).open(self.root.join("kara.lock")).context(unusable)?;
         match file.try_lock() {
             Ok(()) => Ok(DataLock { _file: file }),
             Err(TryLockError::WouldBlock) => bail!("kara is busy preparing another song."),
-            Err(TryLockError::Error(e)) => Err(e.into()),
+            Err(TryLockError::Error(e)) => Err(anyhow::Error::from(e).context(unusable)),
         }
     }
     pub fn db_path(&self) -> PathBuf {
@@ -124,6 +125,14 @@ mod tests {
             ok
         });
         assert!(relocked);
+    }
+
+    #[test]
+    fn an_unusable_data_folder_gets_a_plain_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("data");
+        std::fs::write(&root, b"a file, not a folder").unwrap();
+        assert_eq!(Store::new(&root).lock().err().unwrap().to_string(), "Couldn't open kara's data folder.");
     }
 
     #[test]

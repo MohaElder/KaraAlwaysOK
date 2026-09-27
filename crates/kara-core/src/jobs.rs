@@ -10,7 +10,7 @@ use crate::library::{AudioSource, Library, LyricsSource, SepStatus, SeparationRo
 use crate::lyrics::{self, LyricsFetcher};
 use crate::now_ms;
 use crate::separate::mdx::{self, MdxParams, Outcome, VocalModel};
-use crate::store::{write_atomic, Store};
+use crate::store::{write_atomic, DataLock, Store};
 use anyhow::{Context, Result};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -107,37 +107,86 @@ fn refresh_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> 
     Ok(true)
 }
 
-/// Looks up lyrics on its own thread, one song at a time, so a slow lookup
-/// never holds up preparing songs.
+/// Looks up lyrics on its own thread, newest request first.
 pub struct LyricsLookup {
-    requests: mpsc::Sender<i64>,
-    handle: JoinHandle<()>,
+    pending: Arc<Pending>,
+    handle: Option<JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct Pending {
+    requests: Mutex<Requests>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct Requests {
+    /// Oldest first.
+    track_ids: Vec<i64>,
+    closed: bool,
+}
+
+impl Pending {
+    /// The newest request, waiting for one; `None` once closed with none left.
+    fn next(&self) -> Option<i64> {
+        let mut r = self.requests.lock().unwrap();
+        loop {
+            if let Some(t) = r.track_ids.pop() {
+                return Some(t);
+            }
+            if r.closed {
+                return None;
+            }
+            r = self.wake.wait(r).unwrap();
+        }
+    }
+
+    fn update(&self, f: impl FnOnce(&mut Requests)) {
+        f(&mut self.requests.lock().unwrap());
+        self.wake.notify_all();
+    }
 }
 
 impl LyricsLookup {
     /// Sends `Event::Lyrics` on `events` each time it saves a song's lyrics.
-    pub fn spawn(store: &Store, fetcher: Box<dyn LyricsFetcher + Send>, events: mpsc::Sender<Event>) -> Self {
-        let (requests, rx) = mpsc::channel();
-        let db = store.db_path();
+    pub fn spawn(store: &Store, fetcher: Box<dyn LyricsFetcher + Send>, events: mpsc::Sender<Event>) -> Result<Self> {
+        let lib = Library::open(&store.db_path())?;
+        let pending = Arc::new(Pending::default());
+        let p = pending.clone();
         let handle = std::thread::spawn(move || {
-            let Ok(lib) = Library::open(&db) else { return };
-            for track_id in rx {
+            while let Some(track_id) = p.next() {
                 if refresh_lyrics(&lib, track_id, fetcher.as_ref()).unwrap_or(false) {
                     let _ = events.send(Event::Lyrics { track_id });
                 }
             }
         });
-        Self { requests, handle }
+        Ok(Self { pending, handle: Some(handle) })
     }
 
     fn request(&self, track_id: i64) {
-        let _ = self.requests.send(track_id);
+        self.pending.update(|r| {
+            r.track_ids.retain(|&t| t != track_id);
+            r.track_ids.push(track_id);
+        });
+    }
+
+    /// Drops waiting requests for songs not in `keep`.
+    fn retain(&self, keep: &[i64]) {
+        self.pending.update(|r| r.track_ids.retain(|t| keep.contains(t)));
     }
 
     /// Waits for the lookups already asked for, then stops.
-    pub fn finish(self) {
-        drop(self.requests);
-        let _ = self.handle.join();
+    pub fn finish(mut self) {
+        self.pending.update(|r| r.closed = true);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+impl Drop for LyricsLookup {
+    fn drop(&mut self) {
+        self.pending.update(|r| r.closed = true);
     }
 }
 
@@ -295,21 +344,26 @@ struct Shared {
 
 pub struct Worker {
     shared: Arc<Shared>,
+    lyrics: Arc<LyricsLookup>,
     handle: Option<JoinHandle<()>>,
+    _lock: DataLock,
 }
 
 impl Worker {
     /// Starts a background thread that prepares queued songs one at a time
-    /// and reports their events on `events`.
-    pub fn spawn(ctx: Ctx, mut model: Box<dyn VocalModel>, fetcher: Box<dyn LyricsFetcher + Send>, events: mpsc::Sender<Event>) -> Self {
+    /// and reports their events on `events`. Holds `lock` while it lives.
+    pub fn spawn(
+        ctx: Ctx,
+        lock: DataLock,
+        mut model: Box<dyn VocalModel>,
+        fetcher: Box<dyn LyricsFetcher + Send>,
+        events: mpsc::Sender<Event>,
+    ) -> Result<Self> {
+        let lib = Library::open(&ctx.store.db_path())?;
+        let lyrics = Arc::new(LyricsLookup::spawn(&ctx.store, fetcher, events.clone())?);
         let shared = Arc::new(Shared { state: Mutex::new(State { queue: VecDeque::new(), running: None, playing: None, shutdown: false }), wake: Condvar::new() });
-        let s = shared.clone();
-        let lyrics = LyricsLookup::spawn(&ctx.store, fetcher, events.clone());
+        let (s, l) = (shared.clone(), lyrics.clone());
         let handle = std::thread::spawn(move || {
-            let lib = match Library::open(&ctx.store.db_path()) {
-                Ok(l) => l,
-                Err(_) => return,
-            };
             loop {
                 let (track, flag) = {
                     let mut st = s.state.lock().unwrap();
@@ -325,7 +379,7 @@ impl Worker {
                         st = s.wake.wait(st).unwrap();
                     }
                 };
-                let _ = prepare(&ctx, &lib, model.as_mut(), &lyrics, track, &flag, &mut |e| {
+                let _ = prepare(&ctx, &lib, model.as_mut(), &l, track, &flag, &mut |e| {
                     let _ = events.send(e);
                 });
                 let (upcoming, playing): (Vec<i64>, Option<i64>) = {
@@ -341,12 +395,13 @@ impl Worker {
                 let _ = cache::enforce_budget(&ctx.store, &lib, &protected);
             }
         });
-        Self { shared, handle: Some(handle) }
+        Ok(Self { shared, lyrics, handle: Some(handle), _lock: lock })
     }
 
     /// `tracks[0]` is the song to prepare now; the rest are prepared next, in order.
     /// A running job for any other song is cancelled.
     pub fn play(&self, tracks: Vec<i64>) {
+        self.lyrics.retain(&tracks);
         let mut st = self.shared.state.lock().unwrap();
         st.playing = tracks.first().copied();
         let mut queue: VecDeque<i64> = tracks.into();
@@ -429,7 +484,12 @@ mod tests {
 
     fn lookup(c: &Ctx, fetcher: impl LyricsFetcher + Send + 'static) -> (LyricsLookup, mpsc::Receiver<Event>) {
         let (tx, rx) = mpsc::channel();
-        (LyricsLookup::spawn(&c.store, Box::new(fetcher), tx), rx)
+        (LyricsLookup::spawn(&c.store, Box::new(fetcher), tx).unwrap(), rx)
+    }
+
+    fn worker(c: &Ctx, model: impl VocalModel + 'static) -> (Worker, mpsc::Receiver<Event>) {
+        let (tx, rx) = mpsc::channel();
+        (Worker::spawn(c.clone(), c.store.lock().unwrap(), Box::new(model), Box::new(NoLyrics), tx).unwrap(), rx)
     }
 
     fn run(c: &Ctx, lib: &Library, track: i64, cancel: &AtomicBool) -> (Result<Outcome>, Vec<Event>) {
@@ -732,14 +792,62 @@ mod tests {
     }
 
     #[test]
+    fn lyrics_lookups_take_the_newest_request_and_skip_songs_no_longer_wanted() {
+        /// Reports each title it is asked about, then waits for the test to let it finish.
+        struct Paced(mpsc::Receiver<()>, mpsc::Sender<String>);
+        impl LyricsFetcher for Paced {
+            fn fetch(&self, title: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+                self.1.send(title.to_string())?;
+                self.0.recv_timeout(Duration::from_secs(10))?;
+                Ok(None)
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let add = |title| lib.add_track(&crate::library::NewTrack { provider: crate::library::ProviderId::Local, provider_ref: None, title, artist: None, album: None, duration_ms: None }).unwrap();
+        let (x, a, b, cc) = (add("x"), add("a"), add("b"), add("c"));
+        let (step, paced) = mpsc::channel();
+        let (asked_tx, asked) = mpsc::channel();
+        let (lyrics, _) = lookup(&c, Paced(paced, asked_tx));
+        lyrics.request(x);
+        assert_eq!(asked.recv_timeout(Duration::from_secs(10)).unwrap(), "x");
+        for t in [a, b, cc] {
+            lyrics.request(t);
+        }
+        lyrics.retain(&[a, cc]);
+        for _ in 0..3 {
+            step.send(()).unwrap();
+        }
+        lyrics.finish();
+        assert_eq!(asked.try_iter().collect::<Vec<_>>(), vec!["c", "a"]);
+    }
+
+    #[test]
+    fn many_workers_start_at_once_on_new_data_folders() {
+        std::thread::scope(|s| {
+            for _ in 0..12 {
+                s.spawn(|| {
+                    let dir = tempfile::tempdir().unwrap();
+                    let c = ctx(dir.path());
+                    let (w, rx) = worker(&c, Silence);
+                    let lib = Library::open(&c.store.db_path()).unwrap();
+                    let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+                    w.play(vec![t]);
+                    wait_for(&rx, &Event::Ready { track_id: t });
+                });
+            }
+        });
+    }
+
+    #[test]
     fn worker_prepares_the_queue_in_order() {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
         let a = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
         let b = ingest::add_file(&lib, &song(dir.path(), "b.wav")).unwrap().track_id;
-        let (tx, rx) = mpsc::channel();
-        let w = Worker::spawn(c, Box::new(Silence), Box::new(NoLyrics), tx);
+        let (w, rx) = worker(&c, Silence);
         w.play(vec![a, b]);
         let seen = wait_for(&rx, &Event::Ready { track_id: b });
         let pos = |id| seen.iter().position(|e| e == &Event::Ready { track_id: id });
@@ -753,8 +861,7 @@ mod tests {
         let lib = Library::open(&c.store.db_path()).unwrap();
         let a = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
         let b = ingest::add_file(&lib, &song(dir.path(), "b.wav")).unwrap().track_id;
-        let (tx, rx) = mpsc::channel();
-        let w = Worker::spawn(c, Box::new(Slow), Box::new(NoLyrics), tx);
+        let (w, rx) = worker(&c, Slow);
         w.play(vec![a]);
         wait_for(&rx, &Event::Stage { track_id: a, stage: Stage::Separating });
         w.play(vec![b]);
@@ -769,8 +876,7 @@ mod tests {
         let lib = Library::open(&c.store.db_path()).unwrap();
         let a = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
         let b = ingest::add_file(&lib, &song(dir.path(), "b.wav")).unwrap().track_id;
-        let (tx, rx) = mpsc::channel();
-        let w = Worker::spawn(c, Box::new(Slow), Box::new(NoLyrics), tx);
+        let (w, rx) = worker(&c, Slow);
         w.play(vec![a]);
         wait_for(&rx, &Event::Stage { track_id: a, stage: Stage::Separating });
         w.play(vec![b]);
@@ -793,8 +899,7 @@ mod tests {
         let a = ingest::add_file(&lib, &path("a.wav", 330.0)).unwrap().track_id;
         let b = ingest::add_file(&lib, &path("b.wav", 440.0)).unwrap().track_id;
         let z = ingest::add_file(&lib, &path("z.wav", 550.0)).unwrap().track_id;
-        let (tx, rx) = mpsc::channel();
-        let w = Worker::spawn(c, Box::new(Silence), Box::new(NoLyrics), tx);
+        let (w, rx) = worker(&c, Silence);
         w.play(vec![a, b, z]);
         // The budget pass that runs right after b finishes happens, in the
         // worker's own thread, strictly before z starts fetching.

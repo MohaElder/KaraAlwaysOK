@@ -203,7 +203,7 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
     let mut model = OnnxModel::load(&runtime, &model_path, coreml)?;
     let ctx = Ctx { store: store.clone(), model_id: DEFAULT_MODEL.id.to_string(), params: DEFAULT_MODEL.params, chunk_len: CHUNK_LEN };
     let (lyrics_tx, lyrics_rx) = std::sync::mpsc::channel();
-    let lookup = LyricsLookup::spawn(store, Box::new(Lrclib::new()?), lyrics_tx);
+    let lookup = LyricsLookup::spawn(store, Box::new(Lrclib::new()?), lyrics_tx)?;
     let started = Instant::now();
     let show = |e: Event| match e {
         Event::Stage { stage, .. } => eprintln!("{}", match stage {
