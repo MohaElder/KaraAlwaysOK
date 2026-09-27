@@ -66,23 +66,18 @@ pub struct Gone {
 
 pub struct Mixer {
     rate: u32,
-    floor_ms: f64,
     voices: Vec<Voice>,
     reverb: Reverb,
     limiter: Limiter,
 }
 
 impl Mixer {
-    pub fn new(rate: u32, floor_ms: f64) -> Self {
-        Self { rate, floor_ms, voices: Vec::with_capacity(MOST_PHONES), reverb: Reverb::new(rate), limiter: Limiter::new(rate) }
+    pub fn new(rate: u32) -> Self {
+        Self { rate, voices: Vec::with_capacity(MOST_PHONES), reverb: Reverb::new(rate), limiter: Limiter::new(rate) }
     }
 
     pub fn rate(&self) -> u32 {
         self.rate
-    }
-
-    pub fn floor_ms(&self) -> f64 {
-        self.floor_ms
     }
 
     /// Starts taking a phone's sound. A phone already here swaps in only the fresh buffer and keeps its gain, feedback and effect state;
@@ -244,7 +239,7 @@ mod tests {
     fn four_phones_at_full_volume_never_pass_the_ceiling_and_the_reverb_dies_away() {
         assert_eq!(voice_gain(255, 255), MAX_GAIN);
         let ids = ["a", "b", "c", "d"];
-        let mut m = Mixer::new(48_000, 20.0);
+        let mut m = Mixer::new(48_000);
         for id in ids {
             m.add(NewVoice::new(id, 48_000, 48_000, 20.0));
             m.set_gain(id, voice_gain(100, 100));
@@ -266,7 +261,7 @@ mod tests {
 
     #[test]
     fn a_returning_phone_keeps_its_gain_and_hands_back_the_old_buffer_while_peaks_reset_on_read() {
-        let mut m = Mixer::new(48_000, 20.0);
+        let mut m = Mixer::new(48_000);
         m.add(NewVoice::new("a", 48_000, 48_000, 20.0));
         m.set_gain("a", 1.5);
         m.push("a", &[0.5; 256]);

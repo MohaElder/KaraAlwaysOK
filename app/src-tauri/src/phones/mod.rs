@@ -51,7 +51,10 @@ struct Session {
     clock: Clock,
     links: Vec<PendingLink>,
     mixer: Arc<Mutex<Mixer>>,
-    output: output::Output,
+    /// The mix's output rate and jitter buffer floor, fixed for the session.
+    rate: u32,
+    floor_ms: f64,
+    _output: output::Output,
     levels: Vec<Level>,
     tls: RustlsConfig,
     dir: PathBuf,
@@ -118,7 +121,6 @@ pub struct PhonesView {
 pub(crate) enum News {
     Joined { name: String, mic: usize },
     Added { name: String, title: String },
-    Stopped,
 }
 
 /// A phone's level as the Mac window's meter reads it.
@@ -159,8 +161,10 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
     let (cert_pem, key_pem) = cert::ensure(&dir, &host, &ips, kara_core::now_ms() / 1000).context(Problem::PhonesStart)?;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let tls = RustlsConfig::from_pem(cert_pem, key_pem).await.context(Problem::PhonesStart)?;
-    let floor = std::env::var("KARA_MIC_BUFFER_MS").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(20.0).clamp(10.0, 60.0);
-    let (output, mixer) = output::start(floor).context(Problem::PhonesStart)?;
+    let chosen = if cfg!(debug_assertions) { std::env::var("KARA_MIC_BUFFER_MS").ok().and_then(|v| v.parse::<f64>().ok()) } else { None };
+    let floor_ms = chosen.unwrap_or(20.0).clamp(10.0, 60.0);
+    let (output, mixer) = tauri::async_runtime::spawn_blocking(output::start).await?.context(Problem::PhonesStart)?;
+    let rate = mixer.lock().unwrap().rate();
     let server = axum_server::Handle::new();
     let (port, redirect) = server::serve(app.clone(), tls.clone(), server.clone()).context(Problem::PhonesStart)?;
     let room = Room::new(code);
@@ -175,7 +179,9 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
         clock: Clock::new(None, 0, false),
         links: Vec::new(),
         mixer,
-        output,
+        rate,
+        floor_ms,
+        _output: output,
         levels: Vec::with_capacity(MOST_PHONES),
         tls,
         dir,
@@ -363,11 +369,7 @@ fn live(app: &AppHandle, id: &str, on: bool, rate: u32) {
         if !on {
             return s.mixer.lock().unwrap().reset(id);
         }
-        let (out_rate, floor) = {
-            let m = s.mixer.lock().unwrap();
-            (m.rate(), m.floor_ms())
-        };
-        let voice = NewVoice::new(id, rate, out_rate, floor);
+        let voice = NewVoice::new(id, rate, s.rate, s.floor_ms);
         let leftover = {
             let mut m = s.mixer.lock().unwrap();
             let leftover = m.add(voice);
@@ -527,11 +529,11 @@ pub(crate) fn dropped(app: &AppHandle, id: &str, conn: u64) {
 
 /// What one tick found.
 struct Tick {
-    levels: Vec<PhoneLevel>,
+    /// Each phone's level, while any phone is in the room.
+    levels: Option<Vec<PhoneLevel>>,
     expired: bool,
     idle: bool,
     moved: bool,
-    stopped: bool,
 }
 
 impl Session {
@@ -549,17 +551,16 @@ impl Session {
             drop(voice);
         }
         Tick {
-            levels: self.levels.iter().map(|l| PhoneLevel { id: l.id.to_string(), level: l.peak, down: l.down }).collect(),
+            levels: (!self.room.guests.is_empty()).then(|| self.levels.iter().map(|l| PhoneLevel { id: l.id.to_string(), level: l.peak, down: l.down }).collect()),
             expired: !gone.is_empty(),
             idle: !gone.is_empty() && !self.window_open && self.room.guests.is_empty(),
             moved: n.is_multiple_of(60) && cert::lan_ips() != self.ips,
-            stopped: self.output.broken(),
         }
     }
 }
 
 /// Every 80 ms while this session lasts: levels, gone phones, a new address now and then; the session ends when the Mac wakes
-/// from sleep, its output device goes away, or its last phone is gone with the window closed.
+/// from sleep or its last phone is gone with the window closed.
 async fn tick(app: AppHandle, id: u64) {
     let mut every = tokio::time::interval(Duration::from_millis(80));
     let mut last = (SystemTime::now(), Instant::now());
@@ -569,13 +570,12 @@ async fn tick(app: AppHandle, id: u64) {
         let slept = woke(now.0.duration_since(last.0).unwrap_or_default(), now.1 - last.1);
         last = now;
         let Some(t) = with(&app, |s| (s.id == id).then(|| s.tick(n, now.1))).flatten() else { return };
-        if t.stopped {
-            let _ = app.emit("phone-news", News::Stopped);
-        }
-        if slept || t.idle || t.stopped {
+        if slept || t.idle {
             return end(&app);
         }
-        let _ = app.emit("phone-levels", &t.levels);
+        if let Some(levels) = &t.levels {
+            let _ = app.emit("phone-levels", levels);
+        }
         if t.expired {
             changed(&app);
         }
@@ -595,7 +595,9 @@ async fn readdress(app: &AppHandle, id: u64) {
     let ips = cert::lan_ips();
     let Some(&ip) = ips.first() else { return };
     let Some((dir, host, port, redirect, code, tls)) = with(app, |s| (s.id == id).then(|| (s.dir.clone(), s.host.clone(), s.port, s.redirect, s.room.code.clone(), s.tls.clone()))).flatten() else { return };
-    let Ok((cert, key)) = cert::ensure(&dir, &host, &ips, kara_core::now_ms() / 1000) else { return };
+    let (named, covered) = (host.clone(), ips.clone());
+    let made = tauri::async_runtime::spawn_blocking(move || cert::ensure(&dir, &named, &covered, kara_core::now_ms() / 1000)).await;
+    let Ok(Ok((cert, key))) = made else { return };
     if tls.reload_from_pem(cert, key).await.is_err() {
         return;
     }
