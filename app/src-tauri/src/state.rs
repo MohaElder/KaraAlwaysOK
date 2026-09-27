@@ -17,6 +17,8 @@ pub struct AppState {
     /// The data folder lock, until the worker holds it.
     pub lock: Mutex<Option<DataLock>>,
     pub worker: Mutex<Option<Worker>>,
+    /// Held while the engine is being set up.
+    pub setup: tauri::async_runtime::Mutex<()>,
     pub adder: Adder,
     pub events: mpsc::Sender<Event>,
 }
@@ -34,7 +36,7 @@ impl AppState {
         cache::startup_cleanup(&store, &lib, &lock)?;
         let reader = Arc::new(Mutex::new(Library::open(&store.db_path())?));
         let adder = Adder::spawn(ctx(&store), Box::new(Lrclib::new()?), events.clone())?;
-        Ok(Self { store, lib: Mutex::new(lib), reader, lock: Mutex::new(Some(lock)), worker: Mutex::new(None), adder, events })
+        Ok(Self { store, lib: Mutex::new(lib), reader, lock: Mutex::new(Some(lock)), worker: Mutex::new(None), setup: Default::default(), adder, events })
     }
 }
 

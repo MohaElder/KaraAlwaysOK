@@ -44,15 +44,16 @@ pub struct SetupProgress {
 /// model and starts preparing songs.
 #[tauri::command]
 pub async fn setup_engine(state: State<'_, AppState>, on_progress: Channel<SetupProgress>) -> Result<(), AppError> {
+    let _once = state.setup.lock().await;
     if state.worker.lock().unwrap().is_some() {
         return Ok(());
     }
     let store = state.store.clone();
     let model = tauri::async_runtime::spawn_blocking(move || load_model(&store, &on_progress)).await?.plain()?;
-    let Some(lock) = state.lock.lock().unwrap().take() else { return Ok(()) };
+    let lock = state.lock.lock().unwrap().take().map_or_else(|| state.store.lock(), Ok).plain()?;
     let (store, events) = (state.store.clone(), state.events.clone());
-    let started = tauri::async_runtime::spawn_blocking(move || Worker::spawn(ctx(&store), lock, model, Box::new(Lrclib::new()?), events)).await?;
-    let worker = started.map_err(|e| {
+    let started = tauri::async_runtime::spawn_blocking(move || Worker::spawn(ctx(&store), lock, model, Box::new(Lrclib::new()?), events)).await;
+    let worker = started.map_err(anyhow::Error::from).and_then(|r| r).map_err(|e| {
         *state.lock.lock().unwrap() = state.store.lock().ok();
         AppError::from(coded(e, Problem::EngineStart))
     })?;

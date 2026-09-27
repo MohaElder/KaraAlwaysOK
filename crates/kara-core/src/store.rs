@@ -22,6 +22,7 @@ impl Store {
     /// `~/Library/Application Support/kara-always-oki`, or `$KARA_DATA` when set (for development).
     pub fn default_root() -> PathBuf {
         std::env::var_os("KARA_DATA")
+            .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| dirs::data_dir().expect("no user data directory").join("kara-always-oki"))
     }
