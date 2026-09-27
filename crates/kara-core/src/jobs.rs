@@ -10,7 +10,7 @@ use crate::library::{AudioSource, Library, LyricsSource, SepStatus, SeparationRo
 use crate::lyrics::{self, LyricsFetcher};
 use crate::now_ms;
 use crate::separate::mdx::{self, MdxParams, Outcome, VocalModel};
-use crate::store::{write_atomic, DataLock, Store};
+use crate::store::{copy_atomic, DataLock, Store};
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::collections::VecDeque;
@@ -263,9 +263,8 @@ fn decode_and_keep(ctx: &Ctx, path: &Path) -> Result<(String, audio::Decoded)> {
     anyhow::ensure!(!decoded.audio.is_empty(), "This audio is empty.");
     let hash = audio::audio_hash(&decoded.audio);
     if ctx.store.original_path(&hash).is_none() {
-        let bytes = std::fs::read(path).context("Couldn't read this audio.")?;
         let dst = ctx.store.original_dest(&hash, path.extension().and_then(|e| e.to_str()));
-        write_atomic(&dst, &bytes).map_err(|e| {
+        copy_atomic(path, &dst).map_err(|e| {
             let full = e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::StorageFull);
             e.context(if full { "Couldn't save the audio. The disk is full." } else { "Couldn't save the audio." })
         })?;

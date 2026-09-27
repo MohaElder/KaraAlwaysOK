@@ -79,16 +79,26 @@ impl Store {
     }
 }
 
-/// Writes `<path>.part`, then renames it into place, so readers never see a half-written file.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+/// Fills `<path>.part` with `fill`, then renames it into place, so readers never see a half-written file.
+fn put_atomic(path: &Path, fill: impl FnOnce(&Path) -> std::io::Result<()>) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let mut part = path.as_os_str().to_owned();
     part.push(".part");
-    std::fs::write(&part, bytes)?;
+    fill(Path::new(&part))?;
     std::fs::rename(&part, path)?;
     Ok(())
+}
+
+/// Writes `bytes` to `path` through a `.part` file.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    put_atomic(path, |part| std::fs::write(part, bytes))
+}
+
+/// Copies `src` to `path` through a `.part` file.
+pub fn copy_atomic(src: &Path, path: &Path) -> Result<()> {
+    put_atomic(path, |part| std::fs::copy(src, part).map(drop))
 }
 
 #[cfg(test)]
