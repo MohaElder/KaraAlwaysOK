@@ -5,10 +5,11 @@ A desktop karaoke app. Pick a song and sing over it: it strips the vocals out
 own files, pasted links, and later your Spotify / Apple Music library.
 Local-only — audio, stems and lyrics stay on your computer.
 
-This repo is the engine so far: a Rust library (`kara-core`) and a CLI
-(`kara-cli`) for adding songs, preparing them (download, convert, look up
-lyrics, take the vocals out) and exporting the result. The desktop app (Tauri
-shell, UI, live playback) is a later phase.
+The repo holds the engine — a Rust library (`kara-core`) and a CLI (`kara-cli`) for adding
+songs, preparing them (download, convert, look up lyrics, take the vocals out) and exporting
+the result — and the desktop app in `app/` (Tauri 2 + Svelte 5), which plays prepared songs
+live with the singer slider, key and synced lyrics. The app speaks English, Japanese, Korean,
+Simplified Chinese, Traditional Chinese and Spanish, following the system language.
 
 ## Build
 
@@ -18,6 +19,26 @@ cargo build --release
 ```
 
 The binary is `target/release/kara`.
+
+## Run the app
+
+```
+cd app
+npm install
+npm run tauri:dev
+```
+
+`tauri:dev` hot-reloads the interface only; after changing Rust code, stop it and run it again.
+The first launch downloads the singing engine (about 90 MB). The app and the CLI share the
+same library in `~/Library/Application Support/kara-always-oki`, and only one of them can
+use it at a time.
+
+To try things without touching your library, point the app (or the CLI) at a scratch folder:
+`KARA_DATA=/tmp/kara-scratch npm run tauri:dev`. Copy `runtime/` and `models/` into it from
+the real folder to skip the download.
+
+Debug builds optimize dependencies fully and our own crates lightly (see `[profile.dev]` in
+`Cargo.toml`), so separation runs at usable speed in `tauri:dev` without a release build.
 
 ## Use
 
@@ -78,5 +99,8 @@ Do these once, after the app is built and the GitHub repo exists:
    and keep the private key and its password safe (never commit them).
 3. Add GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` (the private key's contents) and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-4. Put the public key in `plugins.updater.pubkey` in `tauri.conf.json`, and the repo owner
-   in the updater endpoint URL.
+4. Put the public key in `plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json`
+   (replacing `REPLACE-WITH-UPDATER-PUBLIC-KEY`), and the repo owner in the updater
+   endpoint URL (replacing `GITHUB-OWNER`).
+5. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
+   `latest.json`; publish it so the app's update check can find it.
