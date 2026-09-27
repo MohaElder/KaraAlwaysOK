@@ -4,7 +4,7 @@
 use crate::audio::{encode_flac, read_flac, Stereo};
 use crate::library::{Library, SepStatus, SourceKind};
 use crate::separate::mdx::ChunkOut;
-use crate::store::{write_atomic, Stem, Store};
+use crate::store::{write_atomic, DataLock, Stem, Store};
 use anyhow::{Context, Result};
 use std::path::Path;
 
@@ -148,9 +148,9 @@ fn remove_part_files(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Run once at launch: clear temp downloads and half-written files, then make
-/// the database agree with the chunk files actually on disk.
-pub fn startup_cleanup(store: &Store, lib: &Library) -> Result<()> {
+/// Run once at launch, holding the data folder: clear temp downloads and
+/// half-written files, then make the database agree with the chunk files on disk.
+pub fn startup_cleanup(store: &Store, lib: &Library, _lock: &DataLock) -> Result<()> {
     let _ = std::fs::remove_dir_all(store.tmp_dir());
     std::fs::create_dir_all(store.tmp_dir())?;
     remove_part_files(&store.audio_root())?;
@@ -304,7 +304,7 @@ mod tests {
         write_atomic(&s.source_path("done"), b"src").unwrap();
         lib.upsert_separation(&sep_row("done", 1, SepStatus::Running, 0, 0)).unwrap();
 
-        startup_cleanup(&s, &lib).unwrap();
+        startup_cleanup(&s, &lib, &s.lock().unwrap()).unwrap();
 
         assert!(!s.stems_dir("h", "m").join("0002.vocals.flac.part").exists());
         assert_eq!(std::fs::read_dir(s.tmp_dir()).unwrap().count(), 0);

@@ -168,14 +168,8 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
     Ok(())
 }
 
-fn open_library(store: &Store) -> Result<Library> {
-    let lib = Library::open(&store.db_path())?;
-    cache::startup_cleanup(store, &lib)?;
-    Ok(lib)
-}
-
 fn add(store: &Store, input: &str) -> Result<()> {
-    let lib = open_library(store)?;
+    let lib = Library::open(&store.db_path())?;
     let path = PathBuf::from(input);
     let ing = if path.exists() {
         ingest::add_file(&lib, &path)?
@@ -189,7 +183,7 @@ fn add(store: &Store, input: &str) -> Result<()> {
 }
 
 fn search(store: &Store, query: &str) -> Result<()> {
-    let lib = open_library(store)?;
+    let lib = Library::open(&store.db_path())?;
     for t in lib.search(query, 20)? {
         println!("{}\t{}\t{}", t.id, t.title, t.artist.unwrap_or_default());
     }
@@ -197,7 +191,9 @@ fn search(store: &Store, query: &str) -> Result<()> {
 }
 
 fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
-    let lib = open_library(store)?;
+    let lock = store.lock()?;
+    let lib = Library::open(&store.db_path())?;
+    cache::startup_cleanup(store, &lib, &lock)?;
     let runtime = runtime_lib(store, None)?;
     let model_path = assets::ensure(&DEFAULT_MODEL.asset, &store.models_dir(), &mut |done, total| {
         if let Some(t) = total {
@@ -229,7 +225,7 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
 }
 
 fn export(store: &Store, track_id: i64, out: &Path) -> Result<()> {
-    let lib = open_library(store)?;
+    let lib = Library::open(&store.db_path())?;
     let hash = lib.selected_source(track_id)?.and_then(|s| s.audio_hash).context("This song isn't prepared yet.")?;
     let row = lib.separation(&hash, DEFAULT_MODEL.id)?.context("This song isn't prepared yet.")?;
     if row.chunks_done == 0 {

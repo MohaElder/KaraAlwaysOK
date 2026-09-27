@@ -186,7 +186,10 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
     let dst = ctx.store.source_path(&hash);
     if !is_ready(ctx, lib, &hash)? && !dst.exists() {
         let bytes = audio::encode_flac(&decoded.audio).context("Couldn't prepare this song's audio.")?;
-        write_atomic(&dst, &bytes).context("Couldn't save the audio. Is the disk full?")?;
+        write_atomic(&dst, &bytes).map_err(|e| {
+            let full = e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::StorageFull);
+            e.context(if full { "Couldn't save the audio. The disk is full." } else { "Couldn't save the audio." })
+        })?;
     }
     lib.set_source_audio(source.id, &hash, decoded.audio.duration_ms())?;
     if let Some(text) = decoded.tags.lyrics.as_deref().filter(|t| lyrics::is_synced(t)) {
@@ -496,6 +499,17 @@ mod tests {
         assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "The file was moved or deleted.".into() }));
         let s = lib.selected_source(t).unwrap().unwrap();
         assert_eq!((s.status, s.error.as_deref()), (SourceStatus::Failed, Some("The file was moved or deleted.")));
+    }
+
+    #[test]
+    fn a_save_failure_that_is_not_a_full_disk_does_not_blame_the_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        std::fs::write(c.store.audio_root(), b"not a folder").unwrap();
+        let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
+        assert_eq!(events.last(), Some(&Event::Failed { track_id: t, message: "Couldn't save the audio.".into() }));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Where everything lives on disk (spec §4).
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +19,11 @@ impl Stem {
     }
 }
 
+/// Exclusive use of the data folder; released when dropped.
+pub struct DataLock {
+    _file: File,
+}
+
 #[derive(Clone, Debug)]
 pub struct Store {
     root: PathBuf,
@@ -33,6 +39,16 @@ impl Store {
     }
     pub fn root(&self) -> &Path {
         &self.root
+    }
+    /// Takes the data folder for writing; fails with a plain message while another kara holds it.
+    pub fn lock(&self) -> Result<DataLock> {
+        std::fs::create_dir_all(&self.root)?;
+        let file = File::options().write(true).create(true).truncate(false).open(self.root.join("kara.lock"))?;
+        match file.try_lock() {
+            Ok(()) => Ok(DataLock { _file: file }),
+            Err(TryLockError::WouldBlock) => bail!("kara is busy preparing another song."),
+            Err(TryLockError::Error(e)) => Err(e.into()),
+        }
     }
     pub fn db_path(&self) -> PathBuf {
         self.root.join("kara.db")
@@ -90,6 +106,16 @@ mod tests {
         assert_eq!(s.chunk_path("abc", "m1", 7, Stem::Vocals), Path::new("/data/audio/abc/m1/0007.vocals.flac"));
         assert_eq!(s.chunk_path("abc", "m1", 12, Stem::Inst), Path::new("/data/audio/abc/m1/0012.inst.flac"));
         assert_eq!(s.bin_dir(), Path::new("/data/bin"));
+    }
+
+    #[test]
+    fn only_one_writer_holds_the_data_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path());
+        let held = s.lock().unwrap();
+        assert_eq!(s.lock().err().unwrap().to_string(), "kara is busy preparing another song.");
+        drop(held);
+        assert!(s.lock().is_ok());
     }
 
     #[test]

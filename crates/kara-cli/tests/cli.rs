@@ -35,3 +35,22 @@ fn streaming_links_are_refused_with_a_plain_message() {
     assert!(!ok);
     assert!(err.contains("can't be downloaded"), "{err}");
 }
+
+#[test]
+fn only_writers_clean_up_and_a_second_writer_is_turned_away() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = kara_core::store::Store::new(dir.path());
+    let part = store.audio_dir("h").join("source.flac.part");
+    std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+    std::fs::write(&part, b"being written").unwrap();
+    let _held = store.lock().unwrap();
+
+    let (ok, _, _) = kara(dir.path(), &["search", "x"]);
+    assert!(ok);
+    assert!(part.exists());
+
+    let (ok, _, err) = kara(dir.path(), &["prepare", "1"]);
+    assert!(!ok);
+    assert_eq!(err.trim(), "kara is busy preparing another song.");
+    assert!(part.exists());
+}
