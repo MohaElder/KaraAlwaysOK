@@ -3,8 +3,8 @@ import type { Key } from "./en";
 const zhHans: Record<Key, string> = {
   "app.name": "KaraAlwaysOK",
   "common.tryAgain": "重试",
-  "problem.newerLibrary": "这个资料库由更新版本的 KaraAlwaysOK 创建。请更新应用后再打开。",
-  "problem.dataFolder": "无法打开应用的数据文件夹。",
+  "problem.newerLibrary": "这个资料库由更新版本的 KaraAlwaysOK 创建。请更新 KaraAlwaysOK 后再打开。",
+  "problem.dataFolder": "无法打开 KaraAlwaysOK 的数据文件夹。",
   "problem.inUse": "另一个 KaraAlwaysOK 正在使用你的资料库。请关闭后重试。",
   "problem.libraryOpen": "无法打开你的资料库。",
   "problem.engineDownload": "无法下载演唱引擎。请检查网络连接。",

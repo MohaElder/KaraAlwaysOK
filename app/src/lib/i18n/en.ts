@@ -1,8 +1,8 @@
 const en = {
   "app.name": "KaraAlwaysOK",
   "common.tryAgain": "Try again",
-  "problem.newerLibrary": "This library was made by a newer version of KaraAlwaysOK. Update the app to open it.",
-  "problem.dataFolder": "Couldn't open the app's data folder.",
+  "problem.newerLibrary": "This library was made by a newer version of KaraAlwaysOK. Update KaraAlwaysOK to open it.",
+  "problem.dataFolder": "Couldn't open KaraAlwaysOK's data folder.",
   "problem.inUse": "Another copy of KaraAlwaysOK is using your library. Close it and try again.",
   "problem.libraryOpen": "Couldn't open your library.",
   "problem.engineDownload": "Couldn't download the singing engine. Check your connection.",

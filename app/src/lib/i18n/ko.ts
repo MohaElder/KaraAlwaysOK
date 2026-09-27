@@ -3,8 +3,8 @@ import type { Key } from "./en";
 const ko: Record<Key, string> = {
   "app.name": "KaraAlwaysOK",
   "common.tryAgain": "다시 시도",
-  "problem.newerLibrary": "이 보관함은 더 새로운 버전의 KaraAlwaysOK로 만들어졌습니다. 열려면 앱을 업데이트하세요.",
-  "problem.dataFolder": "앱 데이터 폴더를 열 수 없습니다.",
+  "problem.newerLibrary": "이 보관함은 더 새로운 버전의 KaraAlwaysOK로 만들어졌습니다. 열려면 KaraAlwaysOK를 업데이트하세요.",
+  "problem.dataFolder": "KaraAlwaysOK 데이터 폴더를 열 수 없습니다.",
   "problem.inUse": "다른 KaraAlwaysOK가 보관함을 사용 중입니다. 닫은 후 다시 시도하세요.",
   "problem.libraryOpen": "보관함을 열 수 없습니다.",
   "problem.engineDownload": "노래 엔진을 다운로드할 수 없습니다. 연결을 확인하세요.",

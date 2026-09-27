@@ -7,8 +7,8 @@ it("follows the system language, English when it isn't one of the six", () => {
   expect(tags.map(matchLocale)).toEqual(["ja", "zh-Hant", "zh-Hant", "zh-Hans", "ko", "es", "en"]);
 });
 
-it("says a problem code it doesn't know as a generic message instead of failing", () => {
+it("says a problem code it doesn't know, or none at all, as a generic message instead of raw text", () => {
   expect(say({ problem: "fromANewerEngine", message: "Something new." })).toBe("Something went wrong.");
   expect(say({ problem: "fileMoved", message: "" })).toBe("The file was moved or deleted.");
-  expect(say({ problem: null, message: "Plain text." })).toBe("Plain text.");
+  expect(say({ problem: null, message: "Plain text." })).toBe("Something went wrong.");
 });

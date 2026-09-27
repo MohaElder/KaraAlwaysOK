@@ -3,8 +3,8 @@ import type { Key } from "./en";
 const es: Record<Key, string> = {
   "app.name": "KaraAlwaysOK",
   "common.tryAgain": "Reintentar",
-  "problem.newerLibrary": "Esta biblioteca se creó con una versión más reciente de KaraAlwaysOK. Actualiza la app para abrirla.",
-  "problem.dataFolder": "No se pudo abrir la carpeta de datos de la app.",
+  "problem.newerLibrary": "Esta biblioteca se creó con una versión más reciente de KaraAlwaysOK. Actualiza KaraAlwaysOK para abrirla.",
+  "problem.dataFolder": "No se pudo abrir la carpeta de datos de KaraAlwaysOK.",
   "problem.inUse": "Otra copia de KaraAlwaysOK está usando tu biblioteca. Ciérrala y vuelve a intentarlo.",
   "problem.libraryOpen": "No se pudo abrir tu biblioteca.",
   "problem.engineDownload": "No se pudo descargar el motor de canto. Revisa tu conexión.",

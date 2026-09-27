@@ -3,8 +3,8 @@ import type { Key } from "./en";
 const ja: Record<Key, string> = {
   "app.name": "KaraAlwaysOK",
   "common.tryAgain": "もう一度試す",
-  "problem.newerLibrary": "このライブラリは新しいバージョンの KaraAlwaysOK で作られています。開くにはアプリをアップデートしてください。",
-  "problem.dataFolder": "アプリのデータフォルダを開けませんでした。",
+  "problem.newerLibrary": "このライブラリは新しいバージョンの KaraAlwaysOK で作られています。開くには KaraAlwaysOK をアップデートしてください。",
+  "problem.dataFolder": "KaraAlwaysOK のデータフォルダを開けませんでした。",
   "problem.inUse": "別の KaraAlwaysOK がライブラリを使用中です。閉じてからもう一度お試しください。",
   "problem.libraryOpen": "ライブラリを開けませんでした。",
   "problem.engineDownload": "歌唱エンジンをダウンロードできませんでした。接続を確認してください。",

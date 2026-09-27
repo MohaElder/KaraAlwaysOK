@@ -3,8 +3,8 @@ import type { Key } from "./en";
 const zhHant: Record<Key, string> = {
   "app.name": "KaraAlwaysOK",
   "common.tryAgain": "再試一次",
-  "problem.newerLibrary": "這個資料庫由較新版本的 KaraAlwaysOK 建立。請更新 App 後再開啟。",
-  "problem.dataFolder": "無法開啟 App 的資料檔案夾。",
+  "problem.newerLibrary": "這個資料庫由較新版本的 KaraAlwaysOK 建立。請更新 KaraAlwaysOK 後再開啟。",
+  "problem.dataFolder": "無法開啟 KaraAlwaysOK 的資料檔案夾。",
   "problem.inUse": "另一個 KaraAlwaysOK 正在使用你的資料庫。請關閉後再試一次。",
   "problem.libraryOpen": "無法開啟你的資料庫。",
   "problem.engineDownload": "無法下載演唱引擎。請檢查網路連線。",
