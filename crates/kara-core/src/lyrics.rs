@@ -200,7 +200,8 @@ const OTHER_SINGER_OFF_S: f64 = 3.0;
 /// Words that mark a version, a video or an upload rather than the song's name.
 const NOISE: &[&str] = &[
     "official", "video", "mv", "audio", "lyrics", "lyric", "hd", "4k", "60fps", "remaster", "remastered", "live",
-    "piano only", "instrumental", "inst", "karaoke", "off vocal", "feat", "ft", "cover",
+    "piano only", "instrumental", "inst", "karaoke", "off vocal", "feat", "ft", "cover", "version", "edit", "mix", "remix",
+    "acoustic", "mono", "stereo", "single", "demo", "radio", "from",
     "现场版", "現場版", "伴奏", "カラオケ", "翻唱", "版本", "官方",
 ];
 /// Endings channels add to a singer's name.
@@ -231,12 +232,14 @@ fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, art
     Ok(best_match(retrying(deadline, || search(&[("q", &title)]))?, &title, &artists, duration_s))
 }
 
-/// The synced lyrics of the hit that best matches the song, scored by title, singer and closeness of length.
+/// The synced lyrics of the hit that best matches the song, scored by title, singer and closeness of length
+/// in whole seconds; among equals, the one with more timed lines, then the service's first.
 /// A hit by a like singer may have a close title and be up to a minute off; by another singer it needs
 /// the same title and nearly the same length.
 fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<String> {
     let title_key = key(title);
     hits.into_iter()
+        .rev()
         .filter_map(|h| {
             let lyrics = h.synced_lyrics.filter(|s| is_synced(s))?;
             let off = if duration_s == 0 { 0.0 } else { (h.duration - duration_s as f64).abs() };
@@ -248,23 +251,25 @@ fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) 
             } else {
                 same_title && off <= if artists.is_empty() { UNKNOWN_SINGER_OFF_S } else { OTHER_SINGER_OFF_S }
             };
-            let score = if same_title { 2.0 } else { 1.0 } + f64::from(singer) + 1.0 - off / LIKE_SINGER_OFF_S;
-            fits.then_some((score, lyrics))
+            let score = if same_title { 2.0 } else { 1.0 } + f64::from(singer) + 1.0 - off.round() / LIKE_SINGER_OFF_S;
+            let timed_lines = lyrics.lines().filter(|l| is_synced(l)).count();
+            fits.then_some((score, timed_lines, lyrics))
         })
-        .max_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, lyrics)| lyrics)
+        .max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+        .map(|(.., lyrics)| lyrics)
 }
 
-/// How alike two singers' names are: 2 the same, 1 close (names of 3+ letters only), 0 unlike.
+/// How alike two singers' names are: 2 the same; 1 close — a name of 3–4 letters only as a whole word
+/// of the other, names under 3 letters never; 0 unlike.
 fn singer_likeness(a: &str, b: &str) -> u8 {
     let (ka, kb) = (key(a), key(b));
-    if !ka.is_empty() && ka == kb {
-        2
-    } else if ka.chars().count() >= 3 && kb.chars().count() >= 3 && (similar(a, b) || similar(b, a)) {
-        1
-    } else {
-        0
-    }
+    let words = |text: &str| fold(&simplified(text)).split(|c: char| !c.is_alphanumeric()).map(String::from).collect::<Vec<_>>();
+    let close = match ka.chars().count().min(kb.chars().count()) {
+        0..=2 => false,
+        3..=4 => words(a).contains(&kb) || words(b).contains(&ka),
+        _ => similar(a, b) || similar(b, a),
+    };
+    if !ka.is_empty() && ka == kb { 2 } else { u8::from(close) }
 }
 
 /// Traditional Chinese folded to Simplified, for matching only.
@@ -314,7 +319,7 @@ fn strip_suffix_ci<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
 
 /// A song's name as a lyrics service knows it, from a file's or upload's title: without tags like
 /// 【4K】 or (Official Video), version words and anything after " | "; the name in 《》「」『』 when there is one;
-/// for "A - B", A unless B is the singer or a version, else B. Also returns a singer named in the title
+/// for "A - B", A when B is the singer or a version or no singer is known, else B. Also returns a singer named in the title
 /// (before 《》「」『』 or " - ").
 pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>) {
     let singer = |s: &str| Some(s.trim_matches(|c: char| c.is_whitespace() || "-|:：".contains(c)).to_string()).filter(|s| !s.is_empty());
@@ -335,7 +340,7 @@ pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>
     }
     let is_singer = |part: &str| artist.into_iter().flat_map(clean_artist).any(|a| key(&a) == key(part));
     let (name, named) = match name.split_once(" - ") {
-        Some((left, right)) if is_singer(right) || noisy(right) => (left, None),
+        Some((left, right)) if is_singer(right) || noisy(right) || artist.is_none() => (left, None),
         Some((left, right)) => (right, singer(left).filter(|_| !is_singer(left))),
         None => (name.as_str(), None),
     };
@@ -454,6 +459,11 @@ mod tests {
         assert_eq!(title("Paper Boats - Juniper Row", Some("Juniper Row")), ("Paper Boats".into(), None));
         assert_eq!(title("张学友 - 《李香兰》", None), ("李香兰".into(), Some("张学友".into())));
         assert_eq!(title("「さよなら」の意味", None), ("「さよなら」の意味".into(), None));
+        assert_eq!(title("Stand By Me - Single Version", Some("Ben E. King")), ("Stand By Me".into(), None));
+        assert_eq!(title("Jolene - Acoustic", Some("Dolly Parton")), ("Jolene".into(), None));
+        assert_eq!(title("Hey Jude - 2015 Mix", Some("The Beatles")), ("Hey Jude".into(), None));
+        assert_eq!(title("Hello - Adele", None), ("Hello".into(), None));
+        assert_eq!(title("Adele - Hello", Some("Adele")), ("Hello".into(), None));
         assert_eq!(clean_artist("盧廣仲(版本)"), ["盧廣仲"]);
         assert_eq!(clean_artist("盧廣仲 (Crowd Lu)"), ["盧廣仲", "Crowd Lu"]);
         assert_eq!(clean_artist("Crowd Lu - Topic"), ["Crowd Lu"]);
@@ -494,6 +504,15 @@ mod tests {
         assert_eq!(best_match(close_title(), "Paper Boats", &[], 200), None);
         assert_eq!(best_match(close_title(), "Paper Boats", &["Juniper Row".into()], 200).as_deref(), Some("[00:01.00]close title"));
         assert_eq!(best_match(vec![hit("Paper Boats", "G-Star", 220.0, Some("[00:01.00]g"))], "Paper Boats", &["G".into()], 200), None);
+
+        let ties = vec![
+            hit("Paper Boats", "Juniper Row", 200.4, Some("[00:01.00]short")),
+            hit("Paper Boats", "Juniper Row", 200.0, Some("[00:01.00]long\n[00:02.00]er")),
+            hit("Paper Boats", "Juniper Row", 200.0, Some("[00:01.00]late\n[00:02.00]copy")),
+        ];
+        assert_eq!(best_match(ties, "Paper Boats", &["Juniper Row".into()], 200).as_deref(), Some("[00:01.00]long\n[00:02.00]er"));
+        assert_eq!(singer_likeness("Bob", "Bob Dylan"), 1);
+        assert_eq!((singer_likeness("Bob", "Nobody Real Band"), singer_likeness("Eve", "Evanescence")), (0, 0));
 
         let other_script = vec![hit("夜車", "Lin Xiaoyu - Topic", 240.0, Some("[00:01.00]same length")), hit("夜車", "Someone Else", 262.0, Some("[00:01.00]other length"))];
         assert_eq!(best_match(other_script, "夜車", &lin, 240).as_deref(), Some("[00:01.00]same length"));
