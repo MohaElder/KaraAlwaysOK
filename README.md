@@ -64,7 +64,7 @@ for it yet.
 cargo test --workspace
 ```
 
-One test builds a small audio file with `ffmpeg` to check embedded-lyrics
-handling, so running the tests needs `ffmpeg` installed. The app itself never
+Some tests build small audio files with `ffmpeg` (embedded lyrics, MP3) and
+macOS's `afconvert` (AAC), so running the tests needs `ffmpeg` installed. The app itself never
 needs `ffmpeg` — it only downloads `yt-dlp` on its own, the first time you add
 a link that needs it.

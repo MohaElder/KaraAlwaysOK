@@ -4,7 +4,7 @@ use kara_core::assets;
 use kara_core::audio::{self, Stereo, SAMPLE_RATE};
 use kara_core::cache;
 use kara_core::ingest::{self, link};
-use kara_core::jobs::{self, Ctx, Event, Stage};
+use kara_core::jobs::{self, Ctx, Event, LyricsLookup, Stage};
 use kara_core::library::Library;
 use kara_core::lyrics::Lrclib;
 use kara_core::separate::mdx::{self, MdxParams};
@@ -202,22 +202,26 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
     })?;
     let mut model = OnnxModel::load(&runtime, &model_path, coreml)?;
     let ctx = Ctx { store: store.clone(), model_id: DEFAULT_MODEL.id.to_string(), params: DEFAULT_MODEL.params, chunk_len: CHUNK_LEN };
-    let fetcher = Lrclib::new()?;
+    let (lyrics_tx, lyrics_rx) = std::sync::mpsc::channel();
+    let lookup = LyricsLookup::spawn(store, Box::new(Lrclib::new()?), lyrics_tx);
     let started = Instant::now();
-    let result = jobs::prepare(&ctx, &lib, &mut model, &fetcher, track_id, &AtomicBool::new(false), &mut |e| match e {
+    let show = |e: Event| match e {
         Event::Stage { stage, .. } => eprintln!("{}", match stage {
             Stage::Fetching => "Getting the song…",
             Stage::Standardizing => "Preparing the audio…",
-            Stage::Lyrics => "Finding the lyrics…",
             Stage::Separating => "Taking the vocals out…",
         }),
         Event::Progress { chunks_done, chunks_total, .. } => {
             eprintln!("  {chunks_done}/{chunks_total} ready  ({:.1} s)", started.elapsed().as_secs_f64())
         }
-        Event::Ready { .. } => eprintln!("Ready to sing."),
+        Event::Lyrics { .. } => eprintln!("Checked for lyrics.  ({:.1} s)", started.elapsed().as_secs_f64()),
+        Event::Ready { .. } => eprintln!("Ready to sing.  ({:.1} s)", started.elapsed().as_secs_f64()),
         Event::Failed { .. } => {} // `result?` below reports this once, in main.
-    });
+    };
+    let result = jobs::prepare(&ctx, &lib, &mut model, &lookup, track_id, &AtomicBool::new(false), &mut |e| show(e));
     result?;
+    lookup.finish();
+    lyrics_rx.try_iter().for_each(show);
     let lyrics = lib.lyrics(track_id)?.map(|l| l.lines.len()).unwrap_or(0);
     println!("ready\t{}\tlyrics lines: {}", lib.track(track_id)?.title, lyrics);
     hide_output_for_the_rest_of_the_process();
