@@ -52,7 +52,7 @@
     } else if (e.key === " " && !typing && !target.closest?.("button, [role=button], [role=slider]") && player.track) {
       e.preventDefault();
       player.toggle();
-    } else if ((e.key === "/" && !typing) || (e.key === "f" && e.metaKey)) {
+    } else if (!typing && (e.key === "/" || (e.key === "f" && e.metaKey))) {
       e.preventDefault();
       ui.menu = null;
       ui.moreOpen = false;
