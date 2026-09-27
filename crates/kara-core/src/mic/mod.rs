@@ -1,9 +1,11 @@
-//! Phone mics: each phone's jitter buffer, gain and feedback control, summed through a shared reverb and a limiter.
+//! Phone mics: each phone's jitter buffer, gain, feedback control and voice effect, summed through a shared reverb and a limiter.
 
 mod buffer;
+mod effects;
 mod howl;
 
 pub use buffer::JitterBuffer;
+pub use effects::{Effect, Effects};
 pub use howl::Howl;
 use std::sync::Arc;
 
@@ -26,11 +28,12 @@ pub struct Level {
     pub down: bool,
 }
 
-/// A phone's id, buffer, feedback control and scratch room, made before taking the mixer lock.
+/// A phone's id, buffer, feedback control, voice effect and scratch room, made before taking the mixer lock.
 pub struct NewVoice {
     id: Arc<str>,
     buffer: JitterBuffer,
     howl: Howl,
+    effects: Effects,
     scratch: Vec<f32>,
 }
 
@@ -40,6 +43,7 @@ impl NewVoice {
             id: id.into(),
             buffer: JitterBuffer::new(in_rate, out_rate, floor_ms),
             howl: Howl::new(out_rate),
+            effects: Effects::new(out_rate),
             scratch: Vec::with_capacity(MOST_FRAMES),
         }
     }
@@ -49,6 +53,7 @@ struct Voice {
     id: Arc<str>,
     buffer: JitterBuffer,
     howl: Howl,
+    effects: Effects,
     gain: f32,
     peak: f32,
     scratch: Vec<f32>,
@@ -80,7 +85,7 @@ impl Mixer {
         self.floor_ms
     }
 
-    /// Starts taking a phone's sound. A phone already here swaps in only the fresh buffer and keeps its gain and feedback state;
+    /// Starts taking a phone's sound. A phone already here swaps in only the fresh buffer and keeps its gain, feedback and effect state;
     /// what it doesn't use comes back, to be dropped after unlocking.
     pub fn add(&mut self, mut new: NewVoice) -> Option<NewVoice> {
         let id = new.id.clone();
@@ -88,8 +93,8 @@ impl Mixer {
             std::mem::swap(&mut v.buffer, &mut new.buffer);
             return Some(new);
         }
-        let NewVoice { id, buffer, howl, scratch } = new;
-        self.voices.push(Voice { id, buffer, howl, gain: 1.0, peak: 0.0, scratch });
+        let NewVoice { id, buffer, howl, effects, scratch } = new;
+        self.voices.push(Voice { id, buffer, howl, effects, gain: 1.0, peak: 0.0, scratch });
         None
     }
 
@@ -117,6 +122,12 @@ impl Mixer {
         }
     }
 
+    pub fn set_effect(&mut self, id: &str, effect: Effect, amount: u8) {
+        if let Some(v) = self.voice(id) {
+            v.effects.set(effect, amount);
+        }
+    }
+
     /// Mixes the next `out.len()` samples of every phone, with reverb, never above the ceiling.
     pub fn render(&mut self, out: &mut [f32]) {
         out.fill(0.0);
@@ -124,6 +135,7 @@ impl Mixer {
             v.scratch.resize(out.len(), 0.0);
             v.buffer.pull(&mut v.scratch);
             v.howl.feed(&v.scratch);
+            v.effects.process(&mut v.scratch);
             let gain = v.gain * v.howl.gain();
             for (o, s) in out.iter_mut().zip(&v.scratch) {
                 let x = s * gain;
