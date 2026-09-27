@@ -1,0 +1,24 @@
+.phone { --side-w: 0px; position: relative; display: flex; flex-direction: column; height: 100dvh; padding: var(--s4) var(--s5) var(--s5); overflow: hidden; }
+.pscreen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pcenter { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: var(--s3); }
+.pscreen h1 { font: 800 30px/1.1 var(--display); letter-spacing: -.02em; }
+.lead { color: var(--muted); font-size: 16px; }
+.bigicon { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; background: var(--raised); }
+.bigicon.warn { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.bigicon .spin { width: 40px; height: 40px; border-width: 4px; }
+.pnote { display: flex; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--r-lg); background: var(--raised); font-size: 14px; text-align: left; }
+.pnote svg { flex: none; margin-top: 2px; color: var(--muted); }
+.pbtn { width: 100%; height: 56px; margin-top: var(--s4); border-radius: var(--r-lg); font-size: 17px; font-weight: 600; }
+.logo { width: 48px; height: 48px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--accent); color: var(--on-accent); }
+.pfield { display: grid; gap: 6px; margin-top: var(--s5); }
+.pinput { display: flex; align-items: center; gap: var(--s2); height: 52px; padding: 0 var(--s4); border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); }
+.pinput input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 18px; }
+.pinput .code-in { font: 500 20px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.pinput svg { color: var(--ready); }
+.phead { display: flex; align-items: center; gap: var(--s2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 70%; height: 28px; padding: 0 var(--s3); border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 600 14px var(--body); }
+.ptab { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; margin: 0 calc(-1 * var(--s5)) calc(-1 * var(--s5)); padding: 0 var(--s5) 96px; }
+.ptabs { position: absolute; z-index: 2; left: var(--s5); right: var(--s5); bottom: var(--s5); display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px var(--s2); border-radius: 999px; }
+.ptabs button { display: grid; justify-items: center; align-content: center; gap: 2px; height: 54px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.ptabs button[aria-pressed="true"] { color: var(--accent); }
+.pbanner { position: absolute; z-index: 3; left: var(--s4); right: var(--s4); top: var(--s4); min-height: 56px; display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--r-lg); font-weight: 500; }

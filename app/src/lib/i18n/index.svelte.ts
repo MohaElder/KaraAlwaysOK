@@ -43,7 +43,8 @@ class I18n {
   locale = $derived(this.choice ?? this.system);
 
   async init() {
-    this.system = matchLocale((await systemLocale().catch(() => null)) ?? navigator.language);
+    const system = "__TAURI_INTERNALS__" in window ? await systemLocale().catch(() => null) : null;
+    this.system = matchLocale(system ?? navigator.language);
   }
 
   pick(choice: Locale | null) {
