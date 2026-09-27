@@ -32,6 +32,17 @@ test("picking a language changes the text at once, but not song titles", async (
   await expect(page.getByRole("button", { name: /東京の夜空/ })).toBeVisible();
 });
 
+test("the sidebar tabs fit on one line at a readable size in every language", async ({ page }) => {
+  for (const name of ["English", "日本語", "한국어", "简体中文", "繁體中文", "Español"]) {
+    await page.locator(".side .foot button").click();
+    await page.getByRole("dialog").getByRole("combobox").first().selectOption(name);
+    await page.keyboard.press("Escape");
+    for (const label of await page.locator(".side .tabs .fit").all()) {
+      await expect.poll(() => label.evaluate((l) => l.scrollWidth <= l.clientWidth && parseFloat(getComputedStyle(l).fontSize) >= 11)).toBe(true);
+    }
+  }
+});
+
 test("the About row shows the icon, the name and the version", async ({ page }) => {
   const about = (await openSettings(page)).locator(".about");
   await expect(about).toContainText("KaraAlwaysOK");

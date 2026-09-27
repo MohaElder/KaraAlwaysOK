@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Kind } from "$lib/api";
   import type { Icon } from "$lib/icons";
-  import { t, type Key } from "$lib/i18n/index.svelte";
+  import { i18n, t, type Key } from "$lib/i18n/index.svelte";
   import { cardName, library } from "$lib/state/library.svelte";
   import { fade, slide } from "$lib/motion";
   import { ui } from "$lib/state/ui.svelte";
@@ -15,6 +15,7 @@
   import TrayIcon from "phosphor-svelte/lib/TrayIcon";
   import GearIcon from "phosphor-svelte/lib/GearIcon";
   import { tip } from "$lib/tooltip.svelte";
+  import { fit } from "$lib/fit";
 
   const tabs: { kind: Kind; label: Key; icon: Icon }[] = [
     { kind: "playlist", label: "kind.playlists", icon: PlaylistIcon },
@@ -24,9 +25,9 @@
 </script>
 
 <aside class="side">
-  <div class="tabs" role="toolbar" aria-label={t("library.browseBy")}>
+  <div class="tabs" role="toolbar" aria-label={t("library.browseBy")} use:fit={i18n.locale}>
     {#each tabs as tab (tab.kind)}
-      <button aria-pressed={library.kind === tab.kind} onclick={() => library.setKind(tab.kind)}><tab.icon size={15} />{t(tab.label)}</button>
+      <button aria-pressed={library.kind === tab.kind} onclick={() => library.setKind(tab.kind)}><tab.icon size={15} /><span class="fit">{t(tab.label)}</span></button>
     {/each}
   </div>
   <nav class="items">
@@ -63,8 +64,10 @@
 
 <style>
   .side { display: flex; flex-direction: column; min-height: 0; padding: var(--s3); background: var(--side); border-right: 1px solid var(--line); }
-  .tabs { display: flex; justify-content: space-between; padding: var(--s2) var(--s1) 0; border-bottom: 1px solid var(--line); }
-  .tabs button { display: flex; align-items: center; gap: 6px; padding-bottom: var(--s2); font-size: 13px; font-weight: 600; color: var(--muted); box-shadow: inset 0 -2px 0 transparent; }
+  .tabs { display: flex; gap: var(--s2); padding: var(--s2) var(--s1) 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .tabs button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-bottom: var(--s2); font-size: inherit; font-weight: 600; color: var(--muted); box-shadow: inset 0 -2px 0 transparent; }
+  .tabs button > :global(svg) { flex: none; }
+  .fit { max-width: 100%; overflow: hidden; white-space: nowrap; }
   .tabs button:hover { color: var(--text); }
   .tabs button[aria-pressed="true"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
   .items { flex: 1; min-height: 0; overflow: auto; padding: var(--s2) 0; display: flex; flex-direction: column; gap: 2px; }
