@@ -7,7 +7,7 @@
   let w = $state(0);
   let h = $state(0);
   const left = $derived(Math.max(8, Math.min(innerWidth - w - 8, alignRight ? x - w : x)));
-  const top = $derived(y + 4 + h > innerHeight - 8 ? Math.max(8, y - h - 4) : y + 4);
+  const top = $derived(y + 4 + h > innerHeight - 8 ? Math.max(8, y - h - (alignRight ? 36 : 4)) : y + 4);
   const outside = (e: Event) => !(e.target as Element).closest?.(".menu");
 </script>
 
@@ -18,5 +18,5 @@
 </div>
 
 <style>
-  .menu { position: fixed; width: 260px; }
+  .menu { position: fixed; }
 </style>

@@ -32,6 +32,7 @@
     await manage.edit(track, title, artist, album);
   }
 
+  const focus = (node: HTMLInputElement) => node.focus();
   const onEnter = (e: KeyboardEvent) => e.key === "Enter" && save();
 </script>
 
@@ -40,7 +41,7 @@
     <div class="edit">
       <Artwork track={s.track} size={128} />
       <div>
-        <label class="efield"><span class="cap hstack"><MusicNoteSimpleIcon size={14} />{t("edit.title")}</span><input bind:value={title} onkeydown={onEnter} /></label>
+        <label class="efield"><span class="cap hstack"><MusicNoteSimpleIcon size={14} />{t("edit.title")}</span><input bind:value={title} onkeydown={onEnter} use:focus /></label>
         <label class="efield"><span class="cap hstack"><UserIcon size={14} />{t("kind.artist")}</span><input bind:value={artist} onkeydown={onEnter} /></label>
         <label class="efield"><span class="cap hstack"><VinylRecordIcon size={14} />{t("kind.album")}</span><input bind:value={album} onkeydown={onEnter} /></label>
       </div>

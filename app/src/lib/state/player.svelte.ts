@@ -128,7 +128,7 @@ class PlayerState {
   async enqueue(trackId: number, next = false) {
     const wasIdle = this.idle;
     if (wasIdle) {
-      this.streamer.resume();
+      this.unlock();
       this.wantPlay = true;
     }
     const s = await queueAdd(trackId, next).catch(this.refused);
@@ -142,14 +142,14 @@ class PlayerState {
 
   /** Sing or Shuffle: replaces the queue and opens the karaoke view. */
   async playAll(trackIds: number[], shuffle: boolean) {
-    this.streamer.resume();
+    this.unlock();
     this.wantPlay = true;
     const order = shuffle ? [...trackIds].sort(() => Math.random() - 0.5) : trackIds;
     if (await playTracks(order, 0).catch(this.refused)) ui.karaoke = true;
   }
 
   toggle() {
-    this.streamer.resume();
+    this.unlock();
     this.wantPlay = !this.active;
     if (this.wantPlay) this.streamer.play();
     else this.streamer.pause();
