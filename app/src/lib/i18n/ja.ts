@@ -134,6 +134,19 @@ const ja: Record<Key, string> = {
   "toast.deleted": "「{name}」を削除しました",
   "toast.saved": "保存しました",
   "edit.title": "タイトル",
+  "menu.addToPlaylist": "プレイリストに追加",
+  "menu.removeFromPlaylist": "このプレイリストから削除",
+  "menu.newPlaylistDots": "新規プレイリスト…",
+  "library.newPlaylist": "新規プレイリスト",
+  "confirm.deletePlaylistBody": "曲はライブラリに残ります。",
+  "playlist.deleteAsk": "このプレイリストを削除しますか？曲はライブラリに残ります。",
+  "toast.removedFrom": "「{name}」から削除しました",
+  "toast.addedTo": "「{name}」に追加しました",
+  "toast.alreadyIn": "すでに「{name}」にあります",
+  "toast.created": "「{name}」を作成しました",
+  "playlist.rename": "名前を変更",
+  "playlist.delete": "プレイリストを削除",
+  "playlist.nameLabel": "プレイリスト名",
 };
 
 export default ja;

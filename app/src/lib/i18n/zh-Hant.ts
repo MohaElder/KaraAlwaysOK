@@ -134,6 +134,19 @@ const zhHant: Record<Key, string> = {
   "toast.deleted": "已刪除「{name}」",
   "toast.saved": "已儲存",
   "edit.title": "標題",
+  "menu.addToPlaylist": "加入播放清單",
+  "menu.removeFromPlaylist": "從此播放清單移除",
+  "menu.newPlaylistDots": "新增播放清單…",
+  "library.newPlaylist": "新增播放清單",
+  "confirm.deletePlaylistBody": "歌曲會保留在資料庫中。",
+  "playlist.deleteAsk": "刪除這個播放清單？歌曲會保留在資料庫中。",
+  "toast.removedFrom": "已從「{name}」移除",
+  "toast.addedTo": "已加入「{name}」",
+  "toast.alreadyIn": "已在「{name}」中",
+  "toast.created": "已建立「{name}」",
+  "playlist.rename": "重新命名",
+  "playlist.delete": "刪除播放清單",
+  "playlist.nameLabel": "播放清單名稱",
 };
 
 export default zhHant;

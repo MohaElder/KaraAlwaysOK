@@ -134,6 +134,19 @@ const ko: Record<Key, string> = {
   "toast.deleted": "‘{name}’을(를) 삭제했습니다",
   "toast.saved": "저장했습니다",
   "edit.title": "제목",
+  "menu.addToPlaylist": "플레이리스트에 추가",
+  "menu.removeFromPlaylist": "이 플레이리스트에서 제거",
+  "menu.newPlaylistDots": "새 플레이리스트…",
+  "library.newPlaylist": "새 플레이리스트",
+  "confirm.deletePlaylistBody": "노래는 보관함에 남아 있습니다.",
+  "playlist.deleteAsk": "이 플레이리스트를 삭제할까요? 노래는 보관함에 남아 있습니다.",
+  "toast.removedFrom": "‘{name}’에서 제거했습니다",
+  "toast.addedTo": "‘{name}’에 추가했습니다",
+  "toast.alreadyIn": "이미 ‘{name}’에 있습니다",
+  "toast.created": "‘{name}’을(를) 만들었습니다",
+  "playlist.rename": "이름 변경",
+  "playlist.delete": "플레이리스트 삭제",
+  "playlist.nameLabel": "플레이리스트 이름",
 };
 
 export default ko;

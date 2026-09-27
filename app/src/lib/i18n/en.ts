@@ -132,6 +132,19 @@ const en = {
   "toast.deleted": "Deleted “{name}”",
   "toast.saved": "Saved",
   "edit.title": "Title",
+  "menu.addToPlaylist": "Add to playlist",
+  "menu.removeFromPlaylist": "Remove from this playlist",
+  "menu.newPlaylistDots": "New playlist…",
+  "library.newPlaylist": "New playlist",
+  "confirm.deletePlaylistBody": "The songs stay in your library.",
+  "playlist.deleteAsk": "Delete this playlist? The songs stay in your library.",
+  "toast.removedFrom": "Removed from “{name}”",
+  "toast.addedTo": "Added to “{name}”",
+  "toast.alreadyIn": "Already in “{name}”",
+  "toast.created": "Created “{name}”",
+  "playlist.rename": "Rename",
+  "playlist.delete": "Delete playlist",
+  "playlist.nameLabel": "Playlist name",
 };
 
 export default en;

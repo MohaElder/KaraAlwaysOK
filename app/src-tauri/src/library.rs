@@ -101,6 +101,46 @@ pub fn edit_track(state: State<'_, AppState>, track_id: i64, title: String, arti
     lib.track(track_id).plain()
 }
 
+#[tauri::command]
+pub fn create_playlist(state: State<'_, AppState>, name: String, track_ids: Vec<i64>) -> Result<i64, AppError> {
+    let lib = state.lib.lock().unwrap();
+    let id = lib.create_playlist(&name).plain()?;
+    for t in track_ids {
+        lib.add_to_collection(id, t).plain()?;
+    }
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn rename_playlist(state: State<'_, AppState>, id: i64, name: String) -> Result<(), AppError> {
+    state.lib.lock().unwrap().rename_playlist(id, name.trim()).plain()
+}
+
+#[tauri::command]
+pub fn delete_playlist(state: State<'_, AppState>, id: i64) -> Result<(), AppError> {
+    state.lib.lock().unwrap().delete_playlist(id).plain()
+}
+
+#[tauri::command]
+pub fn add_to_playlist(state: State<'_, AppState>, playlist_id: i64, track_id: i64) -> Result<bool, AppError> {
+    state.lib.lock().unwrap().add_to_collection(playlist_id, track_id).plain()
+}
+
+#[tauri::command]
+pub fn remove_from_playlist(state: State<'_, AppState>, playlist_id: i64, track_id: i64) -> Result<(), AppError> {
+    state.lib.lock().unwrap().remove_from_collection(playlist_id, track_id).plain()
+}
+
+#[tauri::command]
+pub fn move_in_playlist(state: State<'_, AppState>, playlist_id: i64, track_id: i64, to: usize) -> Result<(), AppError> {
+    state.lib.lock().unwrap().move_in_collection(playlist_id, track_id, to).plain()
+}
+
+#[tauri::command]
+pub fn playlists_with(state: State<'_, AppState>, track_id: i64) -> Result<Vec<i64>, AppError> {
+    state.lib.lock().unwrap().collections_of(track_id).plain()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

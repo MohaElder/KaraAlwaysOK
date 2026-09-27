@@ -111,3 +111,11 @@ export const addFile = (path: string) => invoke<Track>("add_file", { path });
 export const addLink = (url: string) => invoke<Track>("add_link", { url });
 export const startAdding = (trackId: number) => invoke<boolean>("start_adding", { trackId });
 export const deleteTrack = (trackId: number) => invoke<void>("delete_track", { trackId });
+
+export const createPlaylist = (name: string, trackIds: number[]) => invoke<number>("create_playlist", { name, trackIds });
+export const renamePlaylist = (id: number, name: string) => invoke<void>("rename_playlist", { id, name });
+export const deletePlaylist = (id: number) => invoke<void>("delete_playlist", { id });
+export const addToPlaylist = (playlistId: number, trackId: number) => invoke<boolean>("add_to_playlist", { playlistId, trackId });
+export const removeFromPlaylist = (playlistId: number, trackId: number) => invoke<void>("remove_from_playlist", { playlistId, trackId });
+export const moveInPlaylist = (playlistId: number, trackId: number, to: number) => invoke<void>("move_in_playlist", { playlistId, trackId, to });
+export const playlistsWith = (trackId: number) => invoke<number[]>("playlists_with", { trackId });

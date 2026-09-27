@@ -134,6 +134,19 @@ const es: Record<Key, string> = {
   "toast.deleted": "Se eliminó «{name}»",
   "toast.saved": "Guardado",
   "edit.title": "Título",
+  "menu.addToPlaylist": "Añadir a lista",
+  "menu.removeFromPlaylist": "Quitar de esta lista",
+  "menu.newPlaylistDots": "Nueva lista…",
+  "library.newPlaylist": "Nueva lista",
+  "confirm.deletePlaylistBody": "Las canciones se quedan en tu biblioteca.",
+  "playlist.deleteAsk": "¿Eliminar esta lista? Las canciones se quedan en tu biblioteca.",
+  "toast.removedFrom": "Se quitó de «{name}»",
+  "toast.addedTo": "Se añadió a «{name}»",
+  "toast.alreadyIn": "Ya está en «{name}»",
+  "toast.created": "Se creó «{name}»",
+  "playlist.rename": "Cambiar nombre",
+  "playlist.delete": "Eliminar lista",
+  "playlist.nameLabel": "Nombre de la lista",
 };
 
 export default es;

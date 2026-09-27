@@ -4,7 +4,11 @@
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { cardName, library } from "$lib/state/library.svelte";
   import { fade, slide } from "$lib/motion";
+  import { ui } from "$lib/state/ui.svelte";
+  import { manage } from "$lib/state/manage.svelte";
   import Cover from "./Cover.svelte";
+  import RenameInput from "./RenameInput.svelte";
+  import PlusIcon from "phosphor-svelte/lib/PlusIcon";
   import PlaylistIcon from "phosphor-svelte/lib/PlaylistIcon";
   import VinylRecordIcon from "phosphor-svelte/lib/VinylRecordIcon";
   import UserIcon from "phosphor-svelte/lib/UserIcon";
@@ -24,10 +28,27 @@
     {/each}
   </div>
   <nav class="items">
+    {#if library.kind === "playlist"}
+      <button class="item newpl" onclick={() => manage.newPlaylist()}><span class="plus"><PlusIcon size={16} /></span><span class="nm grow">{t("library.newPlaylist")}</span></button>
+    {/if}
     {#each library.visibleCards as c (c.id)}
-      <button class="item" aria-current={library.selected === c.id} onclick={() => library.select(c.id)} in:slide={{ y: 4 }}>
+      <button
+        class="item"
+        aria-current={library.selected === c.id}
+        onclick={() => library.select(c.id)}
+        oncontextmenu={(e) => {
+          if (c.kind !== "playlist") return;
+          e.preventDefault();
+          ui.menu = { kind: "playlist", card: c, x: e.clientX, y: e.clientY };
+        }}
+        in:slide={{ y: 4 }}
+      >
         <Cover covers={c.covers} size={32} grid={c.kind === "playlist"} round={c.kind === "artist"} />
-        <span class="nm grow ell">{cardName(c)}</span>
+        {#if ui.renaming?.place === "sidebar" && ui.renaming.id === c.id}
+          <span class="nm grow"><RenameInput value={c.name} onDone={(name) => manage.finishRename(name)} /></span>
+        {:else}
+          <span class="nm grow ell">{cardName(c)}</span>
+        {/if}
       </button>
     {:else}
       {#if library.loaded}<div class="note" in:fade><TrayIcon size={16} />{t("library.nothingHere")}</div>{/if}
@@ -48,6 +69,8 @@
   .item[aria-current="true"] { background: color-mix(in srgb, var(--text) 10%, transparent); }
   .item[aria-current="true"] .nm { color: var(--accent); }
   .nm { font-weight: 500; transition: color var(--t) var(--ease); }
+  .plus { width: 32px; height: 32px; border-radius: 6px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--muted); flex: none; }
+  .newpl .nm { color: var(--muted); }
   .note { display: flex; gap: var(--s2); align-items: center; padding: var(--s4) var(--s2); color: var(--muted); font-size: 13px; }
   .foot { display: flex; align-items: center; justify-content: flex-end; min-height: 44px; padding-top: var(--s3); border-top: 1px solid var(--line); }
 </style>

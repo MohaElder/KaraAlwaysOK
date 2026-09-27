@@ -134,6 +134,19 @@ const zhHans: Record<Key, string> = {
   "toast.deleted": "已删除“{name}”",
   "toast.saved": "已保存",
   "edit.title": "标题",
+  "menu.addToPlaylist": "添加到播放列表",
+  "menu.removeFromPlaylist": "从此播放列表移除",
+  "menu.newPlaylistDots": "新建播放列表…",
+  "library.newPlaylist": "新建播放列表",
+  "confirm.deletePlaylistBody": "歌曲会保留在资料库中。",
+  "playlist.deleteAsk": "删除这个播放列表？歌曲会保留在资料库中。",
+  "toast.removedFrom": "已从“{name}”移除",
+  "toast.addedTo": "已添加到“{name}”",
+  "toast.alreadyIn": "已在“{name}”中",
+  "toast.created": "已创建“{name}”",
+  "playlist.rename": "重命名",
+  "playlist.delete": "删除播放列表",
+  "playlist.nameLabel": "播放列表名称",
 };
 
 export default zhHans;
