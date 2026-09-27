@@ -54,12 +54,15 @@ class PlayerState {
     requestAnimationFrame(frame);
   }
 
-  /** Takes a queue snapshot; loads the song when the current entry changed. */
+  /** Takes a queue snapshot from the `player` event; loads the song when the current entry changed. */
   apply(s: PlayerSnapshot) {
     this.snapshot = s;
     const cur = s.current == null ? null : s.entries[s.current];
     if ((cur?.key ?? null) === this.loadedKey) {
-      if (cur && this.singerDraft == null) this.streamer.setSinger(cur.track.vocalRemoval);
+      if (cur && !this.savingSinger) {
+        this.singerDraft = null;
+        this.streamer.setSinger(cur.track.vocalRemoval);
+      }
       if (cur) this.streamer.setKey(cur.track.keySemitones);
       return;
     }
@@ -82,7 +85,6 @@ class PlayerState {
     }
     const s = await queueAdd(trackId, next).catch(this.refused);
     if (!s) return;
-    this.apply(s);
     if (wasIdle) ui.karaoke = true;
     else {
       const title = s.entries.find((e) => e.track.id === trackId)?.track.title ?? "";
@@ -95,10 +97,7 @@ class PlayerState {
     this.streamer.resume();
     this.wantPlay = true;
     const order = shuffle ? [...trackIds].sort(() => Math.random() - 0.5) : trackIds;
-    const s = await playTracks(order, 0).catch(this.refused);
-    if (!s) return;
-    this.apply(s);
-    ui.karaoke = true;
+    if (await playTracks(order, 0).catch(this.refused)) ui.karaoke = true;
   }
 
   toggle() {
@@ -110,11 +109,11 @@ class PlayerState {
 
   async previous() {
     if (this.streamer.position() > 3) this.streamer.seek(0);
-    else this.apply(await skipSong(-1));
+    else await skipSong(-1).catch(this.refused);
   }
 
   async next() {
-    this.apply(await skipSong(1));
+    await skipSong(1).catch(this.refused);
   }
 
   seek(target: number) {
@@ -130,22 +129,26 @@ class PlayerState {
   }
 
   async setKey(semitones: number) {
-    this.apply(await setKey(semitones));
+    await setKey(semitones).catch(this.refused);
   }
 
   async setLyricOffset(ms: number) {
-    this.apply(await setLyricOffset(ms));
+    await setLyricOffset(ms).catch(this.refused);
   }
 
+  /** Saves the slider's latest value; a refused save puts the slider back to the saved one. */
   private async saveSinger() {
     this.savingSinger = true;
     while (this.pendingSinger != null) {
       const value = this.pendingSinger;
       this.pendingSinger = null;
-      this.snapshot = await setSinger(value);
+      if (!(await setSinger(value).catch(this.refused))) {
+        this.pendingSinger = null;
+        this.singerDraft = null;
+        this.streamer.setSinger(this.singer);
+      }
     }
     this.savingSinger = false;
-    this.singerDraft = null;
   }
 
   private async loadLyrics(trackId: number) {
@@ -165,7 +168,7 @@ class PlayerState {
     toasts.show(say(e), { icon: WarningIcon, action: { label: t("common.tryAgain"), icon: ArrowClockwiseIcon, run: () => void retryPrepare() } });
   }
 
-  /** Tells the user why the queue didn't change. */
+  /** Tells the user why the queue or a setting didn't change. */
   private refused = (e: unknown) => {
     toasts.show(say(e), { icon: WarningIcon });
     if (this.idle) this.wantPlay = false;
@@ -181,7 +184,7 @@ class PlayerState {
   }
 
   private async songFinished() {
-    this.apply(await songEnded());
+    await songEnded().catch(this.refused);
   }
 }
 

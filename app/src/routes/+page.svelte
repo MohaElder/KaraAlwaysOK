@@ -6,6 +6,7 @@
   import GettingReady from "$lib/components/GettingReady.svelte";
   import Tooltip from "$lib/components/Tooltip.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
+  import PlayerBar from "$lib/components/PlayerBar.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
@@ -36,6 +37,7 @@
     </div>
   </main>
 </div>
+<PlayerBar />
 <GettingReady />
 <Toasts />
 <Tooltip />
