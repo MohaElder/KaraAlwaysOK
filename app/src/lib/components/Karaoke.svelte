@@ -35,8 +35,7 @@
 <style>
   .kara { position: fixed; inset: 0; z-index: 20; display: grid; grid-template-rows: auto 1fr; overflow: hidden; background: var(--bg); }
   .shade { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--bg) 25%, transparent), color-mix(in srgb, var(--bg) 85%, transparent)); }
-  .ktop, .kara > :global(.lyr) { position: relative; }
-  .ktop { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--s3); padding: var(--s4) var(--s6); }
+  .ktop { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--s3); padding: var(--s4) var(--s6); }
   .who { gap: var(--s3); min-width: 0; }
   .round { border-radius: 50%; width: 36px; height: 36px; color: var(--text); }
   .round:hover { background: var(--glass-hi); }

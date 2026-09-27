@@ -7,21 +7,31 @@
   const items = $derived(player.lyrics ? timeline(player.lyrics.lines) : []);
   const t = $derived(player.position - player.lyricOffset / 1000);
   const now = $derived(itemAt(items, t));
-  const none = $derived(player.lyrics != null && items.length === 0);
+  const none = $derived(player.lyrics?.source === "none");
   let list: HTMLDivElement | undefined = $state();
-  let shift = $state(0);
+  let width = $state(0);
+  let placed = $state(false);
 
+  /** Centers the current line; the first placement jumps there without animating. */
   $effect(() => {
+    void width;
     const el = list?.children[now] as HTMLElement | undefined;
-    if (el && items.length) shift = el.offsetTop + el.offsetHeight / 2;
+    if (!list || !el) return;
+    list.style.transform = `translateY(${-(el.offsetTop + el.offsetHeight / 2)}px)`;
+    if (!placed) {
+      void list.offsetWidth;
+      placed = true;
+    }
   });
 </script>
+
+<svelte:window bind:innerWidth={width} />
 
 <div class="lyr">
   {#if none}
     <div class="nolyr" in:fade><h2>{text("karaoke.noLyrics")}</h2></div>
   {:else}
-    <div class="track" bind:this={list} style:transform="translateY({-shift}px)">
+    <div class="track" class:placed bind:this={list}>
       {#each items as x, i (i)}
         {#if x.gap}
           <p class="line gap" class:now={i === now}>
@@ -39,8 +49,9 @@
 
 <style>
   .lyr { position: relative; overflow: hidden; margin-bottom: 112px; -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); }
-  .track { position: absolute; left: 0; right: 0; top: 50%; max-width: 1100px; margin: 0 auto; padding: 0 max(var(--s6), 6vw); text-align: center; transition: transform var(--t) var(--ease); }
-  @media (prefers-reduced-motion: reduce) { .track { transition: none; } }
+  .track { position: absolute; left: 0; right: 0; top: 50%; max-width: 1100px; margin: 0 auto; padding: 0 max(var(--s6), 6vw); text-align: center; }
+  .placed { transition: transform var(--t) var(--ease); }
+  @media (prefers-reduced-motion: reduce) { .placed { transition: none; } }
   .line { font: 800 clamp(28px, 3.4vw, 40px)/1.15 var(--display); letter-spacing: -.02em; margin: 0 0 .5em; opacity: .3; transition: opacity var(--t) var(--ease); text-wrap: balance; }
   .line.now { opacity: 1; }
   .line.past { opacity: .14; }

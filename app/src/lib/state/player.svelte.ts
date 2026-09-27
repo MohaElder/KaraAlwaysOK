@@ -83,6 +83,7 @@ class PlayerState {
   private streamer!: Streamer;
   private loadedKey: number | null = null;
   private wantPlay = false;
+  private frame = 0;
 
   /** Starts the streamer and follows the queue and the engine. */
   async init() {
@@ -94,11 +95,6 @@ class PlayerState {
     await onPlayer((s) => this.apply(s));
     await onEngine((e) => this.onEngine(e));
     this.apply(await playerState());
-    const frame = () => {
-      this.position = this.streamer.position();
-      requestAnimationFrame(frame);
-    };
-    requestAnimationFrame(frame);
   }
 
   /** Takes a queue snapshot from the `player` event; loads the song when the current entry changed. */
@@ -214,11 +210,19 @@ class PlayerState {
 
   private sync() {
     this.phase = this.streamer.phase;
+    this.position = this.streamer.position();
+    if (this.phase === "playing" && !this.frame) this.tick();
     this.duration = this.streamer.songDuration;
     this.ready = this.streamer.ready;
     this.waitLabel = this.streamer.waiting;
     this.keyWorks = this.streamer.keyWorks;
   }
+
+  /** Follows the playing position every animation frame until playback stops. */
+  private tick = () => {
+    this.position = this.streamer.position();
+    this.frame = this.streamer.phase === "playing" ? requestAnimationFrame(this.tick) : 0;
+  };
 
   private async songFinished() {
     await songEnded().catch(this.refused);
