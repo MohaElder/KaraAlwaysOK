@@ -109,7 +109,7 @@ kara-always-oki/
 ├─ crates/
 │  ├─ kara-core      pure Rust, no Tauri
 │  │  ├─ provider/   Provider trait → Local (MVP); Spotify, Apple Music (phase 3)
-│  │  ├─ ingest/     file or link → decode → standard audio (FLAC, 44.1 kHz stereo)
+│  │  ├─ ingest/     file or link → keep the original, decode to standard audio (44.1 kHz stereo f32 in memory)
 │  │  ├─ separate/   ONNX Runtime session (CoreML), overlapping chunk plan, writes stem chunks
 │  │  ├─ lyrics/     LRCLIB client, LRC + embedded-tag parsing, word timing
 │  │  ├─ library/    SQLite (rusqlite), migrations, FTS5 search
@@ -266,7 +266,7 @@ artwork/<sha>.jpg
 ## 5. Cache
 
 - **Original + vocals only** (decided 2026-09-27). Keep the fetched file as-is and store only the vocals chunks; the instrumental is original − vocals, computed at playback. About 15 MB per 3-minute song (measured: 5.7 MB original + 9.1 MB vocals), no clipping (vocals stored 16-bit with 6 dB headroom; 24-bit doubled the size for no audible gain), and slider-at-0 plays the exact original. The singer slider at k plays original − k × vocals, which is the same as blending the original and the instrumental. Switching models re-separates from the original.
-- **Budget + LRU.** Default 5 GB (setting `cache_budget_bytes`). Over budget → delete the whole song folder (original included) of the least recently played songs (`last_used_at`); the track stays and goes back to *New*, and a link song downloads again next time. Never evicted: the playing song, queued songs, and local files whose original has moved or been deleted.
+- **Budget + LRU.** Default 5 GB (setting `cache_budget_bytes`). Over budget → delete whole song folders (original included): unfinished songs first, then the least recently played ready ones (`last_used_at`); the track stays and goes back to *New*, and a link song downloads again next time. Never evicted: the playing song, queued songs, and local files whose original has moved or been deleted.
 - **Kept forever:** lyrics (including `none`, retried after 7 days) and artwork.
 - **Outside the budget:** model, ONNX Runtime, yt-dlp.
 - **Startup cleanup:** delete `.part` files, `tmp/` and chunk files from earlier builds (`NNNN.vocals.flac`, `NNNN.inst.flac`); recount `chunks_done` from the vocals chunks on disk.
