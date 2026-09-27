@@ -1,0 +1,253 @@
+# kara-always-oki — Design
+
+Date: 2026-09-26
+Status: approved in brainstorming, pending written-spec review
+
+## 1. What it is
+
+A desktop karaoke app. Pick any song and sing over it: the app strips the vocals (fully, or partly via a slider) and shows synced lyrics. Songs come from your own files, links, and later your Spotify / Apple Music library. Friends join by scanning a QR code and use their phones as live microphones.
+
+- Open-source, personal use, distributed as GitHub release downloads.
+- Target: macOS on Apple Silicon (M1 baseline). App memory budget: 4 GB.
+- Local-only: no servers we run, nothing we pay for. Audio, stems and lyrics stay on the computer.
+
+### Success criteria (MVP)
+
+1. Drop a file or paste a supported link → singing starts within ~10 s on an M1.
+2. Vocal slider changes the mix live without restarting the song; slider at 0 is the original.
+3. Separation stays ahead of playback for a normal song on an M1, within the 4 GB budget.
+4. Synced lyrics show for songs LRCLIB or the file's tags know.
+
+## 2. Experience (settled via prototype)
+
+Reference prototype: `docs/prototype/experience.html` (also published as a private artifact). All songs and lyrics in it are made up; every song plays one demo tune.
+
+**Library** — modeled on the Apple Music Mac app, styled after cosmos.so (quiet, image-led, grotesk type).
+- Sidebar, three layers:
+  1. Provider switcher: **All** · Apple Music · Spotify · Local. Default is All, which merges connected providers.
+  2. Tabs: **Playlists · Albums · Artists**.
+  3. List of collections; selecting one shows its songs in the main pane (cover, title, *Sing* / *Shuffle*, song rows with a small "Ready" / "Preparing 42%" status).
+- In All, each collection shows small provider dots. Artists with the same name merge across providers.
+- A disconnected provider shows a *Connect* prompt in its view.
+
+**Search bar** — "Search anything, or paste a link".
+- Text → search across all connected providers (songs, plus matching playlists/albums/artists).
+- Link → accepted only if an open-source tool can pull audio from it (yt-dlp–supported sites such as YouTube, SoundCloud, Bandcamp, Vimeo, archive.org, Mixcloud) or it points directly to an audio file. Enter processes it.
+- Spotify / Apple Music / other streaming links are rejected with a plain explanation and a nudge to search instead.
+- Files can be dropped anywhere in the window.
+- Added songs land in **Local › Imported**.
+
+**Preparing** — a short sheet: *Downloading / Reading the file → Preparing the audio → Finding the lyrics → Taking the vocals out*, then the karaoke view opens. Playback starts once the first ~6 s are separated; separation runs ahead of the playhead. If playback catches up, it pauses with "Catching up…" and resumes. You can't seek past what's ready.
+
+**Player bar** — floating, like Apple Music's mini player: previous / play / next, artwork + title (click to open/close the karaoke view), a thin progress line whose lighter band shows how far ahead the song is prepared, the vocal slider, and a "…" menu.
+
+**Vocal slider** — one thin Apple-style slider with a mic icon. Fully left = off (original vocals, icon greys out). Fully right = instrumental (default). No presets.
+
+**"…" menu** — Key (−6…+6 semitones), Lyrics timing (±0.1 s steps), which audio version a streaming song uses (phase 3), where lyrics came from.
+
+**Karaoke view** — full screen, blurred artwork background, big lyrics with word-by-word fill, current line centered. Top-right: the mic pill. Collapse chevron returns to the library; music keeps playing.
+
+**Mic pill** — top-right in both library and karaoke view. Handheld-karaoke-mic icon + number of joined phones, or a **+** when none. Opens the connect window: QR code, join code, a short tutorial for the one-time browser warning (iPhone: *Show Details → visit this website*; Android: *Advanced → Proceed*), and the list of joined phones with a level meter, volume and Remove.
+
+**Copy rule** — no engineering vocabulary in the UI (no "stems", "FLAC", "LRCLIB", "chunks", IPs/ports).
+
+## 3. Architecture
+
+Pipeline: **provider → processor → streamer → UI**. Rust does fetching, decoding and ML; the web view does playback and mixing.
+
+```
+kara-always-oki/
+├─ crates/
+│  ├─ kara-core      pure Rust, no Tauri
+│  │  ├─ provider/   Provider trait → Local (MVP); Spotify, Apple Music (phase 3)
+│  │  ├─ ingest/     file or link → decode → standard audio (FLAC, 44.1 kHz stereo)
+│  │  ├─ separate/   ONNX Runtime session (CoreML), overlapping chunk plan, writes stem chunks
+│  │  ├─ lyrics/     LRCLIB client, LRC + embedded-tag parsing, word timing
+│  │  ├─ library/    SQLite (rusqlite), migrations, FTS5 search
+│  │  ├─ cache/      disk budget, LRU eviction, startup cleanup
+│  │  └─ jobs/       single worker, cancellable, priority = current song
+│  └─ kara-cli       `kara ingest | separate | bench` — headless use and benchmarks
+└─ app/
+   ├─ src-tauri/     Tauri 2: commands split per module, progress events, binary chunk transfer;
+   │                 phase 2: phone-mic HTTPS server (axum + rustls, rcgen self-signed cert) + WebSocket signaling
+   └─ src/           Svelte 5 + SvelteKit (adapter-static) UI and Web Audio engine
+```
+
+### 3.1 Provider
+`Provider` lists collections and tracks and says how to get audio for a track.
+- **Local (MVP):** files the user dropped and links they pasted. Ingest creates album/artist collections from tags, so every provider produces collections the same way.
+- **Spotify (phase 3):** Web API with OAuth PKCE; playlists, saved albums, followed artists. Audio comes from a matched upload (yt-dlp search), user can switch the match.
+- **Apple Music (phase 3):** read the library from the Music app on the Mac (scripting bridge), avoiding the paid developer token. Same matching as Spotify.
+
+### 3.2 Processor
+One job chain per song, run by `jobs/` (one worker; switching songs cancels the old chain; current song first; when it finishes, the next queued song starts preparing).
+1. **Fetch** — files: read in place. Links: yt-dlp downloads audio as M4A into a temp dir.
+2. **Standardize** — decode with symphonia (pure Rust; MP3, AAC/M4A, FLAC, WAV, Vorbis, and audio inside MP4), resample with rubato to 44.1 kHz stereo, write `source.flac`, compute `audio_hash` (SHA-256 of the decoded PCM). Same hash → reuse existing stems.
+3. **Lyrics** (in parallel with separation) — embedded synced lyrics first, then LRCLIB by title + artist + duration. Line-level timings get even word timing across each line. Not found → stored as `none`, song still plays.
+4. **Separate** — 10 s chunks with overlap for model context, cropped back to seamless edges (same idea as filmrev's `plan_tiles`). Model outputs vocals; instrumental = mix − vocals, so vocals + instrumental = original. Each chunk writes `NNNN.vocals.flac` + `NNNN.inst.flac` via `.part` + rename. Progress events after each chunk.
+
+Only yt-dlp is an external binary; no ffmpeg.
+
+### 3.3 Streamer (web view)
+- Fetches chunk pairs ahead of the playhead as raw bytes (Tauri `ipc::Response` / `Channel`, never JSON/base64), decodes, and schedules them back-to-back on the `AudioContext` clock.
+- Mix graph: `vocals → gain(1 − slider)` + `instrumental` → key shift (signalsmith-stretch in an AudioWorklet) → output. Phase 2 adds phone-mic inputs (WebRTC) with reverb into the same output.
+- Keeps a sliding window of decoded chunks (previous 1 + next 3 ≈ 50 MB).
+- The audio clock drives lyric highlighting (with the source's lyric offset).
+
+### 3.4 Phone mics (phase 2)
+- The app runs an HTTPS server on the LAN with a self-signed certificate it generates on first launch (browsers only allow microphone access on HTTPS). The QR code encodes that address plus a join code.
+- The phone page (bundled static page) captures the mic with echo cancellation on and connects by WebRTC to the desktop web view; signaling runs over the app's own WebSocket. Audio goes phone → Mac directly over Wi-Fi.
+- Voices play live through the computer speakers with reverb. Expected delay ~40–100 ms.
+- No external servers, no native phone app.
+
+### 3.5 ML runtime (patterns from filmrev)
+- `ort` 2.x with `load-dynamic`, CoreML execution provider on macOS.
+- ONNX Runtime dylib and the model are downloaded on first use: manifest with SHA-256, verify in memory, write `.part`, rename, stream progress. The dylib must be re-signed with the app's Developer ID under Hardened Runtime.
+- Session created once and reused (filmrev rebuilds per call — don't).
+- Inference runs in `spawn_blocking`/a dedicated thread, never on the async runtime.
+- Input/output names and shapes read from the model at load time.
+- Memory sampler writes a periodic `MEM` line to the debug log.
+- Release profile: `lto = "thin"`, `codegen-units = 1`; dev profile builds dependencies at `opt-level = 3`.
+
+### 3.6 Model choice (spike, first plan task)
+Benchmark via `kara bench`: an MDX-Net vocals ONNX model vs. an ONNX export of HTDemucs. Measure speed as a multiple of real time on an M1, peak memory, quality by ear on a fixed test set, and license compatibility. Pick the winner; must be ≥ 2× real time and fit the 4 GB budget.
+
+## 4. Data schema (SQLite)
+
+```sql
+provider_account(
+  provider      TEXT PRIMARY KEY CHECK (provider IN ('spotify','apple')),
+  display_name  TEXT,
+  connected_at  INTEGER                 -- tokens live in the macOS Keychain
+);
+
+track(
+  id            INTEGER PRIMARY KEY,
+  provider      TEXT NOT NULL,          -- 'local' | 'spotify' | 'apple'
+  provider_ref  TEXT,                   -- NULL for local
+  title         TEXT NOT NULL,
+  artist        TEXT,
+  album         TEXT,
+  duration_ms   INTEGER,
+  artwork_path  TEXT,
+  added_at      INTEGER NOT NULL,
+  vocal_removal INTEGER NOT NULL DEFAULT 100,  -- 0 = original, 100 = instrumental
+  key_semitones INTEGER NOT NULL DEFAULT 0,    -- −6 … +6
+  UNIQUE (provider, provider_ref)
+);
+
+collection(
+  id            INTEGER PRIMARY KEY,
+  provider      TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('playlist','album','artist')),
+  provider_ref  TEXT,
+  name          TEXT NOT NULL,
+  subtitle      TEXT,
+  artwork_path  TEXT,
+  UNIQUE (provider, kind, provider_ref)
+);
+
+collection_track(
+  collection_id INTEGER NOT NULL REFERENCES collection ON DELETE CASCADE,
+  track_id      INTEGER NOT NULL REFERENCES track ON DELETE CASCADE,
+  position      INTEGER NOT NULL,
+  PRIMARY KEY (collection_id, track_id)
+);
+
+audio_source(
+  id              INTEGER PRIMARY KEY,
+  track_id        INTEGER NOT NULL REFERENCES track ON DELETE CASCADE,
+  kind            TEXT NOT NULL CHECK (kind IN ('file','link','match')),
+  uri             TEXT NOT NULL,        -- original path or URL
+  label           TEXT,
+  duration_ms     INTEGER,
+  selected        INTEGER NOT NULL DEFAULT 0,
+  audio_hash      TEXT,                 -- NULL until standardized
+  lyric_offset_ms INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL CHECK (status IN ('pending','fetching','ready','failed')),
+  error           TEXT
+);
+CREATE UNIQUE INDEX one_selected_source ON audio_source(track_id) WHERE selected = 1;
+
+separation(
+  audio_hash    TEXT NOT NULL,
+  model_id      TEXT NOT NULL,
+  chunk_ms      INTEGER NOT NULL,
+  chunks_total  INTEGER NOT NULL,
+  chunks_done   INTEGER NOT NULL DEFAULT 0,
+  status        TEXT NOT NULL CHECK (status IN ('queued','running','ready','failed','cancelled')),
+  size_bytes    INTEGER NOT NULL DEFAULT 0,
+  last_used_at  INTEGER,
+  PRIMARY KEY (audio_hash, model_id)
+);
+
+lyrics(
+  track_id   INTEGER PRIMARY KEY REFERENCES track ON DELETE CASCADE,
+  source     TEXT NOT NULL CHECK (source IN ('lrclib','embedded','none')),
+  lines      TEXT,   -- JSON [{start_ms,end_ms,text,words:[{start_ms,end_ms,text}]}]
+  fetched_at INTEGER NOT NULL
+);
+
+setting(key TEXT PRIMARY KEY, value TEXT);   -- cache_budget_bytes, model_id, …
+
+CREATE VIRTUAL TABLE track_fts USING fts5(title, artist, album, content='track', content_rowid='id');
+```
+
+Rules:
+- UI status is derived, not stored: *New* (no separation row), *Preparing N%* (`chunks_done / chunks_total`), *Ready* (`status = 'ready'`).
+- The vocal slider and key follow the track; lyric timing follows the audio source (a version with an intro shifts it).
+- Not persisted: mic sessions, play queue, playback position.
+
+### Files on disk (`~/Library/Application Support/kara-always-oki/`)
+```
+kara.db
+runtime/libonnxruntime.dylib
+models/<model_id>.onnx
+bin/yt-dlp
+tmp/                                          downloads in flight
+audio/<audio_hash>/source.flac                deleted once separation is ready
+audio/<audio_hash>/<model_id>/NNNN.vocals.flac
+audio/<audio_hash>/<model_id>/NNNN.inst.flac
+artwork/<sha>.jpg
+```
+
+## 5. Cache
+
+- **Stems are canonical.** Because instrumental = mix − vocals, `source.flac` is deleted once separation is ready (~50 MB per 4-minute song instead of ~75 MB). Switching models later rebuilds the mix from the two stems.
+- **Budget + LRU.** Default 5 GB (setting `cache_budget_bytes`). Over budget → delete stems of the least recently played songs (`last_used_at`); the track stays and goes back to *New*. Never evicted: the playing song, queued songs, and local files whose original has moved or been deleted.
+- **Kept forever:** lyrics (including `none`, retried after 7 days) and artwork.
+- **Outside the budget:** model, ONNX Runtime, yt-dlp.
+- **Startup cleanup:** delete `.part` files and `tmp/`; recount `chunks_done` from complete chunk pairs on disk.
+- **Web view memory:** sliding window of decoded chunks, see 3.3.
+
+## 6. Error handling
+
+- Link unsupported → rejected in the search bar before any work (see §2).
+- Download fails / file unreadable → source `failed` with a plain message in the preparing sheet; nothing else changes.
+- Separation fails mid-song → playback pauses at the last ready chunk with a message; retry restarts from the first missing chunk.
+- Model / runtime / yt-dlp download fails or hash mismatch → retry prompt; nothing half-written is used.
+- No lyrics → song plays, karaoke view says "No lyrics found".
+- yt-dlp breaks because a site changed → self-update, then retry once.
+
+## 7. Testing
+
+- `kara-core`: unit tests on pure functions (chunk planning coverage and seams, LRC parsing, word timing, link verdicts, eviction choice, schema migrations) using `tempfile`.
+- Seam test: separate a known file, sum vocals + instrumental, compare to the source within 16-bit rounding.
+- `kara bench`: speed (× real time) and peak memory; used for the model spike and as a regression check.
+- Frontend: vitest for the chunk scheduler, lyric timing and search/link handling.
+
+## 8. Phases
+
+1. **MVP** — Local provider (file drop, pasted link), processor, streamer, library + search, karaoke view, vocal slider, key, lyric timing, cache. Starts with the model spike.
+2. **Phone mics** — HTTPS LAN server, QR join + tutorial, WebRTC into the mix, live through the speakers.
+3. **Spotify + Apple Music** — providers, library sync, match to uploads, match switching.
+
+Each phase gets its own implementation plan.
+
+## 9. Out of scope (for now)
+
+- Lyric timing from audio (Whisper) when no synced lyrics exist.
+- Recording or exporting performances.
+- Windows / Linux builds.
+- Mics plugged into the Mac.
+- Scoring, duets, multiple lyric tracks.
