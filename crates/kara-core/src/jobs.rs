@@ -103,6 +103,15 @@ fn refresh_lyrics(lib: &Library, track: &Track, fetcher: &(dyn LyricsFetcher + S
     }
 }
 
+/// For audio that's already separated: marks it used and looks up lyrics if due.
+fn finish_separated(ctx: &Ctx, lib: &Library, hash: &str, track: &Track, fetcher: &(dyn LyricsFetcher + Sync), cancel: &AtomicBool) -> Result<Outcome> {
+    lib.touch_separation(hash, &ctx.model_id, now_ms())?;
+    if lyrics_due(lib, track.id)? {
+        refresh_lyrics(lib, track, fetcher);
+    }
+    Ok(if cancel.load(Ordering::Relaxed) { Outcome::Cancelled } else { Outcome::Done })
+}
+
 fn prepare_inner(
     ctx: &Ctx,
     lib: &Library,
@@ -120,35 +129,20 @@ fn prepare_inner(
 
     if let Some(hash) = &source.audio_hash {
         if is_ready(ctx, lib, hash)? {
-            lib.touch_separation(hash, &ctx.model_id, now_ms())?;
-            if lyrics_due(lib, track_id)? {
-                refresh_lyrics(lib, &track, fetcher);
-            }
-            if cancel.load(Ordering::Relaxed) {
-                return Ok(Outcome::Cancelled);
-            }
-            return Ok(Outcome::Done);
+            return finish_separated(ctx, lib, hash, &track, fetcher, cancel);
         }
     }
 
     let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, emit)?;
     let track = lib.track(track_id).context("This song is no longer in your library.")?; // fetching may have filled in title/artist
-    // load_or_fetch may have just saved the file's own embedded lyrics, so
-    // this is re-checked, not the value from before it ran.
-    let need_lyrics = lyrics_due(lib, track_id)?;
     if is_ready(ctx, lib, &hash)? {
-        lib.touch_separation(&hash, &ctx.model_id, now_ms())?;
-        if need_lyrics {
-            refresh_lyrics(lib, &track, fetcher);
-        }
-        if cancel.load(Ordering::Relaxed) {
-            return Ok(Outcome::Cancelled);
-        }
-        return Ok(Outcome::Done);
+        return finish_separated(ctx, lib, &hash, &track, fetcher, cancel);
     }
     if cancel.load(Ordering::Relaxed) {
         return Ok(Outcome::Cancelled);
     }
+    // After load_or_fetch: it may have saved the file's embedded lyrics.
+    let need_lyrics = lyrics_due(lib, track_id)?;
 
     emit(Event::Stage { track_id, stage: Stage::Lyrics });
     std::thread::scope(|s| {
@@ -569,8 +563,32 @@ mod tests {
         assert_eq!(lib.lyrics(t).unwrap().unwrap().lines[0].text, "la la la");
     }
 
-    /// A FLAC with a made-up synced "lyrics" tag, built with ffmpeg since
-    /// this crate has no writer for tagged audio.
+    #[test]
+    fn a_cancel_during_the_ready_song_lyrics_lookup_is_honored() {
+        struct CancelsOnFetch<'a>(&'a AtomicBool);
+        impl LyricsFetcher for CancelsOnFetch<'_> {
+            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+                self.0.store(true, Ordering::Relaxed);
+                Ok(Some("[00:00.00]made up cancel line\n".into()))
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        lib.update_track_meta(t, "Title", Some("Artist"), None).unwrap();
+        run(&c, &lib, t, &AtomicBool::new(false)).0.unwrap();
+        lib.set_lyrics(t, LyricsSource::None, &[], 0).unwrap(); // "none" found long ago: due again
+
+        let cancel = AtomicBool::new(false);
+        let mut events = Vec::new();
+        let r = prepare(&c, &lib, &mut Silence, &CancelsOnFetch(&cancel), t, &cancel, &mut |e| events.push(e));
+        assert_eq!(r.unwrap(), Outcome::Cancelled);
+        assert!(!events.contains(&Event::Ready { track_id: t }));
+        assert_eq!(lib.lyrics(t).unwrap().unwrap().lines[0].text, "made up cancel line");
+    }
+
+    /// A FLAC with a made-up synced "lyrics" tag, built with ffmpeg.
     fn flac_with_embedded_lyrics(dir: &Path, name: &str) -> std::path::PathBuf {
         let p = dir.join(name);
         let status = std::process::Command::new("ffmpeg")
