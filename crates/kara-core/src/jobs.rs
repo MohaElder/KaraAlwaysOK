@@ -77,8 +77,11 @@ pub fn prepare(
     result
 }
 
+/// Marked ready in the library and every chunk file is still on disk.
 fn is_ready(ctx: &Ctx, lib: &Library, hash: &str) -> Result<bool> {
-    Ok(lib.separation(hash, &ctx.model_id)?.is_some_and(|r| r.status == SepStatus::Ready))
+    Ok(lib.separation(hash, &ctx.model_id)?.is_some_and(|r| {
+        r.status == SepStatus::Ready && cache::count_complete_chunks(&ctx.store, hash, &ctx.model_id) >= r.chunks_total
+    }))
 }
 
 /// Whether a lyrics lookup is worth doing: none tried yet, or the last try
@@ -463,6 +466,21 @@ mod tests {
         assert_eq!(events.last(), Some(&Event::Ready { track_id: t2 }));
         let hash = lib.selected_source(t2).unwrap().unwrap().audio_hash.unwrap();
         assert!(!c.store.source_path(&hash).exists());
+    }
+
+    #[test]
+    fn a_ready_song_with_a_missing_chunk_file_is_separated_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        run(&c, &lib, t, &AtomicBool::new(false)).0.unwrap();
+        let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
+        let lost = c.store.chunk_path(&hash, "test", 2, crate::store::Stem::Inst);
+        std::fs::remove_file(&lost).unwrap();
+        let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
+        assert!(events.contains(&Event::Progress { track_id: t, chunks_done: 3, chunks_total: 3 }));
+        assert!(lost.exists());
     }
 
     #[test]
