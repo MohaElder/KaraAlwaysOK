@@ -32,6 +32,7 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Search bar** — "Search anything, or paste a link". It is the app's main entry point: large and prominent at the top center.
 - Text → search across all connected providers (songs, plus matching playlists/albums/artists).
+- Link → a supported link shows a preview as a search result: the video/track thumbnail, its title, the channel and the duration, with the same add-to-queue / play-next actions (metadata from YouTube/SoundCloud/Vimeo oEmbed, falling back to `yt-dlp --dump-json`). No explanatory text.
 - Link → accepted only if an open-source tool can pull audio from it (yt-dlp–supported sites such as YouTube, SoundCloud, Bandcamp, Vimeo, archive.org, Mixcloud) or it points directly to an audio file. Enter processes it.
 - Spotify / Apple Music / other streaming links are rejected with a plain explanation and a nudge to search instead.
 - Files can be dropped anywhere in the window.
