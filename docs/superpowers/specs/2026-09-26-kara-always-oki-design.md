@@ -120,7 +120,7 @@ kara-always-oki/
 │  │  ├─ ingest/     file or link → keep the original, decode to standard audio (44.1 kHz stereo f32 in memory)
 │  │  ├─ separate/   ONNX Runtime session (CoreML), overlapping chunk plan, writes stem chunks
 │  │  ├─ lyrics/     LRCLIB client, LRC + embedded-tag parsing, word timing
-│  │  ├─ library/    SQLite (rusqlite), migrations, FTS5 search
+│  │  ├─ library/    SQLite (rusqlite), migrations, fuzzy search
 │  │  ├─ cache/      disk budget, LRU eviction, startup cleanup
 │  │  └─ jobs/       single worker, cancellable, priority = current song
 │  └─ kara-cli       `kara ingest | separate | bench` — headless use and benchmarks
@@ -247,7 +247,7 @@ lyrics(
 
 setting(key TEXT PRIMARY KEY, value TEXT);   -- cache_budget_bytes, model_id, …
 
-CREATE VIRTUAL TABLE track_fts USING fts5(title, artist, album, content='track', content_rowid='id');
+-- search: fuzzy match over track title/artist/album in kara-core, no index table
 ```
 
 Rules:

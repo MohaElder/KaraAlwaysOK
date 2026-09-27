@@ -580,6 +580,7 @@ mod tests {
             ("Paper Satellites", Some("Mina Okada")),
             ("Last Train Home", Some("Starling")),
             ("Starlight Road", None),
+            ("カラオケの夜", None),
         ] {
             l.add_track(&local(title, artist)).unwrap();
         }
@@ -590,6 +591,10 @@ mod tests {
             ("cancion", &["Canción del Río"]),
             ("ＡＢＣ", &["ABC Morning"]),
             ("bohmian", &["Bohemian Rhapsody"]),
+            ("bohemain", &["Bohemian Rhapsody"]),
+            ("bohemisn", &["Bohemian Rhapsody"]),
+            ("からおけ", &["カラオケの夜"]),
+            ("mo", &["ABC Morning"]),
             ("okada paper", &["Paper Satellites"]),
             ("starl", &["Starlight Road", "Last Train Home"]),
             ("zzqx", &[]),
@@ -785,7 +790,7 @@ mod tests {
         drop(conn);
         let l = Library::open(&p).unwrap();
         assert!(!l.search("old", 1).unwrap()[0].instrumental);
-        let fts: i64 = l.conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'track_%'", [], |r| r.get(0)).unwrap();
+        let fts: i64 = l.conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('track_fts', 'track_ai', 'track_ad', 'track_au')", [], |r| r.get(0)).unwrap();
         assert_eq!(fts, 0);
     }
 

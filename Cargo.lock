@@ -2021,6 +2021,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "strsim",
  "symphonia",
  "tempfile",
  "unicode-normalization",

@@ -91,7 +91,7 @@ mod tests {
             (Some("text"), Some("Paper Boats"), Some("Juniper Row"))
         );
         let ids = |input: &str| json(input)["collections"].as_array().unwrap().iter().map(|c| c["id"].as_i64()).collect::<Vec<_>>();
-        assert_eq!((ids("込曲"), ids("imp")), (vec![Some(imported)], vec![]));
+        assert_eq!((ids("込ん曲"), ids("imp")), (vec![Some(imported)], vec![]));
         let link = json("youtu.be/abc");
         assert_eq!((link["kind"].as_str(), link["host"].as_str()), (Some("link"), Some("youtu.be")));
         let refused = json("https://open.spotify.com/track/x");
