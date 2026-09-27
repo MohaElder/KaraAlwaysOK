@@ -261,7 +261,7 @@ artwork/<sha>.jpg
 
 ## 5. Cache
 
-- **Original + vocals only** (decided 2026-09-27). Keep the fetched file as-is and store only the vocals chunks; the instrumental is original − vocals, computed at playback. About 16 MB per 3-minute song (measured: 5.5 MB original + ~10.6 MB vocals), no clipping (vocals stored 16-bit with 6 dB headroom; 24-bit doubled the size for no audible gain), and slider-at-0 plays the exact original. The singer slider at k plays original − k × vocals, which is the same as blending the original and the instrumental. Switching models re-separates from the original.
+- **Original + vocals only** (decided 2026-09-27). Keep the fetched file as-is and store only the vocals chunks; the instrumental is original − vocals, computed at playback. About 15 MB per 3-minute song (measured: 5.7 MB original + 9.1 MB vocals), no clipping (vocals stored 16-bit with 6 dB headroom; 24-bit doubled the size for no audible gain), and slider-at-0 plays the exact original. The singer slider at k plays original − k × vocals, which is the same as blending the original and the instrumental. Switching models re-separates from the original.
 - **Budget + LRU.** Default 5 GB (setting `cache_budget_bytes`). Over budget → delete the whole song folder (original included) of the least recently played songs (`last_used_at`); the track stays and goes back to *New*, and a link song downloads again next time. Never evicted: the playing song, queued songs, and local files whose original has moved or been deleted.
 - **Kept forever:** lyrics (including `none`, retried after 7 days) and artwork.
 - **Outside the budget:** model, ONNX Runtime, yt-dlp.
