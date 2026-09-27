@@ -86,7 +86,9 @@ fn put_atomic(path: &Path, fill: impl FnOnce(&Path) -> std::io::Result<()>) -> R
     }
     let mut part = path.as_os_str().to_owned();
     part.push(".part");
-    fill(Path::new(&part))?;
+    fill(Path::new(&part)).inspect_err(|_| {
+        let _ = std::fs::remove_file(&part);
+    })?;
     std::fs::rename(&part, path)?;
     Ok(())
 }
@@ -96,9 +98,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     put_atomic(path, |part| std::fs::write(part, bytes))
 }
 
-/// Copies `src` to `path` through a `.part` file.
+/// Copies `src`'s bytes, without its file flags, to `path` through a `.part` file.
 pub fn copy_atomic(src: &Path, path: &Path) -> Result<()> {
-    put_atomic(path, |part| std::fs::copy(src, part).map(drop))
+    put_atomic(path, |part| std::io::copy(&mut File::open(src)?, &mut File::create(part)?).map(drop))
 }
 
 #[cfg(test)]
@@ -146,5 +148,27 @@ mod tests {
         write_atomic(&p, b"hi").unwrap();
         assert_eq!(std::fs::read(&p).unwrap(), b"hi");
         assert!(!dir.path().join("a/b/c.bin.part").exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_copy_of_a_locked_file_is_not_locked() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("locked.wav");
+        std::fs::write(&src, b"audio").unwrap();
+        crate::test_util::chflags("uchg", &src);
+        let dst = dir.path().join("a/original.wav");
+        let copied = copy_atomic(&src, &dst);
+        crate::test_util::chflags("nouchg", &src);
+        copied.unwrap();
+        std::fs::remove_file(&dst).unwrap();
+    }
+
+    #[test]
+    fn a_failed_copy_leaves_no_part_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("a/original.wav");
+        assert!(copy_atomic(dir.path(), &dst).is_err());
+        assert_eq!(std::fs::read_dir(dir.path().join("a")).unwrap().count(), 0);
     }
 }

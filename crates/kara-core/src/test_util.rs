@@ -42,3 +42,9 @@ impl VocalModel for Passthrough {
         Ok(input)
     }
 }
+
+/// Sets BSD file flags, e.g. "uchg" (Finder's Locked) or "nouchg".
+#[cfg(target_os = "macos")]
+pub(crate) fn chflags(flag: &str, path: &Path) {
+    assert!(std::process::Command::new("chflags").arg(flag).arg(path).status().unwrap().success());
+}
