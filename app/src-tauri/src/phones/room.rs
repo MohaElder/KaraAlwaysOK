@@ -5,6 +5,7 @@ use tokio::sync::mpsc::UnboundedSender;
 pub const MAX_PHONES: usize = 4;
 pub const ENDED: u16 = 4001;
 const MAX_NAME: usize = 40;
+const MAX_ID: usize = 64;
 const TRIES: u32 = 5;
 const LOCKOUT_MS: i64 = 10_000;
 
@@ -57,12 +58,13 @@ impl Room {
     }
 
     /// Lets a phone in with the right code at `now` (ms): back into its own row if it was here (false), or a new row while there
-    /// is room (true). After five wrong codes every join is refused for ten seconds.
+    /// is room (true). After five wrong codes only phones already here get in, for ten seconds.
     pub fn admit(&mut self, code: &str, id: &str, name: &str, conn: u64, tx: UnboundedSender<Out>, now: i64) -> Result<bool, Refusal> {
-        if now < self.locked_until {
+        let right = digits(code) == self.code;
+        if id.len() > MAX_ID || (now < self.locked_until && !(right && self.guests.iter().any(|g| g.id == id))) {
             return Err(Refusal::WrongCode);
         }
-        if digits(code) != self.code {
+        if !right {
             self.misses += 1;
             if self.misses >= TRIES {
                 self.misses = 0;
@@ -136,12 +138,14 @@ mod tests {
     #[test]
     fn five_wrong_codes_shut_the_door_for_ten_seconds() {
         let mut room = Room::new("4827");
+        room.admit("4827", "b", "Ben", 1, tx(), 0).unwrap();
         for _ in 0..5 {
             assert_eq!(room.admit("0000", "x", "X", 1, tx(), 0), Err(Refusal::WrongCode));
         }
         assert_eq!(room.admit("4827", "a", "Aiko", 2, tx(), 9_999), Err(Refusal::WrongCode), "even the right code waits");
+        assert_eq!(room.admit("4827", "b", "Ben", 2, tx(), 9_999), Ok(false), "a phone already here comes back");
         assert_eq!(room.admit("4827", "a", "  Aiko  ", 3, tx(), 10_000), Ok(true));
-        assert_eq!(room.guests[0].name, "Aiko");
+        assert_eq!(room.guests[1].name, "Aiko");
     }
 
     #[test]

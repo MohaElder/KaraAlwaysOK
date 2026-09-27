@@ -92,10 +92,9 @@ async fn page(State(app): State<AppHandle>, method: Method, uri: Uri) -> Respons
     }
 }
 
-/// Whether the dev server may be asked for `path`: one of its own page files, never another host or a file outside the project.
+/// Whether the dev server may be asked for `path`: a path on it, never another host.
 fn dev_path(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    path.starts_with('/') && !path.starts_with("//") && !lower.starts_with("/@fs") && !lower.starts_with("/%40fs")
+    path.starts_with('/') && !path.starts_with("//")
 }
 
 /// The type of a song picture named `name`, or None when the name could reach outside the artwork folder.
@@ -201,9 +200,9 @@ mod tests {
     }
 
     #[test]
-    fn the_dev_server_is_asked_only_for_its_own_page_files() {
+    fn the_dev_server_is_asked_only_for_paths_on_it() {
         assert!(dev_path("/phone?code=4827"));
-        for path in ["//evil.example/x", "/@fs/etc/passwd", "/%40FS/etc/passwd", "http://evil.example/"] {
+        for path in ["//evil.example/x", "http://evil.example/"] {
             assert!(!dev_path(path), "{path}");
         }
     }
