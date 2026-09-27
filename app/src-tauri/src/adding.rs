@@ -5,7 +5,7 @@ use kara_core::fuzzy::{best_first, Fuzzy};
 use kara_core::ingest;
 use kara_core::ingest::link::{self, LinkVerdict};
 use kara_core::ingest::preview::{self, LinkPreview, SearchHit};
-use kara_core::ingest::{youtube, ytdlp};
+use kara_core::ingest::{bilibili, youtube, ytdlp};
 use kara_core::library::{CollectionKind, Library, Track};
 use serde::Serialize;
 use std::path::Path;
@@ -92,6 +92,18 @@ pub async fn youtube_search(state: State<'_, AppState>, query: String) -> Result
 #[tauri::command]
 pub async fn youtube_suggestions(query: String) -> Result<Vec<String>, AppError> {
     tauri::async_runtime::spawn_blocking(move || youtube::suggestions(&query).unwrap_or_default()).await.map_err(AppError::from)
+}
+
+/// The top Bilibili videos for the search bar's words; none when Bilibili can't be reached.
+#[tauri::command]
+pub async fn bilibili_search(query: String) -> Result<Vec<SearchHit>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || bilibili::search(&query).unwrap_or_default()).await.map_err(AppError::from)
+}
+
+/// Bilibili's suggestions for the search bar's words; none when Bilibili can't be reached.
+#[tauri::command]
+pub async fn bilibili_suggestions(query: String) -> Result<Vec<String>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || bilibili::suggestions(&query).unwrap_or_default()).await.map_err(AppError::from)
 }
 
 /// Puts a dropped file in Imported; `start_adding` then gets it ready.

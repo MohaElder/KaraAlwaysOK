@@ -63,6 +63,7 @@ const ja: Record<Key, string> = {
   "search.noMatchBody": "つづりを確認するか、曲へのリンクを貼り付けてください。",
   "search.fromLink": "このリンクから",
   "search.youtube": "YouTube",
+  "search.bilibili": "Bilibili",
   "search.suggestions": "検索候補",
   "search.addToLibraryLabel": "{title} をライブラリに追加",
   "search.streamingTitle": "{host} のリンクはダウンロードできません",

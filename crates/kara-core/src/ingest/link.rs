@@ -14,7 +14,7 @@ pub enum LinkVerdict {
     Unsupported,
 }
 
-const EXTRACTABLE: &[&str] = &["youtube.com", "youtu.be", "soundcloud.com", "bandcamp.com", "vimeo.com", "archive.org", "mixcloud.com"];
+const EXTRACTABLE: &[&str] = &["youtube.com", "youtu.be", "soundcloud.com", "bandcamp.com", "vimeo.com", "archive.org", "mixcloud.com", "bilibili.com", "b23.tv"];
 const STREAMING: &[&str] = &["spotify.com", "music.apple.com", "tidal.com", "deezer.com"];
 const AUDIO_EXT: &[&str] = &["mp3", "wav", "flac", "m4a", "aac", "ogg", "aif", "aiff"];
 
@@ -122,6 +122,8 @@ mod tests {
         assert_eq!(v("https://www.youtube.com/watch?v=x"), LinkVerdict::Extractable);
         assert_eq!(v("https://m.youtube.com/watch?v=x"), LinkVerdict::Extractable);
         assert_eq!(v("https://artist.bandcamp.com/track/x"), LinkVerdict::Extractable);
+        assert_eq!(v("https://m.bilibili.com/video/BV1aaaaaaaaa"), LinkVerdict::Extractable);
+        assert_eq!(v("https://b23.tv/BV1aaaaaaaaa"), LinkVerdict::Extractable);
         assert_eq!(v("https://example.com/files/song.FLAC?dl=1"), LinkVerdict::AudioFile);
         assert_eq!(v("https://open.spotify.com/track/x"), LinkVerdict::Streaming);
         assert_eq!(v("https://music.apple.com/us/album/x"), LinkVerdict::Streaming);

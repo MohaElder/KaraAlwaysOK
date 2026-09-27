@@ -12,7 +12,7 @@ const CLIENT_VERSION: &str = "2.20260708.00.00";
 /// The search filter for videos only (yt-dlp's `YoutubeSearchIE._SEARCH_PARAMS`).
 const VIDEOS_ONLY: &str = "EgIQAfABAQ==";
 /// How many suggestions `suggestions` gives.
-const SUGGESTIONS: usize = 8;
+pub(super) const SUGGESTIONS: usize = 8;
 
 /// One client for every call, so later ones reuse the open connection.
 fn client() -> &'static reqwest::blocking::Client {
@@ -102,7 +102,7 @@ pub fn parse_suggestions(body: &str) -> Result<Vec<String>> {
 }
 
 /// "1:02:03" or "3:25" to milliseconds.
-fn clock_ms(clock: &str) -> Option<i64> {
+pub(super) fn clock_ms(clock: &str) -> Option<i64> {
     clock.split(':').try_fold(0i64, |total, part| Some(total * 60 + part.trim().parse::<i64>().ok()?)).map(|s| s * 1000)
 }
 

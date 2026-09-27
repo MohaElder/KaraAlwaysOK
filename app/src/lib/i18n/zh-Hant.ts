@@ -63,6 +63,7 @@ const zhHant: Record<Key, string> = {
   "search.noMatchBody": "檢查拼寫，或貼上歌曲連結。",
   "search.fromLink": "來自這個連結",
   "search.youtube": "YouTube",
+  "search.bilibili": "嗶哩嗶哩",
   "search.suggestions": "搜尋建議",
   "search.addToLibraryLabel": "將 {title} 加入資料庫",
   "search.streamingTitle": "無法下載 {host} 連結",
