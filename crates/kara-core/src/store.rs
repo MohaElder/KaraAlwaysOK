@@ -75,7 +75,7 @@ impl Store {
         self.audio_dir(hash).join(model_id)
     }
     pub fn chunk_path(&self, hash: &str, model_id: &str, index: u32) -> PathBuf {
-        self.stems_dir(hash, model_id).join(format!("{index:04}.vocals.flac"))
+        self.stems_dir(hash, model_id).join(format!("{index:04}.flac"))
     }
 }
 
@@ -100,7 +100,7 @@ mod tests {
         let s = Store::new("/data");
         assert_eq!(s.db_path(), Path::new("/data/kara.db"));
         assert_eq!(s.original_dest("abc", Some("m4a")), Path::new("/data/audio/abc/original.m4a"));
-        assert_eq!(s.chunk_path("abc", "m1", 7), Path::new("/data/audio/abc/m1/0007.vocals.flac"));
+        assert_eq!(s.chunk_path("abc", "m1", 7), Path::new("/data/audio/abc/m1/0007.flac"));
         assert_eq!(s.bin_dir(), Path::new("/data/bin"));
     }
 

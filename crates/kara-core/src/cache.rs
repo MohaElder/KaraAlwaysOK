@@ -155,25 +155,31 @@ pub fn enforce_budget(store: &Store, lib: &Library, protected: &[String]) -> Res
     Ok(evicted)
 }
 
-fn remove_part_files(dir: &Path) -> Result<()> {
+/// Half-written files, and chunk files from before vocals were stored at half level.
+fn is_stale(p: &Path) -> bool {
+    let name = p.file_name().unwrap_or_default().to_string_lossy();
+    [".part", ".vocals.flac", ".inst.flac"].iter().any(|s| name.ends_with(s))
+}
+
+fn remove_stale_files(dir: &Path) -> Result<()> {
     let Ok(rd) = std::fs::read_dir(dir) else { return Ok(()) };
     for entry in rd {
         let p = entry?.path();
         if p.is_dir() {
-            remove_part_files(&p)?;
-        } else if p.extension().is_some_and(|x| x == "part") {
+            remove_stale_files(&p)?;
+        } else if is_stale(&p) {
             std::fs::remove_file(&p)?;
         }
     }
     Ok(())
 }
 
-/// Run once at launch, holding the data folder: clear temp downloads and
-/// half-written files, then make the database agree with the chunk files on disk.
+/// Run once at launch, holding the data folder: clear temp downloads,
+/// half-written files and old chunk files, then make the database agree with the chunk files on disk.
 pub fn startup_cleanup(store: &Store, lib: &Library, _lock: &DataLock) -> Result<()> {
     let _ = std::fs::remove_dir_all(store.tmp_dir());
     std::fs::create_dir_all(store.tmp_dir())?;
-    remove_part_files(&store.audio_root())?;
+    remove_stale_files(&store.audio_root())?;
     for mut row in lib.separations()? {
         let done = count_complete_chunks(store, &row.audio_hash, &row.model_id);
         if done >= row.chunks_total {
@@ -330,13 +336,17 @@ mod tests {
     }
 
     #[test]
-    fn startup_cleanup_removes_parts_and_recounts() {
+    fn startup_cleanup_removes_parts_and_old_chunk_files_and_recounts() {
         let dir = tempfile::tempdir().unwrap();
         let s = Store::new(dir.path());
         let lib = Library::open_in_memory().unwrap();
         write_chunk(&s, "h", "m", &chunk(0, 100)).unwrap();
         write_chunk(&s, "h", "m", &chunk(1, 100)).unwrap();
-        std::fs::write(s.stems_dir("h", "m").join("0002.vocals.flac.part"), b"x").unwrap();
+        let part = s.stems_dir("h", "m").join("0002.flac.part");
+        std::fs::write(&part, b"x").unwrap();
+        // Chunk files from before vocals were stored at half level.
+        let old_layout = ["0002.vocals.flac", "0002.inst.flac"].map(|n| s.stems_dir("h", "m").join(n));
+        old_layout.iter().for_each(|p| std::fs::write(p, b"x").unwrap());
         std::fs::create_dir_all(s.tmp_dir()).unwrap();
         std::fs::write(s.tmp_dir().join("half.m4a"), b"x").unwrap();
         let mut row = sep_row("h", 4, SepStatus::Running, 0);
@@ -348,7 +358,8 @@ mod tests {
 
         startup_cleanup(&s, &lib, &s.lock().unwrap()).unwrap();
 
-        assert!(!s.stems_dir("h", "m").join("0002.vocals.flac.part").exists());
+        assert!(!part.exists());
+        assert!(old_layout.iter().all(|p| !p.exists()));
         assert_eq!(std::fs::read_dir(s.tmp_dir()).unwrap().count(), 0);
         let row = lib.separation("h", "m").unwrap().unwrap();
         assert_eq!((row.chunks_done, row.status), (2, SepStatus::Queued));
