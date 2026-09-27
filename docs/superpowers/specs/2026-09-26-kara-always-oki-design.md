@@ -51,6 +51,8 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Copy rule** — no engineering vocabulary in the UI (no "stems", "FLAC", "LRCLIB", "chunks", IPs/ports).
 
+**Motion rule** — every interaction animates: showing or hiding any view, sheet, menu, popover, button or status, and every state change. Use only two simple, consistent transitions: a fade, or a short slide (paired with a fade) along the direction the element comes from. Same durations and easing everywhere; they should feel natural, never showy. Respect the system "reduce motion" setting (fall back to fade only).
+
 ## 3. Architecture
 
 Pipeline: **provider → processor → streamer → UI**. Rust does fetching, decoding and ML; the web view does playback and mixing.
