@@ -75,7 +75,9 @@ pub fn probe(bin: &Path, url: &Url) -> Result<LinkPreview> {
     probe_with_timeout(bin, url, PROBE_TIMEOUT)
 }
 
-/// Runs yt-dlp and kills it if it hasn't finished within `timeout`.
+/// Runs yt-dlp and kills it if it hasn't finished within `timeout`. Its stdout is
+/// drained on a reader thread while we poll, so a full pipe buffer can't stall
+/// (and hide behind) the timeout the way it did in the first version of this fix.
 fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPreview> {
     let mut child = Command::new(bin)
         .args(["--dump-json", "--skip-download", "--no-playlist", "--no-warnings"])
@@ -83,6 +85,12 @@ fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPr
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
+    let mut stdout_pipe = child.stdout.take().context("read yt-dlp output")?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
     let deadline = Instant::now() + timeout;
     let status = loop {
         if let Some(status) = child.try_wait()? {
@@ -98,8 +106,8 @@ fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPr
     if !status.success() {
         bail!("Couldn't find a song at this link.");
     }
-    let mut stdout = String::new();
-    child.stdout.take().context("read yt-dlp output")?.read_to_string(&mut stdout)?;
+    let stdout = reader.join().unwrap_or_default();
+    let stdout = String::from_utf8_lossy(&stdout);
     let d: Dump = serde_json::from_str(stdout.lines().next().unwrap_or(""))?;
     Ok(LinkPreview {
         title: d.title.unwrap_or_else(|| "Unknown song".into()),
@@ -168,6 +176,26 @@ mod tests {
         let err = probe_with_timeout(&bin, &Url::parse("https://youtu.be/x").unwrap(), Duration::from_millis(200)).unwrap_err();
         assert!(start.elapsed() < Duration::from_secs(2));
         assert_eq!(err.to_string(), "Couldn't find a song at this link.");
+    }
+
+    #[test]
+    fn probe_drains_large_output_instead_of_deadlocking_on_a_full_pipe() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("yt-dlp");
+        let padding = "x".repeat(500_000);
+        std::fs::write(
+            &bin,
+            format!(
+                "#!/bin/sh\necho '{{\"title\":\"Made Up Song\",\"channel\":\"Made Up Channel\",\"duration\":205.4,\"thumbnail\":\"https://i.example/t.jpg\",\"padding\":\"{padding}\"}}'\n"
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let start = std::time::Instant::now();
+        let p = probe_with_timeout(&bin, &Url::parse("https://youtu.be/x").unwrap(), Duration::from_secs(3)).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert_eq!(p.title, "Made Up Song");
     }
 
     #[test]
