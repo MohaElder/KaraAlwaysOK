@@ -51,7 +51,7 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Karaoke view** — full screen, blurred artwork background, big lyrics with word-by-word fill, current line centered. Top-right: the mic pill. Collapse chevron returns to the library; music keeps playing.
 
-**Managing the library** — local songs can be edited (title, artist, album, artwork) and deleted (which frees their storage; undo via toast). Playlists are user-made, live under Local, and can hold songs from any source (Apple Music, Spotify and Local mixed); they can be created, renamed, reordered, and deleted, and removing a song from a playlist never deletes the song. Every song row has a menu: Play next, Add to queue, Add to playlist, and for local songs Edit info and Delete. Streaming providers' own playlists stay read-only.
+**Managing the library** — local songs can be edited (title, artist, album — artwork is never editable) and deleted (which frees their storage; undo via toast). Playlists are user-made, live under Local, and can hold songs from any source (Apple Music, Spotify and Local mixed); they can be created, renamed, reordered, and deleted, and removing a song from a playlist never deletes the song. Every song row has a menu: Play next, Add to queue, Add to playlist, and for local songs Edit info and Delete. Streaming providers' own playlists stay read-only.
 
 **Queue** — tapping a song row adds it to the end of the queue. If nothing is playing (empty or finished queue), it starts right away and opens the full karaoke view. A second button on each row, "Play next", puts it right after the current song. The player bar has a queue button on its right: it opens the queue list, where songs can be dragged to reorder or removed. Guests can also search and add songs to the queue from their phone.
 
@@ -95,6 +95,12 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 The karaoke view stays dark in both modes and uses the dark accent.
 
 **Motion rule** — every interaction animates: showing or hiding any view, sheet, menu, popover, button or status, and every state change. Use only two simple, consistent transitions: a fade, or a short slide (paired with a fade) along the direction the element comes from. Same durations and easing everywhere; they should feel natural, never showy. Respect the system "reduce motion" setting (fall back to fade only).
+
+**Artwork** — a song shows its own picture (embedded cover or the link's thumbnail). A song with no picture gets a gradient in random colors, picked once and kept. A playlist's cover is built from its songs like Apple Music: a 2×2 grid of the first four songs' pictures, or the first song's picture when it has fewer than four. Nobody edits artwork.
+
+**Window** — on macOS the title bar is transparent with the title hidden, so the app's own background runs up to the top edge and the traffic lights sit over the sidebar (as OpenEnlarge does, `~/Repos/filmrev` commit 113d94e). Windows keeps its standard title bar for now, as OpenEnlarge does.
+
+**First run** — the "Getting ready" screen shows only while the model and runtime download the first time. There is no way to replay it.
 
 **Languages** — the MVP ships in English, Japanese, Korean, Simplified Chinese, Traditional Chinese and Spanish. The app follows the system language (English if it isn't one of these), and Settings can change it. The phone page follows the phone's browser language. Every piece of UI text lives in one file per language, looked up by key; components hold no text. Languages cover UI text only. Song titles, artists, albums and lyrics always show exactly as the source gives them: never translated, romanized, or converted between scripts (e.g. no Simplified ↔ Traditional conversion). Layouts must handle longer text (Spanish) and CJK text; Geist has no CJK letters, so CJK falls back to the system fonts (PingFang, Hiragino Sans, Apple SD Gothic Neo).
 
