@@ -124,7 +124,7 @@ One job chain per song, run by `jobs/` (one worker; switching songs cancels the 
 1. **Fetch** — files: read in place. Links: yt-dlp downloads audio as M4A into a temp dir.
 2. **Standardize** — decode with symphonia (pure Rust; MP3, AAC/M4A, FLAC, WAV, Vorbis, and audio inside MP4), resample with rubato to 44.1 kHz stereo, write `source.flac`, compute `audio_hash` (SHA-256 of the decoded PCM). Same hash → reuse existing stems.
 3. **Lyrics** (in parallel with separation) — embedded synced lyrics first, then LRCLIB by title + artist + duration. Line-level timings get even word timing across each line. Not found → stored as `none`, song still plays.
-4. **Separate** — 10 s chunks with overlap for model context, cropped back to seamless edges (same idea as filmrev's `plan_tiles`). Model outputs vocals; instrumental = mix − vocals, so vocals + instrumental = original. Each chunk writes `NNNN.vocals.flac` + `NNNN.inst.flac` via `.part` + rename. Progress events after each chunk.
+4. **Separate** — 10 s chunks with overlap for model context, cropped back to seamless edges (same idea as filmrev's `plan_tiles`). Model outputs vocals; instrumental = mix − vocals, so vocals + instrumental = original. Each chunk writes only `NNNN.vocals.flac` (24-bit, 6 dB headroom so it never clips) via `.part` + rename; the instrumental is computed live at playback as original − vocals. Progress events after each chunk.
 
 Only yt-dlp is an external binary; no ffmpeg.
 
@@ -245,15 +245,14 @@ runtime/libonnxruntime.dylib
 models/<model_id>.onnx
 bin/yt-dlp
 tmp/                                          downloads in flight
-audio/<audio_hash>/source.flac                deleted once separation is ready
+audio/<audio_hash>/original.<ext>             the fetched file as-is (kept; the instrumental is derived from it)
 audio/<audio_hash>/<model_id>/NNNN.vocals.flac
-audio/<audio_hash>/<model_id>/NNNN.inst.flac
 artwork/<sha>.jpg
 ```
 
 ## 5. Cache
 
-- **Stems are canonical.** Because instrumental = mix − vocals, `source.flac` is deleted once separation is ready (~50 MB per 4-minute song instead of ~75 MB). Switching models later rebuilds the mix from the two stems.
+- **Original + vocals only** (decided 2026-09-27). Keep the fetched file as-is and store only the vocals chunks; the instrumental is original − vocals, computed at playback. About 15–25 MB per 4-minute song, no clipping (vocals stored 24-bit with 6 dB headroom), and slider-at-0 plays the exact original. Switching models re-separates from the original.
 - **Budget + LRU.** Default 5 GB (setting `cache_budget_bytes`). Over budget → delete stems of the least recently played songs (`last_used_at`); the track stays and goes back to *New*. Never evicted: the playing song, queued songs, and local files whose original has moved or been deleted.
 - **Kept forever:** lyrics (including `none`, retried after 7 days) and artwork.
 - **Outside the budget:** model, ONNX Runtime, yt-dlp.
