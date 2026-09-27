@@ -57,6 +57,9 @@ const ja: Record<Key, string> = {
   "song.playNext": "次に再生",
   "song.addToQueueLabel": "{title} をキューに追加",
   "common.more": "その他",
+  "wait.startingIn": "{n} 秒後に開始",
+  "wait.soon": "まもなく開始…",
+  "wait.catchingUp": "追いついています…",
 };
 
 export default ja;

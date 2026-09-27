@@ -75,3 +75,8 @@ export const setKey = (semitones: number) => invoke<PlayerSnapshot>("set_key", {
 export const setLyricOffset = (ms: number) => invoke<PlayerSnapshot>("set_lyric_offset", { ms });
 export const retryPrepare = () => invoke<void>("retry_prepare");
 export const onPlayer = (cb: (s: PlayerSnapshot) => void) => listen<PlayerSnapshot>("player", (e) => cb(e.payload));
+
+export interface PlaybackInfo { chunkFrames: number; chunksTotal: number | null; chunksDone: number; durationMs: number | null }
+
+export const playbackInfo = (trackId: number) => invoke<PlaybackInfo>("playback_info", { trackId });
+export const chunkPcm = (trackId: number, index: number) => invoke<ArrayBuffer>("chunk_pcm", { trackId, index });

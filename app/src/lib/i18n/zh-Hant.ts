@@ -57,6 +57,9 @@ const zhHant: Record<Key, string> = {
   "song.playNext": "接下來播放",
   "song.addToQueueLabel": "將 {title} 加入佇列",
   "common.more": "更多",
+  "wait.startingIn": "{n} 秒後開始",
+  "wait.soon": "即將開始…",
+  "wait.catchingUp": "正在追趕…",
 };
 
 export default zhHant;

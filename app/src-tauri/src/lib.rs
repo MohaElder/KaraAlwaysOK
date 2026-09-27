@@ -39,6 +39,8 @@ pub fn run() {
             player::set_key,
             player::set_lyric_offset,
             player::retry_prepare,
+            player::playback_info,
+            player::chunk_pcm,
         ])
         .build(tauri::generate_context!())
         .expect("error while running KaraAlwaysOK")

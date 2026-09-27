@@ -55,6 +55,9 @@ const en = {
   "song.playNext": "Play next",
   "song.addToQueueLabel": "Add {title} to the queue",
   "common.more": "More",
+  "wait.startingIn": "Starting in {n}s",
+  "wait.soon": "Starting soon…",
+  "wait.catchingUp": "Catching up…",
 };
 
 export default en;

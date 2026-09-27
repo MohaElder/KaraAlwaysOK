@@ -57,6 +57,9 @@ const ko: Record<Key, string> = {
   "song.playNext": "다음에 재생",
   "song.addToQueueLabel": "{title}을(를) 대기열에 추가",
   "common.more": "더 보기",
+  "wait.startingIn": "{n}초 후 시작",
+  "wait.soon": "곧 시작…",
+  "wait.catchingUp": "따라잡는 중…",
 };
 
 export default ko;

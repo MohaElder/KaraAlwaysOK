@@ -1,8 +1,11 @@
 use crate::state::{AppError, AppState, Plain};
 use anyhow::Context;
-use kara_core::library::{Library, Track};
+use kara_core::cache::{self, ChunkPcm};
+use kara_core::library::{Library, SepStatus, Track};
 use kara_core::problem::Problem;
+use kara_core::separate::{CHUNK_LEN, DEFAULT_MODEL};
 use serde::Serialize;
+use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 
 pub struct Entry {
@@ -262,6 +265,53 @@ pub fn retry_prepare(app: AppHandle, state: State<'_, AppState>) -> Result<(), A
     update(&app, state.inner(), |_, _| Ok(())).map(|_| ())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackInfo {
+    pub chunk_frames: u32,
+    pub chunks_total: Option<u32>,
+    pub chunks_done: u32,
+    pub duration_ms: Option<i64>,
+}
+
+/// How much of a song's separated audio exists, for the streamer.
+pub fn playback(lib: &Library, track_id: i64) -> anyhow::Result<PlaybackInfo> {
+    let track = lib.track(track_id)?;
+    let row = match lib.selected_source(track_id)?.and_then(|s| s.audio_hash) {
+        Some(hash) => lib.separation(&hash, DEFAULT_MODEL.id)?,
+        None => None,
+    };
+    Ok(PlaybackInfo {
+        chunk_frames: CHUNK_LEN as u32,
+        chunks_total: row.as_ref().map(|r| r.chunks_total),
+        chunks_done: row.map_or(0, |r| if r.status == SepStatus::Ready { r.chunks_total } else { r.chunks_done }),
+        duration_ms: track.duration_ms,
+    })
+}
+
+/// A chunk's vocals, then its instrumental, each interleaved stereo f32 little-endian and of equal length.
+pub fn pcm_bytes(pcm: &ChunkPcm) -> Vec<u8> {
+    let n = pcm.vocals.len().min(pcm.inst.len());
+    pcm.vocals[..n].iter().chain(&pcm.inst[..n]).flat_map(|x| x.to_le_bytes()).collect()
+}
+
+#[tauri::command]
+pub fn playback_info(state: State<'_, AppState>, track_id: i64) -> Result<PlaybackInfo, AppError> {
+    playback(&state.lib.lock().unwrap(), track_id).plain()
+}
+
+#[tauri::command]
+pub async fn chunk_pcm(state: State<'_, AppState>, track_id: i64, index: u32) -> Result<Response, AppError> {
+    let (store, reader) = (state.store.clone(), state.reader.clone());
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Response> {
+        let pcm = cache::track_chunk_pcm(&store, &reader.lock().unwrap(), DEFAULT_MODEL.id, track_id, index)?;
+        Ok(Response::new(pcm_bytes(&pcm)))
+    })
+    .await
+    .map_err(AppError::from)?
+    .plain()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +386,29 @@ mod tests {
         let json = serde_json::to_value(snapshot(&lib, &p).unwrap()).unwrap();
         assert_eq!((json["entries"][1]["track"]["title"].as_str(), json["current"].as_u64(), json["lyricOffsetMs"].as_i64()), (Some("Rooftop Static"), Some(0), Some(-300)));
         assert_eq!(json["entries"][0]["track"]["vocalRemoval"], 100);
+    }
+
+    #[test]
+    fn chunk_bytes_hold_vocals_then_instrumental_in_little_endian() {
+        let floats = |pcm| pcm_bytes(&pcm).chunks(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect::<Vec<f32>>();
+        assert_eq!(floats(kara_core::cache::ChunkPcm { vocals: vec![0.5, -0.5], inst: vec![0.25, 1.0] }), vec![0.5, -0.5, 0.25, 1.0]);
+        assert_eq!(floats(kara_core::cache::ChunkPcm { vocals: vec![0.5, -0.5, 0.1, 0.2], inst: vec![0.25, 1.0] }), vec![0.5, -0.5, 0.25, 1.0]);
+    }
+
+    #[test]
+    fn playback_info_counts_ready_parts_and_whole_songs() {
+        use kara_core::library::{SepStatus, SeparationRow};
+        let lib = Library::open_in_memory().unwrap();
+        let t = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: "A", artist: None, album: None, duration_ms: Some(42_000) }).unwrap();
+        assert_eq!(playback(&lib, t).unwrap().chunks_total, None);
+        let src = lib.add_source(t, SourceKind::File, "/made/up.wav", None).unwrap();
+        lib.set_source_audio(src, "h", 42_000).unwrap();
+        let mut row = SeparationRow { audio_hash: "h".into(), model_id: kara_core::separate::DEFAULT_MODEL.id.into(), chunk_ms: 10_000, chunks_total: 5, chunks_done: 2, status: SepStatus::Running, last_used_at: None };
+        lib.upsert_separation(&row).unwrap();
+        let info = playback(&lib, t).unwrap();
+        assert_eq!((info.chunks_total, info.chunks_done, info.chunk_frames), (Some(5), 2, 441_000));
+        row.status = SepStatus::Ready;
+        lib.upsert_separation(&row).unwrap();
+        assert_eq!(playback(&lib, t).unwrap().chunks_done, 5);
     }
 }

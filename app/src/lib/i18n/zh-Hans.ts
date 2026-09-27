@@ -57,6 +57,9 @@ const zhHans: Record<Key, string> = {
   "song.playNext": "接下来播放",
   "song.addToQueueLabel": "将 {title} 加入队列",
   "common.more": "更多",
+  "wait.startingIn": "{n} 秒后开始",
+  "wait.soon": "即将开始…",
+  "wait.catchingUp": "正在追赶…",
 };
 
 export default zhHans;

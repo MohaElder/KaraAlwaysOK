@@ -57,6 +57,9 @@ const es: Record<Key, string> = {
   "song.playNext": "Reproducir a continuación",
   "song.addToQueueLabel": "Añadir {title} a la cola",
   "common.more": "Más",
+  "wait.startingIn": "Empieza en {n} s",
+  "wait.soon": "Empieza enseguida…",
+  "wait.catchingUp": "Poniéndose al día…",
 };
 
 export default es;
