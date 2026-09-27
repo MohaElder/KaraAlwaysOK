@@ -25,14 +25,14 @@ impl Store {
     pub fn root(&self) -> &Path {
         &self.root
     }
-    /// Takes the data folder for writing; fails with a plain message while another kara holds it.
+    /// Takes the data folder for writing; fails with a plain message while another copy of KaraAlwaysOK holds it.
     pub fn lock(&self) -> Result<DataLock> {
-        let unusable = "Couldn't open kara's data folder.";
+        let unusable = "Couldn't open KaraAlwaysOK's data folder.";
         std::fs::create_dir_all(&self.root).context(unusable)?;
         let file = File::options().write(true).create(true).truncate(false).open(self.root.join("kara.lock")).context(unusable)?;
         match file.try_lock() {
             Ok(()) => Ok(DataLock { _file: file }),
-            Err(TryLockError::WouldBlock) => bail!("kara is busy preparing another song."),
+            Err(TryLockError::WouldBlock) => bail!("Another copy of KaraAlwaysOK is using your library. Close it and try again."),
             Err(TryLockError::Error(e)) => Err(anyhow::Error::from(e).context(unusable)),
         }
     }
@@ -121,7 +121,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = Store::new(dir.path());
         let held = s.lock().unwrap();
-        assert_eq!(s.lock().err().unwrap().to_string(), "kara is busy preparing another song.");
+        assert_eq!(s.lock().err().unwrap().to_string(), "Another copy of KaraAlwaysOK is using your library. Close it and try again.");
         drop(held);
         let relocked = (0..200).any(|_| {
             let ok = s.lock().is_ok();
@@ -138,7 +138,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("data");
         std::fs::write(&root, b"a file, not a folder").unwrap();
-        assert_eq!(Store::new(&root).lock().err().unwrap().to_string(), "Couldn't open kara's data folder.");
+        assert_eq!(Store::new(&root).lock().err().unwrap().to_string(), "Couldn't open KaraAlwaysOK's data folder.");
     }
 
     #[test]

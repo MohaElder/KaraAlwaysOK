@@ -51,6 +51,6 @@ fn only_writers_clean_up_and_a_second_writer_is_turned_away() {
 
     let (ok, _, err) = kara(dir.path(), &["prepare", "1"]);
     assert!(!ok);
-    assert_eq!(err.trim(), "kara is busy preparing another song.");
+    assert_eq!(err.trim(), "Another copy of KaraAlwaysOK is using your library. Close it and try again.");
     assert!(part.exists());
 }

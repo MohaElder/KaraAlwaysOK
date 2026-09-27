@@ -184,7 +184,7 @@ impl Library {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: usize = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        anyhow::ensure!(version <= steps.len(), "This library was made by a newer version of kara. Update kara to open it.");
+        anyhow::ensure!(version <= steps.len(), "This library was made by a newer version of KaraAlwaysOK. Update KaraAlwaysOK to open it.");
         for step in &steps[version..] {
             step(&tx)?;
         }
@@ -571,6 +571,6 @@ mod tests {
         let p = dir.path().join("kara.db");
         Connection::open(&p).unwrap().pragma_update(None, "user_version", STEPS.len() + 1).unwrap();
         let err = Library::open(&p).err().unwrap();
-        assert_eq!(err.to_string(), "This library was made by a newer version of kara. Update kara to open it.");
+        assert_eq!(err.to_string(), "This library was made by a newer version of KaraAlwaysOK. Update KaraAlwaysOK to open it.");
     }
 }
