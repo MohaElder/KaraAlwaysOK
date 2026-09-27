@@ -156,6 +156,13 @@ fn enable_wal(conn: &Connection) -> Result<()> {
     Ok(switch()?)
 }
 
+/// Whether every foreign key in the database points at a row that exists.
+fn no_foreign_key_violations(conn: &Connection) -> Result<bool> {
+    let mut stmt = conn.prepare("PRAGMA foreign_key_check")?;
+    let ok = stmt.query([])?.next()?.is_none();
+    Ok(ok)
+}
+
 /// Upgrades the library's tables (and files, found beside `tx.path()`) by one version.
 type Step = fn(&Transaction) -> Result<()>;
 
@@ -179,9 +186,11 @@ impl Library {
     }
 
     /// Opens the database, bringing it up to the latest version with the `steps` it hasn't had, in one transaction.
+    /// Foreign keys are off during the upgrade, since `PRAGMA foreign_keys` can't change mid-transaction and a step
+    /// may need to rebuild a table; `foreign_key_check` confirms nothing broke before they're switched back on.
     fn init(mut conn: Connection, steps: &[Step]) -> Result<Self> {
         enable_wal(&conn)?;
-        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.pragma_update(None, "foreign_keys", "OFF")?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: usize = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
         anyhow::ensure!(version <= steps.len(), "This library was made by a newer version of KaraAlwaysOK. Update KaraAlwaysOK to open it.");
@@ -190,6 +199,8 @@ impl Library {
         }
         tx.pragma_update(None, "user_version", steps.len())?;
         tx.commit()?;
+        anyhow::ensure!(no_foreign_key_violations(&conn)?, "This library couldn't be upgraded safely.");
+        conn.pragma_update(None, "foreign_keys", "ON")?;
         Ok(Self { conn })
     }
 
@@ -555,6 +566,41 @@ mod tests {
         let version: usize = lib.conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
         assert_eq!(version, 2);
         lib.conn.execute("INSERT INTO added (x) VALUES (1)", []).unwrap();
+    }
+
+    #[test]
+    fn an_upgrade_step_that_rebuilds_a_table_keeps_rows_that_reference_it() {
+        let setup: Step = |tx| {
+            Ok(tx.execute_batch(
+                "CREATE TABLE parent (id INTEGER PRIMARY KEY);
+                 CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent ON DELETE CASCADE);
+                 INSERT INTO parent (id) VALUES (1);
+                 INSERT INTO child (id, parent_id) VALUES (1, 1);",
+            )?)
+        };
+        let rebuild: Step = |tx| {
+            Ok(tx.execute_batch(
+                "CREATE TABLE parent_new (id INTEGER PRIMARY KEY);
+                 INSERT INTO parent_new SELECT id FROM parent;
+                 DROP TABLE parent;
+                 ALTER TABLE parent_new RENAME TO parent;",
+            )?)
+        };
+        let lib = Library::init(Connection::open_in_memory().unwrap(), &[setup, rebuild]).unwrap();
+        let count: i64 = lib.conn.query_row("SELECT COUNT(*) FROM child", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn a_dangling_reference_left_by_an_upgrade_fails_the_open() {
+        let bad: Step = |tx| {
+            Ok(tx.execute_batch(
+                "CREATE TABLE parent (id INTEGER PRIMARY KEY);
+                 CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent);
+                 INSERT INTO child (id, parent_id) VALUES (1, 99);",
+            )?)
+        };
+        assert!(Library::init(Connection::open_in_memory().unwrap(), &[bad]).is_err());
     }
 
     #[test]
