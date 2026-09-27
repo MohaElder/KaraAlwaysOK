@@ -73,7 +73,7 @@
           {:else}
             <h1>{cardName(page.card)}</h1>
           {/if}
-          <p class="sub num">{#if page.card.subtitle}<span class="subtitle">{page.card.subtitle}</span> · {/if}{t("library.songs", { n: tracks.length })}{#if length} · {t("library.minutes", { n: length })}{/if}</p>
+          <p class="sub num">{#if page.card.subtitle}<span class="subtitle">{page.card.subtitle}</span>{" · "}{/if}{t("library.songs", { n: tracks.length })}{#if length}{" · "}{t("library.minutes", { n: length })}{/if}</p>
           <div class="actions">
             {#if asking === page.card.id}
               <div class="hstack confirm" in:fade>
