@@ -42,7 +42,9 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Player bar** — floating, like Apple Music's mini player: previous / play / next, artwork + title (click to open/close the karaoke view), a thin progress line whose lighter band shows how far ahead the song is prepared, the vocal slider, and a "…" menu.
 
-**Vocal slider** — one thin Apple-style slider with a mic icon. Fully left = off (original vocals, icon greys out). Fully right = instrumental (default). No presets.
+**Singer slider** — one thin Apple-style slider with a singer's-voice icon (Phosphor `user-sound`, not a mic, so it isn't mistaken for your own mic volume). Fully left = original singer; fully right = singer removed (instrumental, the default). No presets. It is also on the phone's microphone screen, below the guest's own voice volume, and both stay in sync.
+
+**Already-instrumental songs** — when a song's title, album or tags say it's already instrumental (e.g. "instrumental", "karaoke", "off vocal", "inst.", "伴奏", "カラオケ"), the singer slider starts at original (fully left), so nothing is stripped; the user can still slide it up. Audio-based detection was tested and is unreliable (lead instruments look like vocals), so detection is metadata-only.
 
 **"…" menu** — Key (−6…+6 semitones), Lyrics timing (±0.1 s steps), which audio version a streaming song uses (phase 3), where lyrics came from.
 
