@@ -145,7 +145,7 @@ impl Lrclib {
     pub fn new() -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .user_agent(concat!("kara-always-oki/", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(8))
             .build()?;
         Ok(Self { client })
     }
