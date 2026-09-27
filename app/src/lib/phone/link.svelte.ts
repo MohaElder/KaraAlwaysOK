@@ -42,13 +42,13 @@ function keep(storage: () => Storage, key: string, value: string) {
 
 /** The effect this phone chose last time, or none at half strength. */
 function savedEffect(): { kind: EffectKind; amount: number } {
+  let e;
   try {
-    const e = JSON.parse(localStorage.getItem("phone.effect") ?? "null");
-    if (["none", "karaokeMix", "autoTune"].includes(e?.kind) && Number.isInteger(e?.amount)) return e;
+    e = JSON.parse(localStorage.getItem("phone.effect") ?? "null");
   } catch {
-    return { kind: "none", amount: 50 };
+    e = null;
   }
-  return { kind: "none", amount: 50 };
+  return ["none", "karaokeMix", "autoTune"].includes(e?.kind) && Number.isInteger(e?.amount) ? e : { kind: "none", amount: 50 };
 }
 
 /** The phone's side of the session: joining, the mic, staying connected, and what the computer shares. */

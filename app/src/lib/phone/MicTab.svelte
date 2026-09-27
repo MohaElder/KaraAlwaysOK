@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { singerText } from "$lib/components/SingerSlider.svelte";
   import { onMount } from "svelte";
   import { link, type EffectKind } from "./link.svelte";
   import { t } from "$lib/i18n/index.svelte";
@@ -29,7 +30,7 @@
   const track = $derived(link.current?.track ?? null);
   const upNext = $derived(link.next ? t("phone.upNext", { song: [link.next.track.title, link.next.track.artist].filter(Boolean).join(" · ") }) : "");
   const singer = $derived(singerDraft ?? track?.vocalRemoval ?? 100);
-  const singerLabel = $derived(singer === 0 ? t("singer.original") : singer === 100 ? t("singer.removed") : t("singer.partly", { n: singer }));
+  const singerLabel = $derived(singerText(singer));
 
   $effect(() => {
     if (singerDraft === track?.vocalRemoval) singerDraft = null;
