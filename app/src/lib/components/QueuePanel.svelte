@@ -12,10 +12,11 @@
   import DotsSixVerticalIcon from "phosphor-svelte/lib/DotsSixVerticalIcon";
   import ListPlusIcon from "phosphor-svelte/lib/ListPlusIcon";
 
-  let dragFrom = $state<number | null>(null);
+  let dragKey = $state<number | null>(null);
   let over = $state<number | null>(null);
   const current = $derived(player.snapshot.current);
   const upcoming = $derived(current == null ? [] : player.snapshot.entries.map((entry, index) => ({ entry, index })).filter(({ index }) => index > current));
+  const dragFrom = $derived(upcoming.find(({ entry }) => entry.key === dragKey)?.index ?? null);
 
   /** The queue index of the upcoming row under the pointer. */
   function rowAt(e: PointerEvent) {
@@ -24,11 +25,16 @@
   }
 
   function drop(to: number | null) {
+    const key = dragKey;
     const from = dragFrom;
-    dragFrom = over = null;
-    if (from != null && to != null && from !== to) void player.moveQueued(player.snapshot.entries[from].key, to);
+    dragKey = over = null;
+    if (key != null && from != null && to != null && from !== to) void player.moveQueued(key, to);
   }
 </script>
+
+<svelte:window onkeydown={(e) => {
+  if (e.key === "Escape" && dragKey != null) dragKey = over = null;
+}} />
 
 {#if ui.queueOpen}
   <aside class="qpanel glass" class:dk={ui.karaoke} aria-label={t("queue.title")} transition:slide={{ x: 24, y: 0 }}>
@@ -51,25 +57,26 @@
           <div
             class="qrow"
             class:dragging={dragFrom === index}
-            class:over={over === index}
+            class:over={dragFrom != null && over === index}
             class:below={dragFrom != null && dragFrom < index}
             data-qi={index}
             transition:slide={{ x: 8, y: 0 }}
           >
             <span
               class="grip"
-              role="presentation"
+              aria-hidden="true"
               use:tip={t("queue.drag")}
               onpointerdown={(e) => {
+                if (e.button !== 0) return;
                 e.preventDefault();
                 e.currentTarget.setPointerCapture(e.pointerId);
-                dragFrom = index;
+                dragKey = entry.key;
               }}
               onpointermove={(e) => {
                 if (dragFrom != null) over = rowAt(e);
               }}
               onpointerup={(e) => drop(rowAt(e))}
-              onpointercancel={() => (dragFrom = over = null)}
+              onpointercancel={() => (dragKey = over = null)}
             ><DotsSixVerticalIcon size={16} /></span>
             <Artwork track={entry.track} />
             <span class="grow"><b class="ell">{entry.track.title}</b><small class="ell">{entry.track.artist ?? ""}</small></span>
