@@ -1,6 +1,7 @@
-# kara-always-oki — Design
+# KaraAlwaysOK — Design
 
 Date: 2026-09-26
+App name: KaraAlwaysOK (what people see: window title, menu bar, Settings). The repo, crates, the `kara` CLI and the data folder keep `kara-always-oki`, so existing libraries keep working.
 Status: approved in brainstorming, pending written-spec review
 
 ## 1. What it is

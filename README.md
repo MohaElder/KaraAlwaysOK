@@ -1,4 +1,4 @@
-# kara-always-oki
+# KaraAlwaysOK
 
 A desktop karaoke app. Pick a song and sing over it: it strips the vocals out
 (fully, or partly with a slider) and shows synced lyrics. Songs come from your

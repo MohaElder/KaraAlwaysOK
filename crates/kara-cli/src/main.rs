@@ -16,7 +16,7 @@ use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 #[derive(Parser)]
-#[command(name = "kara", about = "kara-always-oki engine")]
+#[command(name = "kara", about = "KaraAlwaysOK engine")]
 struct Cli {
     /// Data folder (defaults to ~/Library/Application Support/kara-always-oki)
     #[arg(long, global = true)]
