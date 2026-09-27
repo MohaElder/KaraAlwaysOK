@@ -119,10 +119,13 @@ pub fn add_file(lib: &Library, path: &Path) -> Result<Ingested> {
     Ok(Ingested { track_id, source_id })
 }
 
-/// Adds a link as a track right away; its real title arrives when the audio is fetched.
+/// Adds a link as a track right away (a link already in the library returns its existing track); its real title arrives when the audio is fetched.
 pub fn add_link(lib: &Library, url: &Url) -> Result<Ingested> {
     if let Some(p) = link::rejection(url) {
         bail!(p);
+    }
+    if let Some(s) = lib.source_by_uri(SourceKind::Link, url.as_str())? {
+        return Ok(Ingested { track_id: s.track_id, source_id: s.id });
     }
     let host = url.host_str().unwrap_or("link").trim_start_matches("www.");
     let title = match link::verdict(url) {
@@ -202,6 +205,17 @@ mod tests {
         let pls = lib.collections(Some(ProviderId::Local), CollectionKind::Playlist).unwrap();
         assert_eq!(pls[0].name, "Imported");
         assert_eq!(lib.collection_tracks(pls[0].id).unwrap()[0].id, ing.track_id);
+    }
+
+    #[test]
+    fn re_adding_the_same_link_returns_the_existing_track() {
+        let lib = Library::open_in_memory().unwrap();
+        let url = Url::parse("https://www.youtube.com/watch?v=abc").unwrap();
+        let first = add_link(&lib, &url).unwrap();
+        let again = add_link(&lib, &url).unwrap();
+        assert_eq!((again.track_id, again.source_id), (first.track_id, first.source_id));
+        let imported = &lib.collections(None, CollectionKind::Playlist).unwrap()[0];
+        assert_eq!(lib.collection_tracks(imported.id).unwrap().len(), 1);
     }
 
     #[test]

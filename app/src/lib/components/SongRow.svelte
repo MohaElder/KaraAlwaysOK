@@ -30,8 +30,9 @@
   class:grip={!!grip}
   data-track={track.id}
   role="button"
-  tabindex="0"
-  aria-label={t("song.addToQueueLabel", { title: track.title })}
+  tabindex={busy ? -1 : 0}
+  aria-disabled={busy}
+  aria-label={busy ? track.title : t("song.addToQueueLabel", { title: track.title })}
   onclick={() => !busy && onTap?.()}
   onkeydown={(e) => e.key === "Enter" && !busy && onTap?.()}
   oncontextmenu={(e) => {
@@ -47,7 +48,7 @@
     <div class="t ell">{track.title}</div>
     <div class="a ell">{[track.artist, track.album].filter(Boolean).join(" – ")}</div>
   </span>
-  <button class="ib nx" use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); if (!busy) onNext?.(); }}><ArrowBendDownRightIcon size={18} /></button>
+  <button class="ib nx" disabled={busy} use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); onNext?.(); }}><ArrowBendDownRightIcon size={18} /></button>
   <button
     class="ib nx"
     use:tip={t("common.more")}

@@ -16,7 +16,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 for e in rx {
                     let _ = handle.emit("engine", &e);
-                    if let Event::Added { track_id } | Event::Ready { track_id } | Event::Stage { track_id, stage: Stage::Separating } = e {
+                    if let Event::Ready { track_id } | Event::Stage { track_id, stage: Stage::Separating } = e {
                         player::refresh_if_queued(&handle, track_id);
                     }
                 }

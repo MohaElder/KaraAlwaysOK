@@ -90,14 +90,20 @@ class Adding {
       const step: Key = e.stage === "fetching" ? (p.link ? "adding.downloading" : "adding.reading") : e.stage === "findingLyrics" ? "adding.lyrics" : "adding.preparing";
       p.toast.update(t(step, { title: p.title }), { spin: true, sticky: true });
     } else if (e.kind === "added") {
-      const track = await getTrack(e.trackId);
-      await library.refresh();
-      this.finish(e.trackId);
-      p.toast.update(t("adding.done", { title: track.title }), { art: track, onClick: () => void this.reveal(track.id) });
-      if (p.then) await player.enqueue(track.id, p.then === "next");
+      try {
+        const track = await getTrack(e.trackId);
+        await library.refresh();
+        this.finish(e.trackId);
+        p.toast.update(t("adding.done", { title: track.title }), { art: track, onClick: () => void this.reveal(track.id) });
+        if (p.then) await player.enqueue(track.id, p.then === "next");
+      } catch (err) {
+        p.toast.update(say(err), { icon: WarningIcon });
+      } finally {
+        this.finish(e.trackId);
+      }
     } else if (e.kind === "failed") {
       const link = p.link;
-      if (link) await deleteTrack(e.trackId);
+      if (link) await deleteTrack(e.trackId).catch(() => {});
       await library.refresh();
       this.finish(e.trackId);
       const retry = link ? { label: t("common.tryAgain"), icon: ArrowClockwiseIcon, run: () => void this.link(link, p.then, p.title) } : undefined;
