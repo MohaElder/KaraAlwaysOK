@@ -5,7 +5,7 @@ const api = vi.hoisted(() => ({ chunkPcm: vi.fn(), playbackInfo: vi.fn() }));
 vi.mock("$lib/api", () => api);
 vi.mock("./keyshift", () => ({
   KeyShift: class {
-    input = {};
+    input = { gain: { setTargetAtTime() {}, setValueAtTime() {} } };
     works = true;
     latency = 0;
     async set() {}

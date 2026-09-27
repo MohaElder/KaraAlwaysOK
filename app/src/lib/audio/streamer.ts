@@ -160,12 +160,10 @@ export class Streamer {
 
   private setInfo(info: PlaybackInfo) {
     this.info = info;
-    if (this.exact) {
-      this.onChange();
-      return;
+    if (!this.exact) {
+      if (info.durationMs) this.duration = info.durationMs / 1000;
+      else if (info.chunksTotal != null) this.duration = info.chunksTotal * this.chunkSec;
     }
-    if (info.durationMs) this.duration = info.durationMs / 1000;
-    else if (info.chunksTotal != null) this.duration = info.chunksTotal * this.chunkSec;
     this.onChange();
   }
 
@@ -203,6 +201,7 @@ export class Streamer {
     this.nextToSchedule = chunkAt(pos, this.chunkSec);
     this.scheduledEnd = pos;
     this.phase = "playing";
+    this.key.input.gain.setValueAtTime(1, this.anchor + pos);
     this.scheduleReady();
     this.onChange();
   }
@@ -227,10 +226,11 @@ export class Streamer {
 
   private halt() {
     if (this.phase === "playing") this.pos = this.position();
+    const now = this.ctx.currentTime;
+    this.key.input.gain.setTargetAtTime(0, now, 0.003);
     for (const s of this.sources) {
       s.onended = null;
-      s.stop();
-      s.disconnect();
+      s.stop(now + 0.015);
     }
     this.sources = [];
   }
