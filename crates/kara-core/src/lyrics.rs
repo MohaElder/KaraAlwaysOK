@@ -104,7 +104,8 @@ pub fn parse_lrc(text: &str, duration_ms: i64) -> Vec<Line> {
 
 /// A source of synced (LRC) lyrics for a song.
 pub trait LyricsFetcher {
-    fn fetch(&self, title: &str, artist: &str, album: Option<&str>, duration_s: u64) -> Result<Option<String>>;
+    /// Without an artist, matches by title and duration.
+    fn fetch(&self, title: &str, artist: Option<&str>, album: Option<&str>, duration_s: u64) -> Result<Option<String>>;
 }
 
 /// lrclib.net — free, no key.
@@ -126,10 +127,24 @@ impl Lrclib {
 #[serde(rename_all = "camelCase")]
 struct LrclibHit {
     synced_lyrics: Option<String>,
+    duration: f64,
+}
+
+/// The synced lyrics of the hit closest in length to `duration_s`, at most 2 s off.
+fn closest_synced(hits: Vec<LrclibHit>, duration_s: u64) -> Option<String> {
+    let off = |h: &LrclibHit| (h.duration - duration_s as f64).abs();
+    hits.into_iter()
+        .filter(|h| off(h) <= 2.0 && h.synced_lyrics.as_deref().is_some_and(is_synced))
+        .min_by(|a, b| off(a).total_cmp(&off(b)))
+        .and_then(|h| h.synced_lyrics)
 }
 
 impl LyricsFetcher for Lrclib {
-    fn fetch(&self, title: &str, artist: &str, album: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+    fn fetch(&self, title: &str, artist: Option<&str>, album: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+        let Some(artist) = artist else {
+            let resp = self.client.get("https://lrclib.net/api/search").query(&[("track_name", title)]).send()?;
+            return Ok(closest_synced(resp.error_for_status()?.json()?, duration_s));
+        };
         let mut q = vec![("track_name", title.to_string()), ("artist_name", artist.to_string()), ("duration", duration_s.to_string())];
         if let Some(a) = album {
             q.push(("album_name", a.to_string()));
@@ -155,10 +170,8 @@ pub fn find(
     if let Some(text) = embedded.filter(|t| is_synced(t)) {
         return Ok((LyricsSource::Embedded, parse_lrc(text, duration_ms)));
     }
-    if let Some(artist) = artist {
-        if let Some(text) = fetcher.fetch(title, artist, album, (duration_ms / 1000) as u64)? {
-            return Ok((LyricsSource::Lrclib, parse_lrc(&text, duration_ms)));
-        }
+    if let Some(text) = fetcher.fetch(title, artist, album, (duration_ms / 1000) as u64)? {
+        return Ok((LyricsSource::Lrclib, parse_lrc(&text, duration_ms)));
     }
     Ok((LyricsSource::None, Vec::new()))
 }
@@ -214,7 +227,7 @@ mod tests {
 
     struct Fake(Option<&'static str>, RefCell<u32>);
     impl LyricsFetcher for Fake {
-        fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
             *self.1.borrow_mut() += 1;
             Ok(self.0.map(String::from))
         }
@@ -229,17 +242,34 @@ mod tests {
         assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Lrclib, "online"));
         let none = Fake(None, RefCell::new(0));
         assert_eq!(find(None, "t", Some("a"), None, 5_000, &none).unwrap(), (LyricsSource::None, vec![]));
-        // No artist: don't even ask.
-        assert_eq!(find(None, "t", None, None, 5_000, &f).unwrap().0, LyricsSource::None);
+        // No artist: still asks, by title.
+        assert_eq!(find(None, "t", None, None, 5_000, &f).unwrap().0, LyricsSource::Lrclib);
         // A leading UTF-8 BOM doesn't stop embedded text from being recognized as synced.
         let (src, lines) = find(Some("\u{FEFF}[00:00.00]bommed"), "t", Some("a"), None, 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Embedded, "bommed"));
     }
 
     #[test]
+    fn title_only_search_takes_the_closest_synced_hit_within_two_seconds() {
+        let hit = |duration, lyrics: Option<&str>| LrclibHit { duration, synced_lyrics: lyrics.map(String::from) };
+        let hits = || {
+            vec![
+                hit(180.0, None),
+                hit(181.5, Some("[00:01.00]near")),
+                hit(179.0, Some("[00:01.00]nearest")),
+                hit(179.5, Some("plain, not synced")),
+                hit(200.0, Some("[00:01.00]far")),
+            ]
+        };
+        assert_eq!(closest_synced(hits(), 180).as_deref(), Some("[00:01.00]nearest"));
+        assert_eq!(closest_synced(hits(), 190), None);
+    }
+
+    #[test]
     #[ignore = "network"]
     fn lrclib_live_lookup_does_not_error() {
         let l = Lrclib::new().unwrap();
-        l.fetch("Bohemian Rhapsody", "Queen", None, 355).unwrap();
+        l.fetch("Bohemian Rhapsody", Some("Queen"), None, 355).unwrap();
+        l.fetch("zzqxv made up kara song", None, None, 200).unwrap();
     }
 }

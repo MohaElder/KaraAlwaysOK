@@ -394,14 +394,14 @@ mod tests {
 
     struct NoLyrics;
     impl LyricsFetcher for NoLyrics {
-        fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
             Ok(None)
         }
     }
 
     struct MadeUpLyrics;
     impl LyricsFetcher for MadeUpLyrics {
-        fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
             Ok(Some("[00:00.00]la la la\n".into()))
         }
     }
@@ -605,7 +605,7 @@ mod tests {
         /// Finds made-up lyrics once the test opens the gate.
         struct Gated(mpsc::Receiver<()>);
         impl LyricsFetcher for Gated {
-            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
                 self.0.recv_timeout(Duration::from_secs(10))?;
                 Ok(Some("[00:00.00]la la la\n".into()))
             }
@@ -635,7 +635,7 @@ mod tests {
     fn lyrics_are_retried_for_an_already_ready_song() {
         struct Offline;
         impl LyricsFetcher for Offline {
-            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
                 anyhow::bail!("offline")
             }
         }
@@ -683,7 +683,7 @@ mod tests {
     fn embedded_lyrics_are_kept_and_the_fetcher_is_not_called() {
         struct CountingFetcher(Arc<std::sync::atomic::AtomicU32>);
         impl LyricsFetcher for CountingFetcher {
-            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
                 self.0.fetch_add(1, Ordering::Relaxed);
                 Ok(Some("[00:00.00]other made up text\n".into()))
             }
