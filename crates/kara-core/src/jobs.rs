@@ -218,7 +218,6 @@ fn prepare_inner(
         }
     }
 
-    // After fetching: it fills in a link's title and artist and saves embedded lyrics.
     let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, emit)?;
     lyrics.request(track_id);
     if is_ready(ctx, lib, &hash)? {

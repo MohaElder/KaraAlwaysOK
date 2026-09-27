@@ -82,7 +82,7 @@ struct Info {
 }
 
 /// Downloads the best audio we can decode (M4A, else MP3, else whatever is best).
-/// If that fails, updates yt-dlp (sites change) and tries once more.
+/// If that fails, updates yt-dlp and tries once more.
 pub fn download(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
     download_once(bin, url, out_dir).or_else(|e| {
         let updated = Command::new(bin).arg("-U").output().is_ok_and(|o| o.status.success());
