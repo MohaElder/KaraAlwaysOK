@@ -53,6 +53,8 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Appearance rule** — light and dark mode, following the macOS system setting live (no in-app toggle needed). Every color comes from theme tokens defined for both modes; the karaoke view stays dark in both.
 
+**Icons** — Phosphor Icons (MIT), one weight used consistently. Not Lucide.
+
 **Motion rule** — every interaction animates: showing or hiding any view, sheet, menu, popover, button or status, and every state change. Use only two simple, consistent transitions: a fade, or a short slide (paired with a fade) along the direction the element comes from. Same durations and easing everywhere; they should feel natural, never showy. Respect the system "reduce motion" setting (fall back to fade only).
 
 ## 3. Architecture
