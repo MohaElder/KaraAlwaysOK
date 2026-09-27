@@ -564,6 +564,8 @@ mod tests {
         let version: usize = lib.conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
         assert_eq!(version, 2);
         lib.conn.execute("INSERT INTO added (x) VALUES (1)", []).unwrap();
+        let fk: i64 = lib.conn.pragma_query_value(None, "foreign_keys", |r| r.get(0)).unwrap();
+        assert_eq!(fk, 1);
     }
 
     #[test]
