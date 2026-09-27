@@ -822,6 +822,7 @@ dependencies = [
  "sha2",
  "symphonia",
  "tempfile",
+ "url",
 ]
 
 [[package]]
