@@ -12,23 +12,23 @@
 
 ## Global Constraints
 
-- Preconditions: Phase 1b (`docs/superpowers/plans/2026-09-27-phase1b-app.md`) is complete through its Task 31 (`phase1b-app` at 65471cb or later). Work on a local branch `phase2-phone-mics` made from the then-current `phase1b-app`. Phase 1b Task 32 (fast YouTube search and suggestions) may land before or during this plan; it keeps the `youtube_search` command and `SearchHit`, and Task 14 moves whatever body that command has at HEAD. The real code at HEAD wins over any snippet here: when a name or signature differs, follow HEAD and keep this plan's behavior.
-- **The user's dev app must never be disturbed.** The user runs `kara-app` with Vite on port 1420 while tasks run. No step may stop or restart it (`pkill`, `kill` by name), bind or wait on port 1420, run `app/scripts/app-check.sh` or `npm run tauri:dev`/`npm run app-check`, or build into the shared `target/` with different features. End-to-end checks use the **isolated check** (below): its own target folder, its own build with the page inside, its own process id. The last task asks the user to restart their dev app; it starts nothing.
+- Preconditions and where to work: Phase 1b is complete through its Task 32 (`phase1b-app` at c6f33da or later). **Execute in a separate git worktree**, never in the user's checkout `/Users/mohaelder/Repos/kara-always-oki`: that checkout runs the user's dev app (every edit under `app/src` there hot-reloads into it mid-song) and another session still commits Phase 1b there. Before Task 1: `cd /Users/mohaelder/Repos/kara-always-oki && git worktree add ../kara-always-oki-phase2 -b phase2-phone-mics phase1b-app`, then `cd ../kara-always-oki-phase2/app && npm ci`. Every path and command in this plan is relative to that worktree (its own `target/`, `app/build`, `app/.svelte-kit`, `.superpowers/sdd/…`); commit there on `phase2-phone-mics`. The real code at HEAD wins over any snippet here: when a name or signature differs, follow HEAD and keep this plan's behavior.
+- **The user's dev app must never be disturbed.** The user runs `kara-app` with Vite on port 1420 from their own checkout while tasks run. No step may touch that checkout, stop or restart the app (`pkill`, `kill` by name), bind or wait on port 1420 (or 443/80, which the user's app may hold), run `app/scripts/app-check.sh` or `npm run tauri:dev`/`npm run app-check`, or play audible sound. End-to-end checks use the **isolated check** (below): its own target folder, its own build with the page inside, its own phone port, its own process id. The last task tells the user how to pick the work up; it starts nothing.
 - Before any `cargo` command run `source "$HOME/.cargo/env"`.
 - Code bar (the user's): comments only summarize what a function does (a variable gets one only if someone would reasonably ask) — no reasoning, history or postmortems; code explains itself through names and structure; less code and reuse over new layers (YAGNI); every test must be necessary, no redundant tests.
 - Probe over reasoning: when an API or behavior is in doubt, run a focused command or test or read the real source (`~/.cargo/registry/src/*/<crate>`, `app/node_modules/<pkg>`) before deciding.
 - UI copy is plain: no engineering words (no "certificate", "server", "WebSocket", "buffer", "latency", IPs or ports) — the one exception is the typed address in Task 6: a port shows only when 443 was taken, and `https://` only when port 80 couldn't be served. Every piece of UI text goes through `t(key, params)` in all six locales (`app/src/lib/i18n/{en,ja,ko,zh-Hans,zh-Hant,es}.ts`); a task that adds text adds its keys to all six; `npm run check:i18n` must pass. Song titles, artists, names and lyrics show exactly as given. The phone page follows the phone's browser language.
 - Phase 1 UI rules apply to the Mac window and the phone page: tokens only from `app/src/styles/tokens.css`, Phosphor Bold icons imported from `phosphor-svelte/lib/<Name>Icon`, glass for everything floating (pill, tab bar, banner, Voice/Singer/Effect buttons and panels, toasts), motion only through `$lib/motion` (`fade`, `slide`; 240 ms, one easing; fade only under reduced motion), light/dark from the system, icon beside every label except song info.
 - Sample lyrics in code and tests are made up. Never real lyrics.
-- Phone traffic stays on the LAN: the server answers only private, link-local and loopback addresses, and phones talk only to the Mac. (Searching YouTube and downloading a guest's link use the internet exactly as the Mac's own search and adding do.)
-- Numbers (from the spec and spike): jitter buffer starts at 20 ms (the floor; `KARA_MIC_BUFFER_MS` overrides it for the manual test), grows 10 ms per underrun up to 60 ms, shrinks 2 ms per 10 s without one, trims a burst when more than 30 ms over target, fades 5 ms; per-phone gain = 2.0 × Mac volume % × phone Voice %, so never above 2.0; limiter ceiling 0.89; up to 4 phones; output stream 256 frames when the device allows; phones send about 5 ms per frame; the phone pings every second, retries every 2 s and gives up after 2 minutes, and treats 3 s without a message as a dropped connection; the Mac treats 5 s without a message as dropped, removes a dropped row after 2 minutes, and sends levels every 80 ms (the `"phones"` view only on changes); voice effects: Karaoke mix = 120 ms echo (feedback 0.35) + warm reverb, Auto-tune = nearest semitone with ≤ 15 ms added delay (12 ms grains), intensity 0 = dry; the phone asks YouTube 280 ms after typing stops (as the Mac does).
+- Phone traffic stays on the LAN: the server answers only private, link-local and loopback addresses, and phones talk only to the Mac — voices never leave the network. Two stated exceptions: searching YouTube and downloading a guest's link use the internet on the Mac exactly as its own search and adding do, and the phone's Songs tab shows YouTube result thumbnails straight from YouTube's image server, as any web page does (proxying them through the Mac would add code for no guest-visible gain).
+- Numbers (from the spec and spike): jitter buffer starts at 20 ms (the floor; `KARA_MIC_BUFFER_MS` overrides it for the manual test), grows 10 ms per underrun up to 60 ms, shrinks 2 ms per 10 s without one, trims a burst when more than 30 ms over target, fades 5 ms; per-phone gain = 2.0 × Mac volume % × phone Voice %, so never above 2.0; limiter ceiling 0.89; up to 4 phones; output stream 256 frames when the device allows; phones send about 5 ms per frame; the phone pings every second, retries every 2 s and gives up after 2 minutes, and treats 3 s without a message as a dropped connection; the Mac treats 5 s without a message as dropped, removes a dropped row after 2 minutes, and sends levels every 80 ms (the `"phones"` view only on changes); voice effects: Karaoke mix = 120 ms echo (feedback 0.35) + warm reverb, Auto-tune = nearest semitone with taps spaced by whole pitch periods (≥ 3.5 ms), adding ≤ ~12 ms for most voices and up to ~25 ms for low ones (the user's choice, spec updated), intensity 0 = dry, every change fades over 20 ms; the audio callback locks only the mixer, and nothing under that lock allocates, frees or grows; the phone asks YouTube 280 ms after typing stops (as the Mac does).
 - Phone session wire contract: close codes 4001 = session ended or phone removed, 4002 = room full, 4003 = wrong code. Join code: 4 random digits, shown on the Mac as `OKI-1234`; the server compares digits only. Ports: HTTPS on 443 (8443 when 443 is taken), a plain-HTTP redirect on 80 when free. The certificate lives in `<data folder>/phones/certificate.json`, valid 800 days, remade 30 days before it runs out or when the Mac has an address it doesn't cover.
 - Lock order: `AppState` mutexes (`player`, `lib`) may be held while taking the phone session lock (`player::update` broadcasts to phones), never the reverse — code holding the session lock must not call anything that locks `AppState`. The mixer lock is a leaf (the audio callback takes only it).
 - The phone page (`app/src/routes/phone`, `app/src/lib/phone`) never calls Tauri at runtime; it may import types from `$lib/api` and shared UI modules that don't invoke commands.
-- Verification is commands only; no task needs a real phone, ears or clicks — those go to the user checklist in Task 15. Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cd app && npm test && npm run check && npm run check:i18n`, Playwright `cd app && npx playwright test <files>` (its own port 1430), and, from Task 6 on, the **isolated check** with the phone check: `cd app && KARA_PHONE_CODE=4827 zsh scripts/isolated-check.sh ../.superpowers/sdd/2026-09-27-phase2-phone-mics/shots/task-NN.png "NODE_TLS_REJECT_UNAUTHORIZED=0 node scripts/phone-check.ts"`, then `grep -q 'phone check OK' ../.superpowers/sdd/2026-09-27-phase2-phone-mics/shots/task-NN.while-open.txt` (Bash timeout 10 minutes; the first build in its own target folder is slow). It builds the page and the app with the page inside (the release serving path), runs that copy by process id on the scratch data folder, pictures its window and stops only that process; webview errors of that copy aren't in its log, which is why the UI is covered by Playwright. The task report names the picture.
+- Verification is commands only; no task needs a real phone, ears or clicks — those go to the user checklist in Task 15. Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cd app && npm test && npm run check && npm run check:i18n`, Playwright `cd app && npx playwright test <files>` (its own port 1430), and, from Task 6 on, the **isolated check** with the phone check: `cd app && KARA_PHONE_CODE=4827 KARA_PHONE_PORT=8543 zsh scripts/isolated-check.sh ../.superpowers/sdd/2026-09-27-phase2-phone-mics/shots/task-NN.png "NODE_TLS_REJECT_UNAUTHORIZED=0 node scripts/phone-check.ts"`, then `grep -q 'phone check OK' ../.superpowers/sdd/2026-09-27-phase2-phone-mics/shots/task-NN.while-open.txt` (Bash timeout 10 minutes; the first build in its own target folder is slow). It builds the page and the app with the page inside (the release serving path), runs that copy by process id on the scratch data folder, pictures its window and stops only that process; webview errors of that copy aren't in its log, which is why the UI is covered by Playwright. The task report names the picture.
 - Never read or write `~/Library/Application Support/kara-always-oki`; the isolated check uses `.superpowers/sdd/2026-09-27-phase2-phone-mics/data` (a fresh one downloads the singing engine in the background, which the checks don't wait for).
 - No remote actions: no `git push`, no `gh`, no tags.
-- Dev-only knobs: `KARA_PHONE_CODE` (debug builds only) opens a phone session at launch with that code; `KARA_MIC_BUFFER_MS` sets the jitter buffer floor (clamped to 10–60). Both are listed in the README.
+- Dev-only knobs (debug builds): `KARA_PHONE_CODE` opens a phone session at launch with that code; `KARA_PHONE_PORT` serves phones only on that port and leaves 443/80 alone; `KARA_MIC_BUFFER_MS` sets the jitter buffer floor (clamped to 10–60). All are listed in the README.
 
 ## Review Focus
 
@@ -39,7 +39,8 @@
 5. **The Mac's address changes** — a certificate is reused while it covers the Mac's addresses, remade when a new address appears (keeping the old ones) or a month before it runs out. Test: Task 6 `a_kept_certificate_is_reused_until_the_mac_gets_a_new_address_or_it_nears_expiry`.
 6. **A 5th phone** — refused with "This room is full." while a dropped phone's row is still kept for it, until that phone has been gone for two minutes. Tests: Task 6 `a_phone_needs_the_code_and_the_fifth_is_refused`; Task 8 `a_phone_gone_for_two_minutes_loses_its_row`; Task 10 `a wrong code or a full room sends the guest back to Join with the reason`.
 7. **The Mac sleeping, and a session nobody uses** — phones that can't reach the Mac show Session ended after two minutes; a dropped row leaves after two minutes and the session (server, output stream, ticker) ends when the window is closed and no phone is left, so the Mac can idle-sleep; on wake the session ends. Tests: Task 10 (as in 1); Task 8 `a_phone_gone_for_two_minutes_loses_its_row`. (The wake check itself is one comparison, left to the checklist.)
-8. **Auto-tune** — a flat note is pulled to the nearest semitone, intensity 0 is dry, and the added delay stays ≤ 15 ms; the two-grain shifter can sound phasey on a voice that is almost in tune, which only the checklist can judge. Tests: Task 4 `auto_tune_pulls_a_flat_note_to_the_nearest_semitone_only_as_hard_as_asked`, `auto_tune_adds_at_most_15_ms`, `karaoke_mix_is_dry_at_zero_and_adds_an_echo_and_a_tail_when_up`.
+8. **Auto-tune and effect switching** — a note 30 cents flat or sharp lands on the semitone at 98, 110, 131, 262 and 440 Hz, intensity 50 corrects half, the delay while correcting stays ≤ 12 ms for voices ≥ 200 Hz and ≤ 25 ms for low ones, low sung notes never read outside the tap line (a panic there would abort the app from the audio callback), and switching effects or strength never clicks. Tests: Task 4 `auto_tune_pulls_low_and_high_notes_to_the_nearest_semitone_as_hard_as_asked`, `auto_tune_delays_most_voices_about_12_ms_and_low_voices_at_most_25`, `auto_tune_keeps_going_through_low_sung_notes_and_reads_right_at_the_edge_of_its_line`, `switching_effects_or_their_strength_never_clicks`, `karaoke_mix_is_dry_at_zero_and_adds_a_room_and_an_echo_when_up`.
+9. **The output device going away** (USB or Bluetooth speakers unplugged) — no phone buffer grows past 200 ms, and the session ends with a toast (reopening on the new speakers if the window is open). Tests: Task 1 `a_phone_nobody_hears_holds_little_memory`; Task 9 (the stopped toast and reopening).
 
 ---
 
@@ -52,13 +53,13 @@ kara-always-oki/
 │  ├─ lib.rs                                   + pub mod mic
 │  ├─ problem.rs                               + PhonesStart, NoNetwork
 │  └─ mic/
-│     ├─ mod.rs                   (new)        Mixer, NewVoice, voice_gain, Meter, reverb, limiter
+│     ├─ mod.rs                   (new)        Mixer, NewVoice, Gone, Level, voice_gain, reverb, limiter
 │     ├─ buffer.rs                (new)        JitterBuffer (adaptive delay, cubic resampling, fades)
 │     ├─ howl.rs                  (new)        Howl (feedback detector and gain)
 │     └─ effects.rs               (new)        Effect, Effects (karaoke mix, auto-tune)
 ├─ app/
 │  ├─ scripts/phone-check.ts      (new)        talks to a running app like a phone
-│  ├─ scripts/isolated-check.sh   (new)        own build, own process, never touches port 1420
+│  ├─ scripts/isolated-check.sh   (new)        own build, own phone port, own process; never touches port 1420
 │  ├─ scripts/window-id.swift                  also finds a window by process id
 │  ├─ src-tauri/
 │  │  ├─ Cargo.toml                            + server, certificate, audio crates
@@ -128,7 +129,7 @@ Mac window events: `"phones"` (view, on changes) · `"phone-levels"` (every 80 m
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `kara_core::mic::JitterBuffer` with `new(in_rate: u32, out_rate: u32, floor_ms: f64) -> Self`, `push(&mut self, samples: &[f32])`, `pull(&mut self, out: &mut [f32])` (mono, output rate), `reset(&mut self)`, `fill_ms(&self) -> f64`, `target_ms(&self) -> f64`.
+- Produces: `kara_core::mic::JitterBuffer` with `new(in_rate: u32, out_rate: u32, floor_ms: f64) -> Self` (allocates its whole queue up front), `push(&mut self, samples: &[f32])` (never grows the queue: past 200 ms waiting — nobody is reading, e.g. the output device went away — it starts over), `pull(&mut self, out: &mut [f32])` (mono, output rate), `reset(&mut self)`, `fill_ms(&self) -> f64`, `target_ms(&self) -> f64`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -204,6 +205,16 @@ mod tests {
     }
 
     #[test]
+    fn a_phone_nobody_hears_holds_little_memory() {
+        let mut b = JitterBuffer::new(48_000, 48_000, 20.0);
+        let room = b.queue.capacity();
+        for _ in 0..10 * 48_000 / 256 {
+            b.push(&[0.1; 256]);
+        }
+        assert!(b.fill_ms() <= HOLD_MS && b.queue.capacity() == room, "10 s unread stays within {HOLD_MS} ms without growing");
+    }
+
+    #[test]
     fn a_wifi_stall_fades_out_grows_the_target_and_a_burst_is_trimmed_back() {
         let r = run(48_000, 48_000.0, 70.0, |t| if (5.0..5.15).contains(&t) { 5.15 } else { t + 0.004 });
         assert!(smooth(&r.out), "fades instead of clicking");
@@ -237,9 +248,12 @@ const SHRINK_MS: f64 = 2.0;
 const STEADY_SECS: f64 = 10.0;
 const TRIM_OVER_MS: f64 = 30.0;
 const MAX_SKEW: f64 = 0.005;
+/// The most sound the buffer ever holds; far above the 60 ms target plus a trimmed burst.
+const HOLD_MS: f64 = 200.0;
 
 pub struct JitterBuffer {
     queue: VecDeque<f32>,
+    cap: usize,
     /// Read position in `queue`; at least 1 so the interpolation has a sample behind it.
     pos: f64,
     step: f64,
@@ -257,8 +271,12 @@ pub struct JitterBuffer {
 
 impl JitterBuffer {
     pub fn new(in_rate: u32, out_rate: u32, floor_ms: f64) -> Self {
+        let cap = (HOLD_MS / 1000.0 * in_rate as f64) as usize;
+        let mut queue = VecDeque::with_capacity(cap);
+        queue.push_back(0.0);
         Self {
-            queue: VecDeque::from([0.0]),
+            queue,
+            cap,
             pos: 1.0,
             step: in_rate as f64 / out_rate as f64,
             in_rate: in_rate as f64,
@@ -273,7 +291,11 @@ impl JitterBuffer {
         }
     }
 
+    /// Adds a phone's samples; when more than HOLD_MS would be waiting (nobody is reading), it starts over instead of growing.
     pub fn push(&mut self, samples: &[f32]) {
+        if self.queue.len() + samples.len() > self.cap {
+            self.reset();
+        }
         self.queue.extend(samples);
     }
 
@@ -375,7 +397,7 @@ Add `pub mod mic;` to `crates/kara-core/src/lib.rs` after `pub mod lyrics;`.
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `source "$HOME/.cargo/env" && cargo test -p kara-core mic::buffer`
-Expected: PASS (2 tests). If a bound is missed, print the trace around the failing time and fix the code, not the bound: the bounds come from the spec (20 ms start, 10 ms growth, trim after bursts, 2 ms per 10 s shrink) and the tone's own slope.
+Expected: PASS (3 tests). If a bound is missed, print the trace around the failing time and fix the code, not the bound: the bounds come from the spec (20 ms start, 10 ms growth, trim after bursts, 2 ms per 10 s shrink) and the tone's own slope.
 
 - [ ] **Step 5: Lint and commit**
 
@@ -629,9 +651,11 @@ git commit -m "feat(core): turn a mic down when it starts to howl"
 - Produces (all in `kara_core::mic`):
   - `pub const MAX_GAIN: f32 = 2.0;`
   - `pub fn voice_gain(volume: u8, voice: u8) -> f32` — `MAX_GAIN × min(volume,100)/100 × min(voice,100)/100`.
-  - `pub struct Meter { pub id: String, pub level: f32, pub down: bool }` (`Serialize`, sent to the Mac window as is)
-  - `pub struct NewVoice` with `NewVoice::new(in_rate: u32, out_rate: u32, floor_ms: f64)` — a phone's buffer and feedback control, built **outside** the mixer lock (planning the FFT and allocating must not stall the audio callback).
-  - `pub struct Mixer` with `new(rate: u32, floor_ms: f64)`, `rate(&self) -> u32`, `floor_ms(&self) -> f64`, `add(&mut self, id: &str, voice: NewVoice)` (a returning phone takes only the fresh buffer and keeps its gain and howl state), `remove(&mut self, id: &str)`, `push(&mut self, id: &str, samples: &[f32])`, `reset(&mut self, id: &str)`, `set_gain(&mut self, id: &str, gain: f32)`, `render(&mut self, out: &mut [f32])` (mono), `meters(&mut self) -> Vec<Meter>` (each phone's loudest post-gain sample since the last call).
+  - `pub struct Level { pub id: Arc<str>, pub peak: f32, pub down: bool }` — a phone's loudest post-gain sample since the last read, and whether feedback control has it turned down.
+  - `pub struct NewVoice` with `NewVoice::new(id: &str, in_rate: u32, out_rate: u32, floor_ms: f64)` — a phone's id, buffer and feedback control, built **outside** the mixer lock.
+  - `pub struct Gone` — what a removed phone leaves behind, dropped by the caller after unlocking.
+  - `pub struct Mixer` with `new(rate: u32, floor_ms: f64)`, `rate(&self) -> u32`, `floor_ms(&self) -> f64`, `add(&mut self, new: NewVoice) -> Option<NewVoice>` (a returning phone swaps in only the fresh buffer and keeps its gain and howl state; the leftovers come back for dropping outside the lock), `remove(&mut self, id: &str) -> Option<Gone>`, `push(&mut self, id: &str, samples: &[f32])`, `reset(&mut self, id: &str)`, `set_gain(&mut self, id: &str, gain: f32)`, `render(&mut self, out: &mut [f32])` (mono), `levels(&mut self, out: &mut Vec<Level>)` (fills a buffer the caller keeps).
+  - Real-time rule: the audio callback locks the mixer (a `std::sync::Mutex`, by choice: holders are short). Everything else done under that lock is allocation-free and short — no building, freeing or growing: voices are built before locking (`NewVoice`), leftovers and removed voices are freed after unlocking (`Option<NewVoice>`, `Gone`), buffers are sized up front (Task 1), and levels are copied into the caller's reused buffer with `Arc<str>` ids.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -645,6 +669,7 @@ mod howl;
 
 pub use buffer::JitterBuffer;
 pub use howl::Howl;
+use std::sync::Arc;
 
 #[cfg(test)]
 mod tests {
@@ -656,7 +681,7 @@ mod tests {
         let ids = ["a", "b", "c", "d"];
         let mut m = Mixer::new(48_000, 20.0);
         for id in ids {
-            m.add(id, NewVoice::new(48_000, 48_000, 20.0));
+            m.add(NewVoice::new(id, 48_000, 48_000, 20.0));
             m.set_gain(id, voice_gain(100, 100));
         }
         let loud: Vec<f32> = (0..48_000).map(|i| if (i / 80) % 2 == 0 { 0.99 } else { -0.99 }).collect();
@@ -695,32 +720,42 @@ pub fn voice_gain(volume: u8, voice: u8) -> f32 {
     MAX_GAIN * f32::from(volume.min(100)) / 100.0 * f32::from(voice.min(100)) / 100.0
 }
 
-#[derive(Clone, serde::Serialize)]
-pub struct Meter {
-    pub id: String,
-    pub level: f32,
+/// Samples one output callback may ask for; each phone's scratch buffer is this big from the start.
+const MOST_FRAMES: usize = 4096;
+const MOST_PHONES: usize = 8;
+
+#[derive(Clone)]
+pub struct Level {
+    pub id: Arc<str>,
+    pub peak: f32,
     pub down: bool,
 }
 
-/// A phone's buffer and feedback control, made before taking the mixer lock.
+/// A phone's id, buffer and feedback control, made before taking the mixer lock.
 pub struct NewVoice {
+    id: Arc<str>,
     buffer: JitterBuffer,
     howl: Howl,
 }
 
 impl NewVoice {
-    pub fn new(in_rate: u32, out_rate: u32, floor_ms: f64) -> Self {
-        Self { buffer: JitterBuffer::new(in_rate, out_rate, floor_ms), howl: Howl::new(out_rate) }
+    pub fn new(id: &str, in_rate: u32, out_rate: u32, floor_ms: f64) -> Self {
+        Self { id: id.into(), buffer: JitterBuffer::new(in_rate, out_rate, floor_ms), howl: Howl::new(out_rate) }
     }
 }
 
 struct Voice {
-    id: String,
+    id: Arc<str>,
     buffer: JitterBuffer,
     howl: Howl,
     gain: f32,
     peak: f32,
     scratch: Vec<f32>,
+}
+
+/// A removed phone's voice, freed wherever the caller drops it.
+pub struct Gone {
+    _voice: Voice,
 }
 
 pub struct Mixer {
@@ -733,7 +768,7 @@ pub struct Mixer {
 
 impl Mixer {
     pub fn new(rate: u32, floor_ms: f64) -> Self {
-        Self { rate, floor_ms, voices: Vec::new(), reverb: Reverb::new(rate), limiter: Limiter::new(rate) }
+        Self { rate, floor_ms, voices: Vec::with_capacity(MOST_PHONES), reverb: Reverb::new(rate), limiter: Limiter::new(rate) }
     }
 
     pub fn rate(&self) -> u32 {
@@ -744,17 +779,23 @@ impl Mixer {
         self.floor_ms
     }
 
-    /// Starts taking a phone's sound; a phone already here takes only the fresh buffer and keeps its gain and feedback state.
-    pub fn add(&mut self, id: &str, new: NewVoice) {
-        if let Some(v) = self.voice(id) {
-            v.buffer = new.buffer;
-            return;
+    /// Starts taking a phone's sound. A phone already here swaps in only the fresh buffer and keeps its gain and feedback state;
+    /// what it doesn't use comes back, to be dropped after unlocking.
+    pub fn add(&mut self, mut new: NewVoice) -> Option<NewVoice> {
+        let id = new.id.clone();
+        if let Some(v) = self.voice(&id) {
+            std::mem::swap(&mut v.buffer, &mut new.buffer);
+            return Some(new);
         }
-        self.voices.push(Voice { id: id.to_string(), buffer: new.buffer, howl: new.howl, gain: 1.0, peak: 0.0, scratch: Vec::with_capacity(1024) });
+        let NewVoice { id, buffer, howl } = new;
+        self.voices.push(Voice { id, buffer, howl, gain: 1.0, peak: 0.0, scratch: Vec::with_capacity(MOST_FRAMES) });
+        None
     }
 
-    pub fn remove(&mut self, id: &str) {
-        self.voices.retain(|v| v.id != id);
+    /// Takes a phone out of the mix; drop what comes back after unlocking.
+    pub fn remove(&mut self, id: &str) -> Option<Gone> {
+        let i = self.voices.iter().position(|v| &*v.id == id)?;
+        Some(Gone { _voice: self.voices.swap_remove(i) })
     }
 
     pub fn push(&mut self, id: &str, samples: &[f32]) {
@@ -794,13 +835,14 @@ impl Mixer {
         }
     }
 
-    /// Each phone's loudest moment since the last call, and whether feedback control has it turned down.
-    pub fn meters(&mut self) -> Vec<Meter> {
-        self.voices.iter_mut().map(|v| Meter { id: v.id.clone(), level: std::mem::take(&mut v.peak), down: v.howl.down() }).collect()
+    /// Each phone's loudest moment since the last call, into `out` (cleared first; its room is reused).
+    pub fn levels(&mut self, out: &mut Vec<Level>) {
+        out.clear();
+        out.extend(self.voices.iter_mut().map(|v| Level { id: v.id.clone(), peak: std::mem::take(&mut v.peak), down: v.howl.down() }));
     }
 
     fn voice(&mut self, id: &str) -> Option<&mut Voice> {
-        self.voices.iter_mut().find(|v| v.id == id)
+        self.voices.iter_mut().find(|v| &*v.id == id)
     }
 }
 
@@ -876,7 +918,7 @@ impl Limiter {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `source "$HOME/.cargo/env" && cargo test -p kara-core mic::`
-Expected: PASS (5 tests: buffer 2, howl 2, mixer 1).
+Expected: PASS (6 tests: buffer 3, howl 2, mixer 1).
 
 - [ ] **Step 5: Lint and commit**
 
@@ -899,9 +941,13 @@ git commit -m "feat(core): mix phones with a gain cap, reverb and a limiter"
 - Consumes: Task 3's private `Reverb` (`Reverb::new(rate)`, `process(x) -> f32`), `NewVoice`, `Mixer`.
 - Produces (in `kara_core::mic`):
   - `pub enum Effect { None, KaraokeMix, AutoTune }` — `Deserialize` from `"none" | "karaokeMix" | "autoTune"`, `Default` = `None`.
-  - `pub struct Effects` with `new(rate: u32)`, `set(&mut self, effect: Effect, amount: u8)` (intensity 0–100), `process(&mut self, samples: &mut [f32])` (in place, no allocation).
+  - `pub struct Effects` with `new(rate: u32)`, `set(&mut self, effect: Effect, amount: u8)` (intensity 0–100; 0 means no effect), `process(&mut self, samples: &mut [f32])` (in place; no allocation, no locking).
   - `NewVoice` also builds the phone's `Effects`; `Mixer::set_effect(&mut self, id: &str, effect: Effect, amount: u8)`; `render` applies each phone's effect after howl control hears the dry voice and before its gain.
-  - Behavior: No effect and any effect at intensity 0 leave the voice untouched. Karaoke mix = the voice + intensity × (a 120 ms echo with feedback + a low-passed "warm" room reverb). Auto-tune = chromatic: YIN pitch detection on the last ~24 ms (decimated to a quarter rate, every 256 samples), target = the nearest semitone (A4 = 440 Hz), intensity sets how far (0–100 %) and how fast (about 50 ms at 1 %, 5 ms at 100 %) it pulls; the shift is a two-grain delay-line resampler with 12 ms grains, so the voice is delayed by at most 12 ms (spec: ≤ 15 ms).
+  - Behavior:
+    - No effect, and any effect at intensity 0, leave the voice untouched. Every change of effect or intensity fades over 20 ms, so switching never clicks (a new effect fades in only after the old one has faded out).
+    - Karaoke mix = the voice + intensity × (a 120 ms echo with feedback 0.35 + a low-passed "warm" room reverb).
+    - Auto-tune = chromatic. YIN pitch detection runs on the last ~33 ms, decimated to a quarter rate, every 256 samples. The target is the nearest semitone (A4 = 440 Hz). Intensity sets how far (0–100 % of the way) and how fast (about 50 ms at 1 %, 5 ms at 100 %) it pulls.
+    - The auto-tune shift is two delay-line taps crossfaded over overlapping lives. Each tap restarts a **whole number of pitch periods** (at least 3.5 ms) from the other, so crossfades stay in phase and the note lands on the semitone at every pitch. The added delay is about twice that spacing: at most ~12 ms for most voices (≥ ~200 Hz), and up to ~25 ms for low voices (the spec, as the user chose). While auto-tune is off, the tap line keeps hearing the voice, so turning it on replays nothing old.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -916,9 +962,21 @@ mod tests {
     use std::f32::consts::TAU;
 
     const RATE: f32 = 48_000.0;
+    const PITCHES: [f32; 5] = [98.0, 110.0, 131.0, 262.0, 440.0];
 
     fn sine(hz: f32, secs: f32) -> Vec<f32> {
         (0..(secs * RATE) as usize).map(|i| 0.5 * (TAU * hz * i as f32 / RATE).sin()).collect()
+    }
+
+    /// A made-up sung note: ten harmonics with a slight vibrato.
+    fn voice(hz: f32, secs: f32) -> Vec<f32> {
+        let mut phase = 0.0f32;
+        (0..(secs * RATE) as usize)
+            .map(|i| {
+                phase += TAU * hz * (1.0 + 0.004 * (TAU * 5.0 * i as f32 / RATE).sin()) / RATE;
+                0.3 * (1..=10).map(|h| (phase * h as f32).sin() / h as f32).sum::<f32>()
+            })
+            .collect()
     }
 
     /// The frequency of `x`, from its rising zero crossings.
@@ -931,43 +989,99 @@ mod tests {
         1200.0 * (a / b).log2()
     }
 
-    fn run(effect: Effect, amount: u8, mut x: Vec<f32>) -> Vec<f32> {
-        let mut fx = Effects::new(48_000);
-        fx.set(effect, amount);
+    /// The semitone nearest `hz`.
+    fn note(hz: f32) -> f32 {
+        440.0 * 2f32.powf((12.0 * (hz / 440.0).log2()).round() / 12.0)
+    }
+
+    fn run(fx: &mut Effects, mut x: Vec<f32>) -> Vec<f32> {
         for block in x.chunks_mut(256) {
             fx.process(block);
         }
         x
     }
 
-    #[test]
-    fn auto_tune_pulls_a_flat_note_to_the_nearest_semitone_only_as_hard_as_asked() {
-        let flat = 440.0 * 2f32.powf(-30.0 / 1200.0);
-        let settled = |y: Vec<f32>| hz(&y[(0.3 * RATE) as usize..]);
-        let full = settled(run(Effect::AutoTune, 100, sine(flat, 2.5)));
-        assert!(cents(full, 440.0).abs() < 10.0, "pulled to A4, was {:.1} cents off", cents(full, 440.0));
-        let none = settled(run(Effect::AutoTune, 0, sine(flat, 2.5)));
-        assert!(cents(none, flat).abs() < 1.0, "left alone at intensity 0");
+    fn with(effect: Effect, amount: u8, x: Vec<f32>) -> Vec<f32> {
+        let mut fx = Effects::new(48_000);
+        fx.set(effect, amount);
+        run(&mut fx, x)
+    }
+
+    /// No step between neighboring samples bigger than a quiet 440 Hz tone with its echoes makes; a click is several times that.
+    fn smooth(out: &[f32]) -> bool {
+        out.windows(2).all(|w| (w[1] - w[0]).abs() < 0.06)
     }
 
     #[test]
-    fn auto_tune_adds_at_most_15_ms() {
-        let mut x = vec![0.0; (0.05 * RATE) as usize];
-        x.extend(sine(440.0 * 2f32.powf(-30.0 / 1200.0), 0.5));
-        let y = run(Effect::AutoTune, 100, x);
-        let late = y.iter().position(|v| v.abs() > 0.05).unwrap() as f32 / RATE - 0.05;
-        assert!(late <= 0.015, "the voice came out {:.1} ms late", late * 1000.0);
+    fn auto_tune_pulls_low_and_high_notes_to_the_nearest_semitone_as_hard_as_asked() {
+        for sung in PITCHES {
+            let target = note(sung);
+            for amount in [100u8, 50] {
+                for off in [-30.0, 30.0] {
+                    let out = hz(&with(Effect::AutoTune, amount, sine(target * 2f32.powf(off / 1200.0), 2.5))[(0.4 * RATE) as usize..]);
+                    let (now, want) = (cents(out, target), off * (1.0 - f32::from(amount) / 100.0));
+                    assert!((now - want).abs() < 3.0, "{sung} Hz sung {off} cents off at intensity {amount}: {now:.1} cents off, want {want}");
+                }
+            }
+        }
     }
 
     #[test]
-    fn karaoke_mix_is_dry_at_zero_and_adds_an_echo_and_a_tail_when_up() {
+    fn auto_tune_delays_most_voices_about_12_ms_and_low_voices_at_most_25() {
+        for sung in PITCHES {
+            let mut t = Tune::new(48_000);
+            t.set(1.0);
+            let mut most = 0.0f32;
+            for x in sine(note(sung) * 2f32.powf(-30.0 / 1200.0), 2.0) {
+                t.next(x);
+                most = most.max(t.delay_now());
+            }
+            let bound = if sung >= 200.0 { 12.0 } else { 25.0 };
+            assert!(most / RATE * 1000.0 <= bound, "{sung} Hz: delayed {:.1} ms while correcting", most / RATE * 1000.0);
+        }
+    }
+
+    #[test]
+    fn auto_tune_keeps_going_through_low_sung_notes_and_reads_right_at_the_edge_of_its_line() {
+        let t = Tune::new(48_000);
+        assert!(t.read(1e-6).is_finite(), "a delay a hair above zero at the start of the line");
+        let mut fx = Effects::new(48_000);
+        fx.set(Effect::AutoTune, 100);
+        for sung in [110.0, 147.0, 196.0, 220.0] {
+            for bend in [0.985, 1.0, 1.012] {
+                assert!(run(&mut fx, voice(sung * bend, 2.0)).iter().all(|x| x.is_finite()));
+            }
+        }
+    }
+
+    #[test]
+    fn karaoke_mix_is_dry_at_zero_and_adds_a_room_and_an_echo_when_up() {
         let mut click = vec![0.0; 48_000];
         click[0] = 1.0;
-        assert_eq!(run(Effect::KaraokeMix, 0, click.clone()), click, "dry at intensity 0");
-        assert_eq!(run(Effect::None, 100, click.clone()), click, "no effect is dry");
-        let wet = run(Effect::KaraokeMix, 100, click);
+        assert_eq!(with(Effect::KaraokeMix, 0, click.clone()), click, "dry at intensity 0");
+        assert_eq!(with(Effect::AutoTune, 0, click.clone()), click, "auto-tune is dry at intensity 0 too");
+        assert_eq!(with(Effect::None, 100, click.clone()), click, "no effect is dry");
+        let mut fx = Effects::new(48_000);
+        fx.set(Effect::KaraokeMix, 100);
+        run(&mut fx, vec![0.0; 2_400]);
+        let wet = run(&mut fx, click);
+        let room = wet[(0.03 * RATE) as usize..(0.1 * RATE) as usize].iter().map(|x| x * x).sum::<f32>();
+        assert!(room > 1e-4, "the room answers before the first echo");
         assert!(wet[(ECHO_MS / 1000.0 * RATE) as usize].abs() > 0.2, "an echo after {ECHO_MS} ms");
-        assert!(wet[(0.5 * RATE) as usize..].iter().any(|x| x.abs() > 1e-4), "a tail after it");
+    }
+
+    #[test]
+    fn switching_effects_or_their_strength_never_clicks() {
+        let mut fx = Effects::new(48_000);
+        let mut tone: Vec<f32> = sine(440.0 * 2f32.powf(-20.0 / 1200.0), 2.0).iter().map(|x| 0.4 * x).collect();
+        let changes = [(Effect::AutoTune, 100), (Effect::KaraokeMix, 100), (Effect::KaraokeMix, 0), (Effect::AutoTune, 60), (Effect::None, 100)];
+        for (part, (effect, amount)) in tone.chunks_mut((0.4 * RATE) as usize).zip(changes) {
+            fx.set(effect, amount);
+            for block in part.chunks_mut(256) {
+                fx.process(block);
+            }
+        }
+        assert!(smooth(&tone));
     }
 }
 ```
@@ -993,18 +1107,20 @@ const ECHO_FEEDBACK: f32 = 0.35;
 const ECHO_WET: f32 = 0.35;
 const ROOM_WET: f32 = 0.5;
 const WARM_HZ: f32 = 4_000.0;
-/// Auto-tune grain in milliseconds; the voice is delayed by at most this much.
-const GRAIN_MS: f32 = 12.0;
+/// How long switching effects or intensities takes, so a change never clicks.
+const RAMP_MS: f32 = 20.0;
 const LOW_HZ: f32 = 80.0;
 const HIGH_HZ: f32 = 1_000.0;
 const DECIMATE: usize = 4;
-/// Decimated samples compared per pitch estimate.
-const WINDOW: usize = 128;
+/// Decimated samples compared per pitch estimate (about 21 ms).
+const WINDOW: usize = 256;
 const LOOK_EVERY: usize = 256;
 const YIN_THRESHOLD: f32 = 0.15;
 const QUIET: f32 = 1e-5;
-/// Largest pitch nudge (as a ratio) used to settle the grains onto one tap once the voice is in tune.
-const SETTLE: f32 = 0.001;
+/// The auto-tune's two taps sit a whole number of periods apart, at least this far; the voice is delayed by about twice the spacing.
+const MIN_SPACING_MS: f32 = 3.5;
+const REST_SPACING_MS: f32 = 5.0;
+const LINE_MS: f32 = 40.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1016,8 +1132,12 @@ pub enum Effect {
 }
 
 pub struct Effects {
-    effect: Effect,
+    /// The effect playing now, and the one asked for (with its intensity 0 to 1).
+    active: Effect,
+    wanted: (Effect, f32),
     amount: f32,
+    wet: f32,
+    ramp: f32,
     echo: Vec<f32>,
     echo_i: usize,
     room: Reverb,
@@ -1029,8 +1149,11 @@ pub struct Effects {
 impl Effects {
     pub fn new(rate: u32) -> Self {
         Self {
-            effect: Effect::None,
+            active: Effect::None,
+            wanted: (Effect::None, 0.0),
             amount: 0.0,
+            wet: 0.0,
+            ramp: 1.0 / (RAMP_MS / 1000.0 * rate as f32),
             echo: vec![0.0; (ECHO_MS / 1000.0 * rate as f32) as usize],
             echo_i: 0,
             room: Reverb::new(rate),
@@ -1040,29 +1163,35 @@ impl Effects {
         }
     }
 
-    /// Picks the effect and its intensity, 0–100.
+    /// Asks for an effect and its intensity, 0–100; intensity 0 means no effect. The change fades in over a few milliseconds.
     pub fn set(&mut self, effect: Effect, amount: u8) {
-        self.effect = effect;
-        self.amount = f32::from(amount.min(100)) / 100.0;
-        self.tune.set(self.amount);
+        let amount = f32::from(amount.min(100)) / 100.0;
+        self.wanted = (if amount == 0.0 { Effect::None } else { effect }, amount);
     }
 
+    /// Applies the effect to `samples` in place, fading between the effect playing and the one asked for.
     pub fn process(&mut self, samples: &mut [f32]) {
-        if self.amount == 0.0 {
-            return;
-        }
-        match self.effect {
-            Effect::None => {}
-            Effect::KaraokeMix => {
-                for x in samples {
-                    *x = self.karaoke(*x);
-                }
+        for x in samples {
+            let (want, amount) = self.wanted;
+            if want != self.active && self.wet == 0.0 {
+                self.active = want;
+                self.tune.clear();
             }
-            Effect::AutoTune => {
-                for x in samples {
-                    *x = self.tune.next(*x);
-                }
+            let target = if want == self.active { 1.0 } else { 0.0 };
+            self.wet = if self.wet < target { (self.wet + self.ramp).min(target) } else { (self.wet - self.ramp).max(target) };
+            if want == self.active {
+                self.amount = if self.amount < amount { (self.amount + self.ramp).min(amount) } else { (self.amount - self.ramp).max(amount) };
+                self.tune.set(self.amount);
             }
+            let dry = *x;
+            let wet = match self.active {
+                Effect::AutoTune => self.tune.next(dry),
+                other => {
+                    self.tune.hear(dry);
+                    if other == Effect::KaraokeMix { self.karaoke(dry) } else { dry }
+                }
+            };
+            *x = dry + self.wet * (wet - dry);
         }
     }
 
@@ -1075,13 +1204,16 @@ impl Effects {
     }
 }
 
-/// Chromatic pitch correction: finds the pitch of the recent input and replays it through two crossfading grains at the corrected speed.
+/// Chromatic pitch correction: finds the pitch of the recent input and replays it through two taps whose delays slide at the
+/// corrected speed; each tap restarts a whole number of periods from the other, so their crossfades stay in phase.
 struct Tune {
     rate: f32,
-    grain: f32,
     line: Vec<f32>,
     write: usize,
     phase: f32,
+    life: f32,
+    delay: [f32; 2],
+    spacing: f32,
     ratio: f32,
     target: f32,
     strength: f32,
@@ -1098,15 +1230,17 @@ struct Tune {
 impl Tune {
     fn new(rate: u32) -> Self {
         let rate = rate as f32;
-        let grain = GRAIN_MS / 1000.0 * rate;
         let slow = rate / DECIMATE as f32;
         let high_tau = (slow / LOW_HZ) as usize;
+        let spacing = REST_SPACING_MS / 1000.0 * rate;
         Self {
             rate,
-            grain,
-            line: vec![0.0; 2 * grain as usize + 2],
+            line: vec![0.0; (LINE_MS / 1000.0 * rate) as usize],
             write: 0,
-            phase: 0.5,
+            phase: 0.0,
+            life: 2.0 * spacing,
+            delay: [spacing; 2],
+            spacing,
             ratio: 1.0,
             target: 1.0,
             strength: 0.0,
@@ -1121,6 +1255,23 @@ impl Tune {
         }
     }
 
+    /// Keeps the recent input while auto-tune is off, so turning it on replays nothing old.
+    fn hear(&mut self, x: f32) {
+        self.line[self.write] = x;
+        self.write = (self.write + 1) % self.line.len();
+    }
+
+    /// Starts listening afresh with the taps at rest.
+    fn clear(&mut self) {
+        self.history.clear();
+        self.spacing = REST_SPACING_MS / 1000.0 * self.rate;
+        self.delay = [self.spacing; 2];
+        self.life = 2.0 * self.spacing;
+        self.phase = 0.0;
+        self.ratio = 1.0;
+        self.target = 1.0;
+    }
+
     /// How far (0 to 1) and how fast the pitch is pulled.
     fn set(&mut self, amount: f32) {
         self.strength = amount;
@@ -1132,7 +1283,7 @@ impl Tune {
         self.shift(x)
     }
 
-    /// Keeps a short, decimated history and every few milliseconds aims the ratio at the nearest semitone.
+    /// Keeps a short, decimated history; every few milliseconds aims the ratio at the nearest semitone and spaces the taps by whole periods.
     fn listen(&mut self, x: f32) {
         self.sum += x;
         self.count += 1;
@@ -1149,6 +1300,8 @@ impl Tune {
             self.until_look = LOOK_EVERY;
             self.target = match self.pitch() {
                 Some(hz) => {
+                    let period = self.rate / hz;
+                    self.spacing = period * (MIN_SPACING_MS / 1000.0 * self.rate / period).ceil();
                     let semis = 12.0 * (hz / 440.0).log2();
                     2f32.powf((semis.round() - semis) * self.strength / 12.0)
                 }
@@ -1183,33 +1336,63 @@ impl Tune {
         Some(self.rate / DECIMATE as f32 / (tau as f32 + shift))
     }
 
-    /// Replays the input through two grains half a cycle apart whose delays slide at `ratio`, so the pitch moves by `ratio`.
+    /// Plays the two taps crossfaded over their overlapping lives; their delays slide by 1 - ratio a sample, which moves the pitch by `ratio`.
     fn shift(&mut self, x: f32) -> f32 {
         let len = self.line.len();
         self.line[self.write] = x;
-        let step = if (self.ratio - 1.0).abs() > SETTLE {
-            (1.0 - self.ratio) / self.grain
-        } else {
-            let home = if (self.phase - 0.5).abs() < 0.25 { 0.5 } else { self.phase.round() };
-            (home - self.phase).clamp(-SETTLE, SETTLE) / self.grain
-        };
-        self.phase = (self.phase + step).rem_euclid(1.0);
-        let tap = |p: f32| {
-            let at = (self.write as f32 - p * self.grain).rem_euclid(len as f32);
-            let i = at as usize;
-            let f = at - i as f32;
-            (1.0 - (2.0 * p - 1.0).abs()) * (self.line[i] * (1.0 - f) + self.line[(i + 1) % len] * f)
-        };
-        let y = tap(self.phase) + tap((self.phase + 0.5) % 1.0);
+        let most = (len - 2) as f32;
+        for d in &mut self.delay {
+            *d = (*d + 1.0 - self.ratio).clamp(0.0, most);
+        }
+        let before = self.phase;
+        self.phase += 1.0 / self.life;
+        if before < 0.5 && self.phase >= 0.5 {
+            self.restart(1);
+        }
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+            self.restart(0);
+        }
+        let w = 1.0 - (2.0 * self.phase - 1.0).abs();
+        let y = w * self.read(self.delay[0]) + (1.0 - w) * self.read(self.delay[1]);
         self.write = (self.write + 1) % len;
         y
+    }
+
+    /// Starts tap `i` again one spacing (whole periods) from the other: ahead of it while the delays shrink, behind it while they grow.
+    fn restart(&mut self, i: usize) {
+        let (other, s) = (self.delay[1 - i], self.spacing);
+        let (later, sooner) = (other + s, other - s);
+        self.delay[i] = if self.ratio >= 1.0 {
+            if later <= 2.1 * s || sooner < 0.1 * s { later } else { sooner }
+        } else if sooner >= 0.0 {
+            sooner
+        } else {
+            later
+        };
+        self.life = 2.0 * s;
+    }
+
+    fn read(&self, delay: f32) -> f32 {
+        let len = self.line.len();
+        let at = (self.write as f32 - delay).rem_euclid(len as f32);
+        let i = (at as usize) % len;
+        let f = at - at.floor();
+        self.line[i] * (1.0 - f) + self.line[(i + 1) % len] * f
+    }
+
+    /// How far behind the voice the taps are now, weighted by how loud each is, in samples.
+    #[cfg(test)]
+    fn delay_now(&self) -> f32 {
+        let w = 1.0 - (2.0 * self.phase - 1.0).abs();
+        w * self.delay[0] + (1.0 - w) * self.delay[1]
     }
 }
 ```
 
 In `crates/kara-core/src/mic/mod.rs`:
-- `NewVoice` gains `effects: Effects`, built in `NewVoice::new` as `effects: Effects::new(out_rate)`;
-- `Voice` gains `effects: Effects`, taken from the `NewVoice` for a new phone (a returning phone keeps its own);
+- `NewVoice` gains `effects: Effects`, built in `NewVoice::new` as `effects: Effects::new(out_rate)` (outside the lock, like the rest);
+- `Voice` gains `effects: Effects`; in `add`, a new phone's voice takes it (`let NewVoice { id, buffer, howl, effects } = new;`), while a returning phone keeps its own and the unused one goes back with the other leftovers;
 - new method:
 
 ```rust
@@ -1224,14 +1407,14 @@ In `crates/kara-core/src/mic/mod.rs`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `source "$HOME/.cargo/env" && cargo test -p kara-core mic:: && cargo clippy -p kara-core --all-targets -- -D warnings`
-Expected: PASS (8 tests: buffer 2, howl 2, mixer 1, effects 3); no warnings. If the auto-tune test misses its bound, print the measured pitch every 0.1 s and fix the detector or the glide, not the bound (the spec wants the nearest semitone and ≤ 15 ms).
+Run: `source "$HOME/.cargo/env" && cargo test -p kara-core --release mic:: && cargo clippy -p kara-core --all-targets -- -D warnings`
+Expected: PASS (11 tests: buffer 3, howl 2, mixer 1, effects 5; `--release` keeps the pitch tests to a few seconds); no warnings. Tasks 1–4's code and tests, as written here, were compiled, run and linted together in a scratch crate while planning. If a bound is missed after adapting it, print the measured pitch or delay every 0.1 s and fix the code, not the bound (the spec wants the nearest semitone, ≤ 15 ms for most voices and ~25 ms at most for low ones).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add crates/kara-core/src/mic
-git commit -m "feat(core): per-phone voice effects — karaoke mix and auto-tune"
+git commit -m "feat(core): per-phone voice effects — karaoke mix and pitch-synchronous auto-tune"
 ```
 
 ---
@@ -1576,7 +1759,7 @@ git commit -m "feat(app): queue entries say which guest added them; shared queue
   - Problems `Problem::PhonesStart` ("Couldn't start phone mics.") and `Problem::NoNetwork` ("Connect this computer to Wi-Fi to use phone mics."), codes `phonesStart`, `noNetwork`.
   - `phones::Phones` (managed state; `Default`).
   - Commands: `phones_open() -> PhonesView` (async; starts the session if needed, marks the window open), `phones_close()` (window closed; ends the session when no phone is joined), `phone_remove(id: String)`.
-  - Event `"phones"` with `PhonesView { join: Option<JoinInfo>, phones: Vec<PhoneRow> }`; `JoinInfo { qr: String /* SVG, dark = currentColor */, code: String /* "OKI-1234" */, host: String /* "Name.local" */ }`; `host` is `"Name.local"` when the plain-HTTP redirect is running (with `":8443"` added only when 443 was taken), or `"https://Name.local[:port]"` when port 80 couldn't be bound (the only way a typed address works then). `PhoneRow { id, name, connected }` (Task 8 adds `volume`). `PhonesView::default()` (no join, no phones) is sent when the session ends. The event is sent only when something in it changes.
+  - Event `"phones"` with `PhonesView { join: Option<JoinInfo>, phones: Vec<PhoneRow> }`; `JoinInfo { qr: String /* SVG, dark = currentColor */, code: String /* "OKI-1234" */, host: String /* "Name.local" */ }`; `host` is the bare `"Name.local"` whenever the plain-HTTP redirect on port 80 runs (the redirect adds `:8443` itself when 443 was taken), and `"https://Name.local"` — plus `":8443"` only when 443 was taken — when port 80 couldn't be bound (a bare name would then reach nothing, and `name.local:8443` without `https://` would send plain HTTP to the secure port). `PhoneRow { id, name, connected }` (Task 8 adds `volume`). `PhonesView::default()` (no join, no phones) is sent when the session ends. The event is sent only when something in it changes.
   - Event `"phone-news"` with `News` (`#[serde(tag = "kind")]`): `{ kind: "joined", name, mic }` when a phone gets a new row (not when it comes back); Task 7 adds `added`.
   - `phones::end(app: &AppHandle)`, `phones::ensure_session(app: &AppHandle, code: String) -> anyhow::Result<()>`, `phones::open(app, code) -> anyhow::Result<PhonesView>` (ensure + window open; the `KARA_PHONE_CODE` dev session uses it too, so it lasts until the app quits).
   - In `phones/mod.rs` for later tasks: `pub(crate) enum ToPhone<'a>` (`Joined`, `Player { snapshot: &'a PlayerSnapshot }`), `pub(crate) fn encode(msg: &ToPhone) -> String` (JSON with every `artworkPath` turned into `/art/<file name>`), `fn with<T>(app, f: impl FnOnce(&mut Session) -> T) -> Option<T>`, `fn changed(app)`, `pub(crate) fn admit(app, code, id, name, tx) -> Result<u64 /* connection */, u16 /* close code */>` (Task 8 also returns the mixer), `pub(crate) fn leave(app, id)`, `pub(crate) fn dropped(app, id, conn)`.
@@ -1584,7 +1767,8 @@ git commit -m "feat(app): queue entries say which guest added them; shared queue
   - `phones/room.rs`: `Room { code, guests }`, `Room::admit(...) -> Result<bool /* a new row */, Refusal>`, `Guest { id, name, conn, tx }`, `Out { Text(String), Close(u16) }`, `Refusal { WrongCode, Full }`, `ENDED = 4001`, `new_code()`, `digits()`.
   - `phones/cert.rs`: `ensure(dir, name, ips, now) -> Result<(Vec<u8>, Vec<u8>)>`, `lan_ips() -> Vec<IpAddr>`, `is_lan(IpAddr) -> bool`, `local_name() -> Option<String>`.
   - Routes: `GET /` → redirect `/phone`; `GET /ws`; `GET /art/{name}`; any other GET → the app's page files (dev: the Vite dev server); other methods → 405. Only LAN peers. Plain HTTP on port 80 redirects (temporary, 307) to `https://<host>[:port]/phone`.
-  - `app/scripts/phone-check.ts`, printing `phone check OK`; it uses the server that accepts `KARA_PHONE_CODE` (443 or 8443), so a KaraAlwaysOK the user is running doesn't confuse it.
+  - Debug builds read `KARA_PHONE_PORT`: when set, the server uses only that port and leaves port 80 alone, so the copy under test never meets the user's own app on 443/80.
+  - `app/scripts/phone-check.ts`, printing `phone check OK`; it talks only to `https://127.0.0.1:$KARA_PHONE_PORT` and waits until that server accepts `KARA_PHONE_CODE`.
   - `app/scripts/isolated-check.sh <picture> [command]` — the **isolated check** every later task uses (Global Constraints).
 
 - [ ] **Step 1: Dependencies and a probe**
@@ -1951,9 +2135,12 @@ pub(crate) enum FromPhone {
     Leave,
 }
 
-/// Serves on port 443 (8443 when taken) and sends plain requests on port 80 there; returns the HTTPS port and whether port 80 is served.
+/// Serves on port 443 (8443 when taken) and sends plain requests on port 80 there; returns the HTTPS port and whether port 80 is
+/// served. A debug build with `KARA_PHONE_PORT` serves only that port and leaves port 80 alone.
 pub fn serve(app: AppHandle, tls: RustlsConfig, handle: axum_server::Handle) -> anyhow::Result<(u16, bool)> {
-    let (listener, port) = [443, 8443].into_iter().find_map(|p| TcpListener::bind(("0.0.0.0", p)).ok().map(|l| (l, p))).context("no free port")?;
+    let chosen = if cfg!(debug_assertions) { std::env::var("KARA_PHONE_PORT").ok().and_then(|p| p.parse::<u16>().ok()) } else { None };
+    let ports = chosen.map_or(vec![443, 8443], |p| vec![p]);
+    let (listener, port) = ports.into_iter().find_map(|p| TcpListener::bind(("0.0.0.0", p)).ok().map(|l| (l, p))).context("no free port")?;
     listener.set_nonblocking(true)?;
     let routes = Router::new()
         .route("/ws", get(socket))
@@ -1964,6 +2151,9 @@ pub fn serve(app: AppHandle, tls: RustlsConfig, handle: axum_server::Handle) -> 
         .with_state(app);
     let secure = axum_server::from_tcp_rustls(listener, tls).handle(handle.clone());
     tauri::async_runtime::spawn(secure.serve(routes.into_make_service_with_connect_info::<SocketAddr>()));
+    if chosen.is_some() {
+        return Ok((port, false));
+    }
     let Ok(plain) = TcpListener::bind(("0.0.0.0", 80)) else { return Ok((port, false)) };
     plain.set_nonblocking(true)?;
     let to_https = move |headers: HeaderMap| async move {
@@ -2254,7 +2444,7 @@ pub fn phone_remove(app: AppHandle, id: String) {
 /// Lets a phone in or names the close code refusing it; a phone let in hears it joined and what's playing.
 pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<u64, u16> {
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
-    let joined = with(app, |s| s.room.admit(code, id, name, conn, tx.clone()).map(|new| new.then(|| s.room.guests.len())))
+    let joined = with(app, |s| s.room.admit(code, id, name, conn, tx.clone()).map(|new| new.then_some(s.room.guests.len())))
         .ok_or(ENDED)?
         .map_err(|r| r.close_code())?;
     changed(app);
@@ -2347,7 +2537,7 @@ Expected: PASS (cert 2, room 2, encode 1; the problem-code scan still passes); n
 
 - [ ] **Step 6: The isolated check**
 
-The user runs their dev app (`kara-app`, Vite on port 1420) while tasks run, so no check may stop it, use port 1420, or run `app/scripts/app-check.sh`. This check builds its own copy with the page inside (which also exercises the release path: `/phone` and `/_app/*` from embedded files), runs it by process id and stops only that process.
+The user runs their dev app (`kara-app`, Vite on port 1420) from their own checkout while tasks run in the worktree, so no check may stop it, use port 1420 or 443/80, or run `app/scripts/app-check.sh`. This check builds its own copy with the page inside (which also exercises the release path: `/phone` and `/_app/*` from embedded files), gives it its own phone port (`KARA_PHONE_PORT`, default 8543), runs it by process id and stops only that process.
 
 In `app/scripts/window-id.swift`, let an argument be a process id as well as a process name:
 
@@ -2379,6 +2569,7 @@ cd "${0:A:h}/.."
 work=${PWD:h}/.superpowers/sdd/2026-09-27-phase2-phone-mics
 mkdir -p "${shot:h}" "$work/data"
 rm -f "$shot" "${shot:r}.while-open.txt"
+export KARA_PHONE_PORT=${KARA_PHONE_PORT:-8543}
 fail() { echo "FAIL: $1 Output: $log"; exit 1; }
 
 npm run build >"$log" 2>&1 || fail "The page didn't build."
@@ -2416,9 +2607,10 @@ echo "OK. Picture: $shot"
 Create `app/scripts/phone-check.ts`:
 
 ```ts
-/** Talks to a running app's phone server the way phones do and prints "phone check OK" when it answers as it should. It uses the
- * server that accepts KARA_PHONE_CODE, so another KaraAlwaysOK on this Mac doesn't get in the way. Run with NODE_TLS_REJECT_UNAUTHORIZED=0. */
+/** Talks to a running app's phone server the way phones do and prints "phone check OK" when it answers as it should. It talks only
+ * to the port the app under test was given (KARA_PHONE_PORT), never to the user's own app. Run with NODE_TLS_REJECT_UNAUTHORIZED=0. */
 const code = process.env.KARA_PHONE_CODE ?? "";
+const origin = `https://127.0.0.1:${process.env.KARA_PHONE_PORT ?? "8543"}`;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface Phone { ws: WebSocket; got: { t: string; [k: string]: unknown }[]; closed: Promise<number> }
@@ -2467,15 +2659,16 @@ async function accepts(origin: string): Promise<boolean> {
   return false;
 }
 
-async function findServer(): Promise<string> {
+/** Waits until the app under test has its phone server up. */
+async function ready() {
   for (let i = 0; i < 30; i++) {
-    for (const origin of ["https://127.0.0.1", "https://127.0.0.1:8443"]) if (await accepts(origin)) return origin;
+    if (await accepts(origin)) return;
     await wait(1000);
   }
-  throw new Error("no phone server took our code");
+  throw new Error("the app under test never took our code");
 }
 
-const origin = await findServer();
+await ready();
 const html = await (await fetch(`${origin}/phone`)).text();
 const script = html.match(/["'](?:\.\/|\/)(_app\/[^"']+\.js)["']/)?.[1];
 if (!html.includes("<html") || !script || !(await fetch(`${origin}/${script}`)).ok) throw new Error("the phone page or its files didn't load");
@@ -2648,7 +2841,7 @@ impl Clock {
 ```rust
 pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<u64, u16> {
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
-    let (joined, clock) = with(app, |s| s.room.admit(code, id, name, conn, tx.clone()).map(|new| (new.then(|| s.room.guests.len()), encode(&s.clock.message()))))
+    let (joined, clock) = with(app, |s| s.room.admit(code, id, name, conn, tx.clone()).map(|new| (new.then_some(s.room.guests.len()), encode(&s.clock.message()))))
         .ok_or(ENDED)?
         .map_err(|r| r.close_code())?;
     changed(app);
@@ -2830,12 +3023,14 @@ git commit -m "feat(app): phones queue songs, set the singer, search, read lyric
 - Modify: `app/scripts/phone-check.ts`
 
 **Interfaces:**
-- Consumes: `kara_core::mic::{Mixer, NewVoice, Meter, Effect, voice_gain}` (Tasks 3–4); Task 6/7 session code; `cert::ensure`, `cert::lan_ips`, `join_info(host, ip, port, redirect, code)`.
+- Consumes: `kara_core::mic::{Mixer, NewVoice, Level, Effect, voice_gain}` (Tasks 3–4; `add` returns leftovers and `remove` returns `Gone`, both dropped after unlocking); Task 6/7 session code; `cert::ensure`, `cert::lan_ips`, `join_info(host, ip, port, redirect, code)`.
 - Produces:
   - `Guest` gains `volume: u8` and `voice: u8` (80 for a new row), `effect: (Effect, u8)` (none, 0) and `dropped_at: Option<Instant>`, all kept across reconnects; `Room::dropped(id, conn, at: Instant)`; `Room::expire(now: Instant) -> Vec<Guest>` removes rows whose phone has been gone `GONE_AFTER` (2 minutes, the phone's own give-up time) or longer.
   - `FromPhone` gains `Live { on: bool, rate: u32 }` (mic on at `rate`, or muted), `Voice { v: u8 }` and `Effect { kind: Effect, amount: u8 }` (JSON `{t:"effect", kind:"none"|"karaokeMix"|"autoTune", amount}`); binary frames = 16-bit LE mono PCM.
   - `ToPhone` gains `Level { v: f32 }` (the phone's loudest post-gain sample in the last 80 ms).
-  - `PhoneRow` gains `volume: u8`. The `"phones"` event still goes out only on changes; levels go every 80 ms in a small event `"phone-levels"` with `Vec<Meter>` (`{ id, level, down }`).
+  - `PhoneRow` gains `volume: u8`. The `"phones"` event still goes out only on changes; levels go every 80 ms in a small event `"phone-levels"` with `Vec<PhoneLevel>` (`{ id, level, down }`, built after unlocking the mixer from a reused `Vec<Level>`).
+  - `News` gains `Stopped` (`{kind:"stopped"}`): the output device went away or failed (unplugged USB or Bluetooth speakers); the session ends so nothing piles up, and the Mac window, if open, starts a new one on the new default output (Task 9).
+  - `output::Output::broken(&self) -> bool` — true once the stream reported an error.
   - Command `phone_volume(id: String, volume: u8)`.
   - `admit` returns `Result<(u64, Arc<Mutex<Mixer>>), u16>`; `pub(crate) fn hear(mixer: &Mutex<Mixer>, id: &str, bytes: &[u8])`.
   - `output::start(floor_ms: f64) -> anyhow::Result<(Output, Arc<Mutex<Mixer>>)>`; dropping `Output` stops the stream. `KARA_MIC_BUFFER_MS` is clamped to 10–60.
@@ -2873,6 +3068,7 @@ Add `cpal = "0.16"` to `app/src-tauri/Cargo.toml`. Create `app/src-tauri/src/pho
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use kara_core::mic::Mixer;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
 const FRAMES: u32 = 256;
@@ -2880,13 +3076,23 @@ const FRAMES: u32 = 256;
 /// Keeps the stream playing until dropped.
 pub struct Output {
     _stop: mpsc::Sender<()>,
+    broken: Arc<AtomicBool>,
+}
+
+impl Output {
+    /// Whether the stream stopped with an error, e.g. its device went away.
+    pub fn broken(&self) -> bool {
+        self.broken.load(Ordering::Relaxed)
+    }
 }
 
 /// Starts playing a new Mixer on the default output device; returns the mixer to feed.
 pub fn start(floor_ms: f64) -> Result<(Output, Arc<Mutex<Mixer>>)> {
     let (ready_tx, ready_rx) = mpsc::channel();
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    std::thread::spawn(move || match open(floor_ms) {
+    let broken = Arc::new(AtomicBool::new(false));
+    let report = broken.clone();
+    std::thread::spawn(move || match open(floor_ms, report) {
         Ok((stream, mixer)) => {
             let _ = ready_tx.send(Ok(mixer));
             let _ = stop_rx.recv();
@@ -2897,10 +3103,11 @@ pub fn start(floor_ms: f64) -> Result<(Output, Arc<Mutex<Mixer>>)> {
         }
     });
     let mixer = ready_rx.recv()??;
-    Ok((Output { _stop: stop_tx }, mixer))
+    Ok((Output { _stop: stop_tx, broken }, mixer))
 }
 
-fn open(floor_ms: f64) -> Result<(cpal::Stream, Arc<Mutex<Mixer>>)> {
+/// Opens the default output with a callback that only locks the mixer and renders (no allocation after its first call).
+fn open(floor_ms: f64, broken: Arc<AtomicBool>) -> Result<(cpal::Stream, Arc<Mutex<Mixer>>)> {
     let device = cpal::default_host().default_output_device().context("no output device")?;
     let config = device.default_output_config()?;
     let channels = usize::from(config.channels());
@@ -2921,7 +3128,7 @@ fn open(floor_ms: f64) -> Result<(cpal::Stream, Arc<Mutex<Mixer>>)> {
                 frame.fill(x);
             }
         },
-        |_| {},
+        move |_| broken.store(true, Ordering::Relaxed),
         None,
     )?;
     stream.play()?;
@@ -2964,7 +3171,7 @@ fn open(floor_ms: f64) -> Result<(cpal::Stream, Arc<Mutex<Mixer>>)> {
 ```
 
 `app/src-tauri/src/phones/mod.rs`:
-- `mod output;` with the other modules; imports add `kara_core::mic::{voice_gain, Meter, Mixer, NewVoice}`, `room::Guest`, `std::path::PathBuf`, `std::sync::Arc`, `std::time::SystemTime`.
+- `mod output;` with the other modules; imports add `kara_core::mic::{voice_gain, Level, Mixer, NewVoice}`, `room::Guest`, `std::path::PathBuf`, `std::sync::Arc`, `std::time::SystemTime`.
 - `ToPhone` gains `Level { v: f32 },`.
 - `PhoneRow` gains `volume: u8,`, filled in `view` as `volume: g.volume`.
 - `Session` gains:
@@ -2972,7 +3179,8 @@ fn open(floor_ms: f64) -> Result<(cpal::Stream, Arc<Mutex<Mixer>>)> {
 ```rust
     id: u64,
     mixer: Arc<Mutex<Mixer>>,
-    _output: output::Output,
+    output: output::Output,
+    levels: Vec<Level>,
     tls: RustlsConfig,
     dir: PathBuf,
     host: String,
@@ -3008,7 +3216,8 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
         clock,
         links: Vec::new(),
         mixer,
-        _output: output,
+        output,
+        levels: Vec::with_capacity(8),
         tls,
         dir,
         host,
@@ -3035,7 +3244,7 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
 pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: UnboundedSender<Out>) -> Result<(u64, Arc<Mutex<Mixer>>), u16> {
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
     let (joined, clock, mixer) = with(app, |s| {
-        s.room.admit(code, id, name, conn, tx.clone()).map(|new| (new.then(|| s.room.guests.len()), encode(&s.clock.message()), s.mixer.clone()))
+        s.room.admit(code, id, name, conn, tx.clone()).map(|new| (new.then_some(s.room.guests.len()), encode(&s.clock.message()), s.mixer.clone()))
     })
     .ok_or(ENDED)?
     .map_err(|r| r.close_code())?;
@@ -3053,7 +3262,18 @@ pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: Unbou
 ```
 
 - `dropped` records when: `with(app, |s| s.room.dropped(id, conn, Instant::now()));`
-- a phone leaving or being removed leaves the mix: in `leave` and `phone_remove`, right after `s.room.remove(…)`, add `s.mixer.lock().unwrap().remove(id);` (`&id` in `phone_remove`).
+- a phone leaving or being removed leaves the mix, its voice freed after unlocking: in `leave` and `phone_remove`, right after `s.room.remove(…)`, add `let gone = s.mixer.lock().unwrap().remove(id);` and `drop(gone);` (`&id` in `phone_remove`; the `let` ends the lock before the drop).
+- `News` gains `Stopped,`; a serializable level for the Mac window:
+
+```rust
+/// A phone's level as the Mac window's meter reads it.
+#[derive(Serialize)]
+pub struct PhoneLevel {
+    id: String,
+    level: f32,
+    down: bool,
+}
+```
 - `handle` gains three arms before `FromPhone::Join { .. } | FromPhone::Ping | FromPhone::Leave`:
 
 ```rust
@@ -3094,11 +3314,15 @@ fn live(app: &AppHandle, id: &str, on: bool, rate: u32) {
             let m = s.mixer.lock().unwrap();
             (m.rate(), m.floor_ms())
         };
-        let voice = NewVoice::new(rate, out_rate, floor);
-        let mut m = s.mixer.lock().unwrap();
-        m.add(id, voice);
-        m.set_gain(id, gain);
-        m.set_effect(id, effect, amount);
+        let voice = NewVoice::new(id, rate, out_rate, floor);
+        let leftover = {
+            let mut m = s.mixer.lock().unwrap();
+            let leftover = m.add(voice);
+            m.set_gain(id, gain);
+            m.set_effect(id, effect, amount);
+            leftover
+        };
+        drop(leftover);
     });
 }
 
@@ -3127,35 +3351,38 @@ pub fn phone_volume(app: AppHandle, id: String, volume: u8) {
 
 /// What one tick found.
 struct Tick {
-    meters: Vec<Meter>,
+    levels: Vec<PhoneLevel>,
     expired: bool,
     idle: bool,
     moved: bool,
+    stopped: bool,
 }
 
 impl Session {
     /// One tick: each phone hears its level, rows gone for two minutes leave, and every 5 s the Mac's addresses are checked.
     fn tick(&mut self, n: u64, now: Instant) -> Tick {
-        let meters = self.mixer.lock().unwrap().meters();
+        self.mixer.lock().unwrap().levels(&mut self.levels);
         for g in &self.room.guests {
-            let v = meters.iter().find(|m| m.id == g.id).map_or(0.0, |m| m.level);
+            let v = self.levels.iter().find(|l| *l.id == *g.id).map_or(0.0, |l| l.peak);
             g.send(Out::Text(encode(&ToPhone::Level { v })));
         }
         let gone = self.room.expire(now);
         for g in &gone {
-            self.mixer.lock().unwrap().remove(&g.id);
+            let voice = self.mixer.lock().unwrap().remove(&g.id);
+            drop(voice);
         }
         Tick {
-            meters,
+            levels: self.levels.iter().map(|l| PhoneLevel { id: l.id.to_string(), level: l.peak, down: l.down }).collect(),
             expired: !gone.is_empty(),
             idle: !gone.is_empty() && !self.window_open && self.room.guests.is_empty(),
-            moved: n % 60 == 0 && cert::lan_ips() != self.ips,
+            moved: n.is_multiple_of(60) && cert::lan_ips() != self.ips,
+            stopped: self.output.broken(),
         }
     }
 }
 
 /// Every 80 ms while this session lasts: levels, gone phones, a new address now and then; the session ends when the Mac wakes
-/// from sleep or its last phone is gone with the window closed.
+/// from sleep, its output device goes away, or its last phone is gone with the window closed.
 async fn tick(app: AppHandle, id: u64) {
     let mut every = tokio::time::interval(Duration::from_millis(80));
     let mut last = (SystemTime::now(), Instant::now());
@@ -3165,10 +3392,13 @@ async fn tick(app: AppHandle, id: u64) {
         let slept = woke(now.0.duration_since(last.0).unwrap_or_default(), now.1 - last.1);
         last = now;
         let Some(t) = with(&app, |s| (s.id == id).then(|| s.tick(n, now.1))).flatten() else { return };
-        if slept || t.idle {
+        if t.stopped {
+            let _ = app.emit("phone-news", News::Stopped);
+        }
+        if slept || t.idle || t.stopped {
             return end(&app);
         }
-        let _ = app.emit("phone-levels", &t.meters);
+        let _ = app.emit("phone-levels", &t.levels);
         if t.expired {
             changed(&app);
         }
@@ -3215,6 +3445,7 @@ Expected: all PASS (room 3); no warnings.
 In `app/scripts/phone-check.ts`, insert before `console.log("phone check OK");` (after Task 7's lines):
 
 ```ts
+second.ws.send(JSON.stringify({ t: "voice", v: 1 }));
 second.ws.send(JSON.stringify({ t: "live", on: true, rate: 48000 }));
 second.ws.send(JSON.stringify({ t: "effect", kind: "autoTune", amount: 100 }));
 const frame = new Int16Array(240);
@@ -3223,10 +3454,10 @@ for (let i = 0; i < 400; i++) {
   second.ws.send(frame.slice().buffer);
   await wait(5);
 }
-await until(() => second.got.some((m) => m.t === "level" && Number(m.v) > 0.01), "its voice level");
+await until(() => second.got.some((m) => m.t === "level" && Number(m.v) > 0), "its voice level");
 ```
 
-(The tone is quiet, about -30 dBFS, because it plays through the Mac's speakers during the check.)
+(Voice 1 % and a -32 dBFS tone keep it below hearing, about -70 dBFS, since it plays through the Mac's speakers while the user is working.)
 
 Run the isolated check with the phone check for `task-08.png` and grep `phone check OK` in `task-08.while-open.txt`.
 Expected: both succeed; `task-08.log` shows no panics.
@@ -3255,14 +3486,14 @@ git commit -m "feat(app): phones sing through the Mac's speakers with effects, l
 **Interfaces:**
 - Consumes: commands `phones_open`, `phones_close`, `phone_remove` (Task 6), `phone_volume` (Task 8), `phones_clock` (Task 7); events `"phones"` (Tasks 6/8), `"phone-levels"` (Task 8), `"phone-news"` (Tasks 6/7) and `"library"` (Task 7); problem codes `phonesStart`, `noNetwork` (Task 6); `fake.guestAdds` (Task 5).
 - Produces:
-  - `api.ts`: `JoinInfo { qr: string; code: string; host: string }`, `PhoneRow { id; name; connected; volume }`, `PhonesView { join: JoinInfo | null; phones: PhoneRow[] }`, `PhoneLevel { id; level; down }`, `PhoneNews = { kind: "joined"; name; mic } | { kind: "added"; name; title }`, `phonesOpen()`, `phonesClose()`, `phoneVolume(id, volume)`, `phoneRemove(id)`, `phonesClock(key, positionMs, playing)`, `onPhones(cb)`, `onPhoneLevels(cb)`, `onPhoneNews(cb)`, `onLibraryChanged(cb)`; `ProblemCode` gains `"phonesStart" | "noNetwork"`.
+  - `api.ts`: `JoinInfo { qr: string; code: string; host: string }`, `PhoneRow { id; name; connected; volume }`, `PhonesView { join: JoinInfo | null; phones: PhoneRow[] }`, `PhoneLevel { id; level; down }`, `PhoneNews = { kind: "joined"; name; mic } | { kind: "added"; name; title } | { kind: "stopped" }`, `phonesOpen()`, `phonesClose()`, `phoneVolume(id, volume)`, `phoneRemove(id)`, `phonesClock(key, positionMs, playing)`, `onPhones(cb)`, `onPhoneLevels(cb)`, `onPhoneNews(cb)`, `onLibraryChanged(cb)`; `ProblemCode` gains `"phonesStart" | "noNetwork"`.
   - `format.ts`: `loudness(peak: number): number` — 0..1 on a -50..0 dB scale (the Mac's 5-bar meter shows `Math.round(loudness(level) * 5)` bars; the phone's mic pulse uses it in Task 10).
-  - `phones` store: `view: PhonesView`, `levels: Record<string, PhoneLevel>`, `init()`, `open()`, `close()`, `setVolume(id, volume)`, `remove(id, name)`. Toasts from the prototype: "Aiko joined as Mic 1" (microphone), "Aiko added “title”" (list-plus), and "Aiko removed" (user-minus) when the Mac removes a phone.
+  - `phones` store: `view: PhonesView`, `levels: Record<string, PhoneLevel>`, `init()`, `open()`, `close()`, `setVolume(id, volume)`, `remove(id, name)`. Toasts from the prototype: "Aiko joined as Mic 1" (microphone), "Aiko added “title”" (list-plus), and "Aiko removed" (user-minus) when the Mac removes a phone; "The speakers changed. Open phone mics and have phones join again." (speaker-slash) when the output went away. When the session ends while the window is open (the Mac woke, or the speakers changed), the window starts a new one instead of going blank.
   - `ui.sheet` kind `"mics"`; `Sheet` props `subtitle?: string`, `subtitleIcon?: Icon`, `wide?: boolean`.
   - Tokens `--qr-dark`, `--qr-light`. i18n keys `mics.*`, `common.done`, `problem.phonesStart`, `problem.noNetwork`.
   - `Streamer.clock(): number` — the song time phones should follow: like `position()`, but already moving during the short wait before sound starts (so phone lyrics don't run ahead). The player store reports `phonesClock(current entry key, clock ms, playing)` whenever the streamer's state changes.
   - A song a guest queues while the Mac is idle starts playing in the karaoke view, as in the prototype (an entry with `by` becoming current when nothing was playing).
-  - Fake backend levers `window.fake.phones(view)`, `window.fake.levels(levels)`, `window.fake.news(news)`.
+  - Fake backend levers `window.fake.phones(view)`, `window.fake.levels(levels)`, `window.fake.news(news)`, `window.fake.sessionEnded()`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3287,6 +3518,10 @@ to the state above `fake` (and `PhoneLevel`, `PhoneNews` to the type import); to
   /** Something a phone did that the Mac toasts. */
   news(news: PhoneNews) {
     return emit("phone-news", news);
+  },
+  /** The session ends on its own (the Mac woke, the speakers changed); opening again gives the same view. */
+  sessionEnded() {
+    return emit("phones", { join: null, phones: [] });
   },
 ```
 
@@ -3315,6 +3550,9 @@ test("the mic pill opens the phone window with the code, the address and how to 
   await expect(sheet).toContainText("Keep phones away from the speakers.");
   await expect(sheet.locator(".qr svg")).toBeVisible();
   await expect(sheet).toContainText("Waiting for phones to join…");
+  await page.evaluate(() => window.fake.sessionEnded());
+  await expect.poll(async () => (await calls(page, "phones_open")).length).toBe(2);
+  await expect(sheet).toContainText("OKI-4827");
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();
   expect(await calls(page, "phones_close")).toHaveLength(1);
@@ -3360,6 +3598,8 @@ test("a guest's song starts when nothing is playing, and the Mac says who joined
   await expect(page.getByText("Ben joined as Mic 2")).toBeVisible();
   await page.evaluate(() => window.fake.news({ kind: "added", name: "Ben", title: "Paper Boats" }));
   await expect(page.getByText("Ben added “Paper Boats”")).toBeVisible();
+  await page.evaluate(() => window.fake.news({ kind: "stopped" }));
+  await expect(page.getByText("The speakers changed. Open phone mics and have phones join again.")).toBeVisible();
 });
 ```
 
@@ -3377,7 +3617,7 @@ export interface JoinInfo { qr: string; code: string; host: string }
 export interface PhoneRow { id: string; name: string; connected: boolean; volume: number }
 export interface PhonesView { join: JoinInfo | null; phones: PhoneRow[] }
 export interface PhoneLevel { id: string; level: number; down: boolean }
-export type PhoneNews = { kind: "joined"; name: string; mic: number } | { kind: "added"; name: string; title: string };
+export type PhoneNews = { kind: "joined"; name: string; mic: number } | { kind: "added"; name: string; title: string } | { kind: "stopped" };
 
 export const phonesOpen = () => invoke<PhonesView>("phones_open");
 export const phonesClose = () => invoke<void>("phones_close");
@@ -3411,6 +3651,7 @@ import { toasts } from "./toasts.svelte";
 import { ui } from "./ui.svelte";
 import ListPlusIcon from "phosphor-svelte/lib/ListPlusIcon";
 import MicrophoneStageIcon from "phosphor-svelte/lib/MicrophoneStageIcon";
+import SpeakerSlashIcon from "phosphor-svelte/lib/SpeakerSlashIcon";
 import UserMinusIcon from "phosphor-svelte/lib/UserMinusIcon";
 import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
@@ -3421,7 +3662,10 @@ class PhonesState {
   private shown = false;
 
   async init() {
-    await onPhones((v) => (this.view = v));
+    await onPhones((v) => {
+      this.view = v;
+      if (!v.join && this.shown) void this.open();
+    });
     await onPhoneLevels((levels) => (this.levels = Object.fromEntries(levels.map((l) => [l.id, l]))));
     await onPhoneNews((n) => this.toast(n));
   }
@@ -3455,7 +3699,8 @@ class PhonesState {
 
   private toast(n: PhoneNews) {
     if (n.kind === "joined") toasts.show(t("mics.joined", { name: n.name, n: n.mic }), { icon: MicrophoneStageIcon });
-    else toasts.show(t("mics.added", { name: n.name, title: n.title }), { icon: ListPlusIcon });
+    else if (n.kind === "added") toasts.show(t("mics.added", { name: n.name, title: n.title }), { icon: ListPlusIcon });
+    else toasts.show(t("mics.stopped"), { icon: SpeakerSlashIcon });
   }
 }
 
@@ -3721,6 +3966,7 @@ Add after `"common.close"` (for `common.done`) and at the end of each locale (th
   "mics.joined": "{name} joined as Mic {n}",
   "mics.added": "{name} added “{title}”",
   "mics.removed": "{name} removed",
+  "mics.stopped": "The speakers changed. Open phone mics and have phones join again.",
 ```
 
 `ja.ts`:
@@ -3752,6 +3998,7 @@ Add after `"common.close"` (for `common.done`) and at the end of each locale (th
   "mics.joined": "{name} さんがマイク {n} で参加しました",
   "mics.added": "{name} さんが「{title}」を追加しました",
   "mics.removed": "{name} さんを外しました",
+  "mics.stopped": "スピーカーが変わりました。スマホマイクを開いて、もう一度参加してもらってください。",
 ```
 
 `ko.ts`:
@@ -3783,6 +4030,7 @@ Add after `"common.close"` (for `common.done`) and at the end of each locale (th
   "mics.joined": "{name} 님이 마이크 {n}(으)로 참여했습니다",
   "mics.added": "{name} 님이 “{title}”을(를) 추가했습니다",
   "mics.removed": "{name} 님을 내보냈습니다",
+  "mics.stopped": "스피커가 바뀌었습니다. 휴대폰 마이크를 열고 휴대폰을 다시 참여시키세요.",
 ```
 
 `zh-Hans.ts`:
@@ -3814,6 +4062,7 @@ Add after `"common.close"` (for `common.done`) and at the end of each locale (th
   "mics.joined": "{name} 以麦克风 {n} 加入",
   "mics.added": "{name} 添加了“{title}”",
   "mics.removed": "已移除 {name}",
+  "mics.stopped": "扬声器变了。请打开手机麦克风，让手机重新加入。",
 ```
 
 `zh-Hant.ts`:
@@ -3845,6 +4094,7 @@ Add after `"common.close"` (for `common.done`) and at the end of each locale (th
   "mics.joined": "{name} 以麥克風 {n} 加入",
   "mics.added": "{name} 新增了「{title}」",
   "mics.removed": "已移除 {name}",
+  "mics.stopped": "喇叭變了。請打開手機麥克風，讓手機重新加入。",
 ```
 
 `es.ts`:
@@ -3876,6 +4126,7 @@ Add after `"common.close"` (for `common.done`) and at the end of each locale (th
   "mics.joined": "{name} se unió como micro {n}",
   "mics.added": "{name} añadió “{title}”",
   "mics.removed": "Se quitó a {name}",
+  "mics.stopped": "Cambiaron los altavoces. Abre los micrófonos del móvil y pide a los móviles que se unan de nuevo.",
 ```
 
 - [ ] **Step 6: Run the tests to verify they pass**
@@ -5012,7 +5263,7 @@ git commit -m "feat(app): phone page — join, mic permission, reconnecting, ses
 **Interfaces:**
 - Consumes: `clock`, `lyrics`, `lyricsChanged` messages and `{t:"lyrics", trackId}`, `{t:"voice", v}`, `{t:"singer", v}` (Tasks 7/8); `timeline`, `itemAt`, `wordProgress`, `dotProgress` from `$lib/lyrics/timeline`; `Artwork.svelte`; Task 10's `link`.
 - Produces:
-  - `link` gains `clock`, `lyrics: { trackId: number; lyrics: Lyrics } | null`, `voice` (0–100, starts at 80), `current` / `next` (`QueueEntry | null`), `position(): number` (seconds into the current song), `setVoice(v)`, `setSinger(v)` (each sent at most every 100 ms, ending on the latest value). The page asks for the current song's lyrics once per song, again after `lyricsChanged`.
+  - `link` gains `clock`, `lyrics: { trackId: number; lyrics: Lyrics } | null`, `voice` (0–100; 80 at first, then what this phone last chose, kept in `localStorage` as `phone.voice` and sent with every `live` message so the Mac row always matches the phone), `current` / `next` (`QueueEntry | null`), `position(): number` (seconds into the current song), `setVoice(v)`, `setSinger(v)` (each sent at most every 100 ms, ending on the latest value). The page asks for the current song's lyrics once per song, again after `lyricsChanged`.
   - `PhoneLyrics.svelte` props `{ lyrics: Lyrics; t: number }` — the current line (word fill, countdown dots, duet part label) and the next line; "No lyrics found, sing it your way." only when the lookup found none (`source === "none"`), nothing while it is still looking (as on the Mac).
   - Slider thumbs show on touch screens (`@media (hover: none)` in `base.css`).
   - `art.ts`: a song picture path starting `/art/` is used as-is (the phone server's link); anything else goes through `convertFileSrc` as before.
@@ -5095,6 +5346,9 @@ test("Voice and Singer each open their own slider and send its value", async ({ 
   await singer.fill("30");
   await expect.poll(async () => (await sent(page)).filter((m) => m.t === "singer").at(-1)).toEqual({ t: "singer", v: 30 });
   expect(await sent(page)).toContainEqual({ t: "voice", v: 55 });
+  await page.reload();
+  await joinAs(page);
+  expect(await sent(page)).toContainEqual({ t: "voice", v: 55 });
 });
 ```
 
@@ -5118,7 +5372,7 @@ In `app/src/lib/phone/link.svelte.ts`:
 ```ts
   clock = $state({ key: null as number | null, positionMs: 0, playing: false, at: 0 });
   lyrics = $state<{ trackId: number; lyrics: Lyrics } | null>(null);
-  voice = $state(80);
+  voice = $state(Number(recall(() => localStorage, "phone.voice") ?? 80));
   current = $derived(this.entryAt(0));
   next = $derived(this.entryAt(1));
 ```
@@ -5140,6 +5394,15 @@ and private fields `private asked: number | null = null;`, `private sentAt = new
 ```
 
 - in `stop()` add `this.lyrics = null;` and `this.asked = null;`
+- `sendLive` also sends the Voice level:
+
+```ts
+  private sendLive() {
+    if (!this.mic) return;
+    this.send({ t: "live", on: this.live, rate: this.mic.rate });
+    this.send({ t: "voice", v: this.voice });
+  }
+```
 - new methods:
 
 ```ts
@@ -5152,6 +5415,7 @@ and private fields `private asked: number | null = null;`, `private sentAt = new
 
   setVoice(v: number) {
     this.voice = v;
+    keep(() => localStorage, "phone.voice", String(v));
     this.sendSoon({ t: "voice", v });
   }
 
@@ -5473,12 +5737,13 @@ function savedEffect(): { kind: EffectKind; amount: number } {
 
 - field after `voice`: `effect = $state(savedEffect());`
 - `sendSoon`'s parameter becomes `m: { t: string; [k: string]: unknown }` (its body is unchanged);
-- `sendLive` also sends the effect:
+- `sendLive` also sends the effect (after the Voice level, Task 11):
 
 ```ts
   private sendLive() {
     if (!this.mic) return;
     this.send({ t: "live", on: this.live, rate: this.mic.rate });
+    this.send({ t: "voice", v: this.voice });
     this.send({ t: "effect", ...this.effect });
   }
 ```
@@ -5850,7 +6115,7 @@ git commit -m "feat(app): phone Songs and Queue tabs"
 
 ### Task 14: Links and YouTube in the phone's Songs tab, as on the Mac
 
-**Precondition:** Phase 1b Task 29 is committed (it is at 65471cb). If Phase 1b Task 32 (fast YouTube search and suggestions) has landed too, its command keeps the same name and result type; Step 2 moves whatever body the commands have at HEAD, unchanged.
+**Precondition:** Phase 1b Tasks 29 and 32 are committed (Task 32, c6f33da: YouTube's own web search first, yt-dlp as the fallback, plus search-bar suggestions). Step 2 moves the commands' bodies exactly as they are at HEAD; read them first (`grep -n "fn youtube_search\|fn link_preview" -A20 app/src-tauri/src/adding.rs`) and, if they differ from the snippets below, move the HEAD version.
 
 **Files:**
 - Modify: `app/src-tauri/src/adding.rs`
@@ -5860,7 +6125,7 @@ git commit -m "feat(app): phone Songs and Queue tabs"
 - Test: `app/tests/phone.spec.ts`
 
 **Interfaces:**
-- Consumes (real code at HEAD): the command `adding::youtube_search(state, query: String) -> Result<Vec<SearchHit>, AppError>` (async; body `ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query))`), `adding::link_preview(state, url, on_update: Channel<LinkPreview>)`, `kara_core::ingest::preview::{SearchHit, LinkPreview}` (`SearchHit` = `url` + flattened `LinkPreview`); TS `SearchHit`, `LinkPreview` from `$lib/api`; `LinkRow.svelte` (`{ preview: LinkPreview | null; host?: string; onAdd: (then: "" | "queue" | "next") => void }`, a skeleton while `preview` is null); `withPreview`, `previewFailed` from `$lib/search`; the Mac's 280 ms wait before searching YouTube; key `search.youtube`.
+- Consumes (real code at HEAD): the command `adding::youtube_search(state, query: String) -> Result<Vec<SearchHit>, AppError>` (async; body `youtube::search(&query).or_else(|_| ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query)))` — the direct web search with the yt-dlp fallback; `youtube_suggestions` is left alone, phones don't show suggestions), `adding::link_preview(state, url, on_update: Channel<LinkPreview>)`, `kara_core::ingest::preview::{SearchHit, LinkPreview}` (`SearchHit` = `url` + flattened `LinkPreview`); TS `SearchHit`, `LinkPreview` from `$lib/api`; `LinkRow.svelte` (`{ preview: LinkPreview | null; host?: string; onAdd: (then: "" | "queue" | "next") => void }`, a skeleton while `preview` is null); `withPreview`, `previewFailed` from `$lib/search`; the Mac's 280 ms wait before searching YouTube; key `search.youtube`.
 - Produces:
   - `adding::find_on_youtube(store: &Store, query: &str) -> anyhow::Result<Vec<SearchHit>>` and `adding::preview_link(store: &Store, url: &str, send: impl FnMut(LinkPreview)) -> anyhow::Result<()>` — the commands' blocking bodies, now shared by the commands and the phones.
   - `FromPhone::Youtube { q }` → `ToPhone::Youtube { q, hits: &[SearchHit] }` (an empty list when the search fails, as the Mac shows nothing then); `FromPhone::Preview { url }` → `ToPhone::Preview { url, preview: Option<&LinkPreview> }` once per preview found (quick, then full), or once with `null` when none could be read. Both run off the phone's connection.
@@ -5891,6 +6156,8 @@ with
   await page.getByRole("button", { name: "Add to queue", exact: true }).click();
 ```
 
+and, because a 3-letter search now also shows YouTube rows with their own Play next buttons, scope the song's Play next click: replace `await page.getByRole("button", { name: "Play next" }).click();` with `await page.locator(".prow", { hasText: "Lemon Skies" }).getByRole("button", { name: "Play next" }).click();`
+
 and append:
 
 ```ts
@@ -5918,9 +6185,9 @@ Expected: FAIL — no "Made-up Song" or "Made-up Clip".
 In `app/src-tauri/src/adding.rs` (import `kara_core::store::Store`), move the blocking bodies into plain functions and let the commands call them:
 
 ```rust
-/// The top YouTube videos for `query`.
+/// The top YouTube videos for `query`: YouTube's own web search, or yt-dlp's when that fails.
 pub fn find_on_youtube(store: &Store, query: &str) -> anyhow::Result<Vec<SearchHit>> {
-    ytdlp::ensure(&store.bin_dir()).and_then(|bin| preview::search(&bin, query))
+    youtube::search(query).or_else(|_| ytdlp::ensure(&store.bin_dir()).and_then(|bin| preview::search(&bin, query)))
 }
 
 /// The top YouTube videos for the search bar's words.
@@ -5965,7 +6232,7 @@ pub async fn link_preview(state: State<'_, AppState>, url: String, on_update: Ch
 }
 ```
 
-(If Task 32 changed `youtube_search`'s body, `find_on_youtube` takes that body as it is.)
+(This keeps Task 32's fast search for the Mac and gives it to phones.)
 
 - [ ] **Step 3: Phones ask for them**
 
@@ -6130,7 +6397,7 @@ git commit -m "feat(app): pasted links and YouTube results in the phone's Songs 
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: README "Phone mics" section and development notes; a message telling the user to restart their own dev app, with the checklist below. This task starts no app for the user.
+- Produces: README "Phone mics" section and development notes; a message telling the user where the work is and how to try it, with the checklist below. This task starts no app for the user and touches nothing in their checkout.
 
 - [ ] **Step 1: README**
 
@@ -6148,11 +6415,13 @@ to howl is turned down on its own. Up to four phones at once. Each guest can add
 own voice (Karaoke mix or Auto-tune) with a strength slider. Mics play through the Mac's current
 speakers; Bluetooth speakers and headphones add a noticeable delay.
 
-For development: `KARA_PHONE_CODE=1234` (debug builds only) starts a phone session at launch with
-that code; `NODE_TLS_REJECT_UNAUTHORIZED=0 KARA_PHONE_CODE=1234 node app/scripts/phone-check.ts`
-then talks to it like a few phones and prints `phone check OK`. `app/scripts/isolated-check.sh`
-builds and runs a separate copy of the app on a scratch library (it never stops your running app or
-uses port 1420). `KARA_MIC_BUFFER_MS` (10–60, default 20) sets the shortest mic delay buffer.
+For development (debug builds): `KARA_PHONE_CODE=1234` starts a phone session at launch with that
+code and `KARA_PHONE_PORT=8543` serves phones on that port only (leaving 443 and 80 alone);
+`NODE_TLS_REJECT_UNAUTHORIZED=0 KARA_PHONE_CODE=1234 KARA_PHONE_PORT=8543 node app/scripts/phone-check.ts`
+then talks to that app like a few phones and prints `phone check OK`. `app/scripts/isolated-check.sh`
+builds and runs a separate copy of the app on a scratch library with both set (it never stops your
+running app or uses port 1420). `KARA_MIC_BUFFER_MS` (10–60, default 20) sets the shortest mic delay
+buffer. Auto-tune adds about 10 ms to a voice, up to about 25 ms for low voices.
 ~~~
 
 - [ ] **Step 2: Full check**
@@ -6164,7 +6433,7 @@ cd app && npm test && npm run check && npm run check:i18n && npx playwright test
 ```
 Expected: all Rust, vitest and Playwright tests pass; 0 clippy warnings; 0 svelte-check errors; every locale matches; the build succeeds.
 
-Then the isolated check with the phone check for `task-15.png` (grep `phone check OK`).
+Then the isolated check with the phone check for `task-15.png` (grep `phone check OK`), and `git status` in the worktree shows nothing uncommitted.
 
 - [ ] **Step 3: Commit and hand over**
 
@@ -6173,26 +6442,27 @@ git add README.md
 git commit -m "docs: phone mics in the README"
 ```
 
-Do not start, stop or restart any app. Tell the user: "Phase 2 is in. Restart your dev app (stop `npm run tauri:dev` and run it again in `app/`) to load the new Rust code, then go through the checklist below."
+Do not start, stop or restart any app, and don't merge. Tell the user: "Phase 2 is on branch `phase2-phone-mics` in the worktree `/Users/mohaelder/Repos/kara-always-oki-phase2` (your checkout and running app were never touched). To try it, stop your dev app, then either run `npm run tauri:dev` in the worktree's `app/` (it uses your usual library), or merge `phase2-phone-mics` into `phase1b-app` in your checkout and run your dev app there as usual. Then go through the checklist below. When you're done with the worktree: `git worktree remove ../kara-always-oki-phase2`."
 
 ## User acceptance checklist (for the user; does not block any task)
 
-Restart your own dev app first (it needs the new Rust code). Use your usual library, an iPhone and, if you have one, an Android phone on the same Wi-Fi as the Mac, and a song with synced lyrics (the duet file from the Phase 1 checklist helps for item 7). Use the Mac's built-in speakers or wired speakers: Bluetooth output (AirPods and the like) adds 100+ ms, and the mics play on whatever output is the default when the window opens.
+Run the Phase 2 code as the hand-over message says (from the worktree, or after merging). Use your usual library, an iPhone and, if you have one, an Android phone on the same Wi-Fi as the Mac, and a song with synced lyrics (the duet file from the Phase 1 checklist helps for item 7). Use the Mac's built-in speakers or wired speakers: Bluetooth output (AirPods and the like) adds 100+ ms, and the mics play on whatever output is the default when the window opens.
 
 1. **First join.** Click the mic pill (`+`): the window shows the QR code, `OKI-` code, "on <your Mac>.local", the warning tutorial, the firewall line and the speaker tip. Scan with the iPhone: the warning page → Show Details → visit this website → Join (code filled in as OKI-…, tick shown) → type a name → Join → Allow microphone → the iOS prompt → the Mic tab. Time it: under 30 s. If macOS asks to allow incoming connections, allow. The Mac shows "<name> joined as Mic 1"; the row's meter moves when you speak; the pill shows 1.
 2. **Typing the address.** On another phone, type the address the window shows ("<your Mac>.local") in the browser: it opens the Join page; type the code.
 3. **Coming back.** Tap Leave, then Join again: no warning, in a few seconds, name remembered.
 4. **Delay.** Record the room with QuickTime on the Mac while tapping the phone's mic with a fingernail; in an audio editor, measure from the tap's direct sound to its sound from the speakers. Under 60 ms. Repeat after restarting with `KARA_MIC_BUFFER_MS=10`, then `=40`; note which sounds best (say if 10 ms drops out).
 5. **Two phones, a few minutes.** Both sing through a whole song: no dropouts or clicks, reverb on both, the Mac volume sliders (drag smoothly, no jumping back) and each phone's Voice slider change only that voice; the Singer slider on a phone moves the Mac's and the other phone's.
-6. **Voice effects.** On one phone tap Effect: Karaoke mix at 0 % sounds dry, at 100 % gives a clear echo and a warm room; Auto-tune at 100 % pulls a slightly off note to pitch without an audible extra delay, at 30 % only nudges it. Reload the phone page and rejoin: the effect is still chosen. The other phone's voice is unaffected.
+6. **Voice effects.** On one phone tap Effect: Karaoke mix at 0 % sounds dry, at 100 % gives a clear echo and a warm room; Auto-tune at 100 % pulls a slightly off note to pitch without an audible extra delay, at 30 % only nudges it. Try Auto-tune with a low (male) voice too: it should still land on the note, with the voice only slightly later. Switch between the effects while singing: no clicks. Reload the phone page and rejoin: the effect and the Voice level are still what you chose, on the phone and on the Mac row. The other phone's voice is unaffected.
 7. **Feedback.** Hold a phone close to a speaker and raise its volume until it starts to howl: within about a second it drops and the Mac row says "Turned down: too close to the speakers"; move it away and within a few seconds it's back to normal. Singing a long held note at the phone does not turn it down.
 8. **Lyrics on the phone.** The words fill in step with the Mac (not ahead of it right after a song starts); the dots count down before lines; "Up next" scrolls the next song; a duet song shows "Male part" / "Female part"; changing Lyrics timing on the Mac moves the phone's too; a song without lyrics says so only after the lookup finished.
-9. **Songs and queue from the phone.** Search a library song by part of its title (also a Japanese one): Play next and Add to queue show a check, the Mac toasts "<name> added “…”" and its queue shows "added by <name>". With nothing playing, a song added from a phone starts on the Mac in the karaoke view. Paste a YouTube link: its picture and title appear; Add to queue downloads it (the Mac shows it in Imported) and it joins the queue once ready. Type a few words: a YouTube section appears; tapping one queues it. In Queue, drag to reorder and remove; the Mac follows.
+9. **Songs and queue from the phone.** Search a library song by part of its title (also a Japanese one): Play next and Add to queue show a check, the Mac toasts "<name> added “…”" and its queue shows "added by <name>". With nothing playing, a song added from a phone starts on the Mac in the karaoke view — also right after launching the Mac app, before anyone has clicked anything in it (if it opens paused instead, say so). Paste a YouTube link: its picture and title appear; Add to queue downloads it (the Mac shows it in Imported) and it joins the queue once ready. Type a few words: a YouTube section appears; tapping one queues it. In Queue, drag to reorder and remove; the Mac follows.
 10. **Screen lock.** Lock the phone for 10 s and unlock: at most a short "Reconnecting…", then back; if the mic stopped, the button says "Tap to sing" and one tap brings it back. While joined, the phone doesn't auto-lock; after Leave it can.
 11. **Wi-Fi drop.** Turn the phone's Wi-Fi off for 10 s: the banner shows, the Mac row greys out ("Reconnecting…") within a few seconds; Wi-Fi on: back in the same row with the same volume and effect.
 12. **Room full.** Join four devices (phones, or Safari tabs on the Mac at the address shown): a fifth sees "This room is full."
 13. **Remove, leave for good, quit.** Remove a phone on the Mac: the Mac toasts "<name> removed" and that phone shows "The host ended the session". Close the mic window, then turn a joined phone's Wi-Fi off and leave it off: after about two minutes its row is gone and, with no phone left, the phone page no longer loads. Quit the app with phones joined: they show "The host ended the session" (right away, or within two minutes).
-14. **Window closed.** Close the window with phones joined: they keep singing and the pill counts them. Close it with none joined: the phone page no longer loads.
-15. **Mac sleep.** With a phone joined, close the lid for a minute and open it: the phone shows "The host ended the session" (within two minutes); opening the window again shows a new code.
-16. **New address.** With the window open, switch the Mac to another Wi-Fi network (or a phone hotspot): within about 5 s the QR code changes; a phone scanning it sees the warning once more, then joins.
-17. **Languages and look.** Set a phone to Japanese, then Spanish: the page follows it. Switch the Mac through all six languages with the window open: nothing overflows. The phone follows its own light/dark setting; slider thumbs are visible on the phone; with Reduce Motion on, "Up next" stops scrolling.
+14. **Speakers change.** With phones singing, unplug the USB/Bluetooth speakers or switch the Mac's output: the Mac says "The speakers changed…", and an open mic window shows a new code on the new speakers; phones rejoin with it. Memory use of the app stays flat meanwhile (Activity Monitor).
+15. **Window closed.** Close the window with phones joined: they keep singing and the pill counts them. Close it with none joined: the phone page no longer loads.
+16. **Mac sleep.** With a phone joined, close the lid for a minute and open it: the phone shows "The host ended the session" (within two minutes); opening the window again shows a new code.
+17. **New address.** With the window open, switch the Mac to another Wi-Fi network (or a phone hotspot): within about 5 s the QR code changes; a phone scanning it sees the warning once more, then joins.
+18. **Languages and look.** Set a phone to Japanese, then Spanish: the page follows it. Switch the Mac through all six languages with the window open: nothing overflows. The phone follows its own light/dark setting; slider thumbs are visible on the phone; with Reduce Motion on, "Up next" stops scrolling.
