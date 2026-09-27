@@ -185,9 +185,7 @@ impl Library {
         Self::init(Connection::open_in_memory()?, STEPS)
     }
 
-    /// Opens the database, bringing it up to the latest version with the `steps` it hasn't had, in one transaction.
-    /// Foreign keys are off during the upgrade, since `PRAGMA foreign_keys` can't change mid-transaction and a step
-    /// may need to rebuild a table; `foreign_key_check` confirms nothing broke before they're switched back on.
+    /// Opens the database and runs, in one transaction with foreign keys off, the `steps` it hasn't had; fails if they leave a broken reference.
     fn init(mut conn: Connection, steps: &[Step]) -> Result<Self> {
         enable_wal(&conn)?;
         conn.pragma_update(None, "foreign_keys", "OFF")?;
@@ -198,8 +196,8 @@ impl Library {
             step(&tx)?;
         }
         tx.pragma_update(None, "user_version", steps.len())?;
+        anyhow::ensure!(no_foreign_key_violations(&tx)?, "This library couldn't be upgraded safely.");
         tx.commit()?;
-        anyhow::ensure!(no_foreign_key_violations(&conn)?, "This library couldn't be upgraded safely.");
         conn.pragma_update(None, "foreign_keys", "ON")?;
         Ok(Self { conn })
     }
@@ -592,7 +590,10 @@ mod tests {
     }
 
     #[test]
-    fn a_dangling_reference_left_by_an_upgrade_fails_the_open() {
+    fn a_dangling_reference_left_by_an_upgrade_rolls_back_and_a_corrected_step_still_upgrades() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("kara.db");
+        Library::open(&p).unwrap();
         let bad: Step = |tx| {
             Ok(tx.execute_batch(
                 "CREATE TABLE parent (id INTEGER PRIMARY KEY);
@@ -600,7 +601,19 @@ mod tests {
                  INSERT INTO child (id, parent_id) VALUES (1, 99);",
             )?)
         };
-        assert!(Library::init(Connection::open_in_memory().unwrap(), &[bad]).is_err());
+        assert!(Library::init(Connection::open(&p).unwrap(), &[STEPS, &[bad]].concat()).is_err());
+        let version: usize = Connection::open(&p).unwrap().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, STEPS.len());
+
+        let good: Step = |tx| {
+            Ok(tx.execute_batch(
+                "CREATE TABLE parent (id INTEGER PRIMARY KEY);
+                 CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent);
+                 INSERT INTO parent (id) VALUES (1);
+                 INSERT INTO child (id, parent_id) VALUES (1, 1);",
+            )?)
+        };
+        assert!(Library::init(Connection::open(&p).unwrap(), &[STEPS, &[good]].concat()).is_ok());
     }
 
     #[test]
