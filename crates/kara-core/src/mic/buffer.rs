@@ -9,6 +9,10 @@ const SHRINK_MS: f64 = 2.0;
 const STEADY_SECS: f64 = 10.0;
 const TRIM_OVER_MS: f64 = 30.0;
 const MAX_SKEW: f64 = 0.005;
+/// How much faster or slower it plays per unit of relative distance from the target.
+const SKEW_GAIN: f64 = 0.01;
+const MIN_RATE: u32 = 8_000;
+const MAX_RATE: u32 = 192_000;
 /// The most sound the buffer ever holds; far above the 60 ms target plus a trimmed burst.
 const HOLD_MS: f64 = 200.0;
 
@@ -25,6 +29,9 @@ pub struct JitterBuffer {
     avg_fill_ms: f64,
     playing: bool,
     fade_in: f64,
+    last: f32,
+    /// The sound cut off by a reset, dying away under whatever plays next.
+    tail: f32,
     steady_secs: f64,
     /// A jump ahead after a burst: where to, and how far the crossfade has got (0 to 1).
     jump: Option<(f64, f64)>,
@@ -32,6 +39,7 @@ pub struct JitterBuffer {
 
 impl JitterBuffer {
     pub fn new(in_rate: u32, out_rate: u32, floor_ms: f64) -> Self {
+        let in_rate = in_rate.clamp(MIN_RATE, MAX_RATE);
         let cap = (HOLD_MS / 1000.0 * in_rate as f64) as usize;
         let mut queue = VecDeque::with_capacity(cap);
         queue.push_back(0.0);
@@ -47,6 +55,8 @@ impl JitterBuffer {
             avg_fill_ms: floor_ms,
             playing: false,
             fade_in: 0.0,
+            last: 0.0,
+            tail: 0.0,
             steady_secs: 0.0,
             jump: None,
         }
@@ -63,6 +73,7 @@ impl JitterBuffer {
 
     /// Drops everything waiting; it fills up to the target again before playing.
     pub fn reset(&mut self) {
+        self.tail = self.last;
         self.queue.clear();
         self.queue.push_back(0.0);
         self.pos = 1.0;
@@ -79,11 +90,14 @@ impl JitterBuffer {
         self.target_ms
     }
 
-    /// Fills `out` at the output rate: silence while filling up, a short fade instead of a click when the sound runs out.
+    /// Fills `out` at the output rate: silence while filling up, a short fade instead of a click when the sound runs out or is dropped.
     pub fn pull(&mut self, out: &mut [f32]) {
         let fade = FADE_MS / 1000.0 * self.out_rate;
+        let release = 0.001f32.powf(1.0 / fade as f32);
         for o in out {
-            *o = 0.0;
+            self.tail *= release;
+            *o = self.tail;
+            self.last = *o;
             let fill = self.fill_ms();
             if !self.playing {
                 if fill < self.target_ms {
@@ -105,13 +119,14 @@ impl JitterBuffer {
                 self.avg_fill_ms = self.target_ms;
             }
             self.avg_fill_ms += (fill - self.avg_fill_ms) / self.out_rate;
-            let skew = ((self.avg_fill_ms - self.target_ms) / self.target_ms * 0.01).clamp(-MAX_SKEW, MAX_SKEW);
+            let skew = ((self.avg_fill_ms - self.target_ms) / self.target_ms * SKEW_GAIN).clamp(-MAX_SKEW, MAX_SKEW);
             let mut x = self.at(self.pos);
             if let Some((to, k)) = self.jump {
                 x = x * (1.0 - k) as f32 + self.at(to) * k as f32;
             }
-            self.fade_in = (self.fade_in + 1.0 / fade).min(1.0);
-            *o = x * self.fade_in.min(left / fade) as f32;
+            self.fade_in = (self.fade_in + 1.0 / fade).min(1.0).min(left / fade);
+            *o = x * self.fade_in as f32 + self.tail;
+            self.last = *o;
             self.advance(self.step * (1.0 + skew), fade);
             self.steady_secs += 1.0 / self.out_rate;
             if self.steady_secs >= STEADY_SECS {
@@ -219,6 +234,13 @@ mod tests {
             b.push(&[0.1; 256]);
         }
         assert!(b.fill_ms() <= HOLD_MS && b.queue.capacity() == room, "10 s unread stays within {HOLD_MS} ms without growing");
+    }
+
+    #[test]
+    fn a_frame_arriving_just_before_the_sound_runs_out_does_not_click() {
+        let r = run(48_000, 48_000.0, 6.0, |t| if (5.0..5.02).contains(&t) { 5.02 } else { t + 0.004 });
+        assert_eq!(r.buffer.target_ms(), 20.0, "it never ran dry");
+        assert!(smooth(&r.out), "the fade comes back up instead of jumping");
     }
 
     #[test]
