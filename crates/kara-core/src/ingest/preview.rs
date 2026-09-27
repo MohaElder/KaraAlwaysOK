@@ -75,9 +75,8 @@ pub fn probe(bin: &Path, url: &Url) -> Result<LinkPreview> {
     probe_with_timeout(bin, url, PROBE_TIMEOUT)
 }
 
-/// Runs yt-dlp and kills it if it hasn't finished within `timeout`. Its stdout is
-/// drained on a reader thread while we poll, so a full pipe buffer can't stall
-/// (and hide behind) the timeout the way it did in the first version of this fix.
+/// Runs yt-dlp and kills it if it hasn't finished within `timeout`, draining its
+/// stdout on a reader thread while polling so a full pipe can't stall it.
 fn probe_with_timeout(bin: &Path, url: &Url, timeout: Duration) -> Result<LinkPreview> {
     let mut child = Command::new(bin)
         .args(["--dump-json", "--skip-download", "--no-playlist", "--no-warnings"])
