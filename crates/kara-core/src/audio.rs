@@ -140,12 +140,13 @@ pub fn is_damaged(e: &anyhow::Error) -> bool {
 }
 
 /// Explains a `read_tags`/`decode_file` failure: `unsupported` for a damaged or unrecognized
-/// file, that it's missing, or that KaraAlwaysOK isn't allowed to read it.
+/// file, that it's missing, that KaraAlwaysOK isn't allowed to read it, or a generic read error.
 pub fn describe_read_failure(e: anyhow::Error, unsupported: &'static str) -> anyhow::Error {
     match e.downcast_ref::<std::io::Error>().map(std::io::Error::kind) {
         None => e.context(unsupported),
         Some(std::io::ErrorKind::NotFound) => e.context("The file was moved or deleted."),
-        Some(_) => e.context("KaraAlwaysOK isn't allowed to read this file."),
+        Some(std::io::ErrorKind::PermissionDenied) => e.context("KaraAlwaysOK isn't allowed to read this file."),
+        Some(_) => e.context("Couldn't read this file."),
     }
 }
 
@@ -421,6 +422,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let e = read_tags(&dir.path().join("gone.wav")).unwrap_err();
         assert_eq!(describe_read_failure(e, "unsupported").to_string(), "The file was moved or deleted.");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unopenable_path_gets_a_generic_read_message() {
+        use std::os::unix::ffi::OsStrExt;
+        let bad = Path::new(std::ffi::OsStr::from_bytes(b"a\0b"));
+        let e = read_tags(bad).unwrap_err();
+        assert_eq!(describe_read_failure(e, "unsupported").to_string(), "Couldn't read this file.");
     }
 
     #[test]
