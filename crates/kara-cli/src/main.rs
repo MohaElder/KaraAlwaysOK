@@ -61,6 +61,7 @@ enum Cmd {
 fn main() {
     if let Err(e) = run() {
         eprintln!("{e:#}");
+        hide_output_for_the_rest_of_the_process();
         std::process::exit(1);
     }
 }
@@ -109,13 +110,7 @@ fn write_wav(path: &Path, a: &Stereo) -> Result<()> {
     Ok(())
 }
 
-/// Silences stdout and stderr for the rest of the process. CoreML's MLProgram
-/// format prints a benign teardown message ("E5RT encountered an STL
-/// exception...") but not synchronously when the ONNX session is dropped —
-/// probing showed it lands later, during process exit, so a scoped guard that
-/// restores the streams doesn't catch it; only a redirect that is never
-/// undone does. Call this only once every real message has already been
-/// printed, so nothing meant for the user is ever at risk.
+/// Sends this process's stdout and stderr to /dev/null until it exits.
 #[cfg(unix)]
 fn hide_output_for_the_rest_of_the_process() {
     use std::io::Write;
@@ -170,7 +165,6 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
         println!("wrote {}", dir.display());
     }
     hide_output_for_the_rest_of_the_process();
-    drop(model);
     Ok(())
 }
 
@@ -227,14 +221,10 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
         Event::Ready { .. } => eprintln!("Ready to sing."),
         Event::Failed { message, .. } => eprintln!("{message}"),
     });
-    // On failure, `result?` below prints the real error — never hide stdout/
-    // stderr before that. Only on success, once "ready\t..." is the last
-    // thing left to print, hide the model's benign teardown message.
     result?;
     let lyrics = lib.lyrics(track_id)?.map(|l| l.lines.len()).unwrap_or(0);
     println!("ready\t{}\tlyrics lines: {}", lib.track(track_id)?.title, lyrics);
     hide_output_for_the_rest_of_the_process();
-    drop(model);
     Ok(())
 }
 

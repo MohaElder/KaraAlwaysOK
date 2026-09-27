@@ -53,11 +53,10 @@ hardware check in the code.
 |---|---|---|---|
 | Apple Silicon, CoreML | 3–5 min | ~1.4–1.6 GB | ~45x real time |
 | Apple Silicon, CoreML | 18 min | ~2.2 GB | ~45x real time |
-| Any Mac, CPU only | 3 min | ~11 GB | not recommended |
 
-CPU-only mode works but isn't recommended — its memory use is far higher for
-no speed benefit. Windows support is planned; there are no measurements for
-it yet.
+CPU-only: not recommended; it used more than 11 GB in testing, for no speed
+benefit over CoreML. Windows support is planned; there are no measurements
+for it yet.
 
 ## Development
 

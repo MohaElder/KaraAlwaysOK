@@ -15,5 +15,4 @@ hound = "3"
 libc = "0.2"
 
 [dev-dependencies]
-hound = "3"
 tempfile = "3"
