@@ -116,12 +116,17 @@ pub fn ingest_link(lib: &Library, url: &str) -> Result<Ingested, AppError> {
     ingest::add_link(lib, &url).plain()
 }
 
+/// Whether a song's audio has been fetched.
+pub fn has_audio(lib: &Library, track_id: i64) -> anyhow::Result<bool> {
+    Ok(lib.selected_source(track_id)?.is_some_and(|s| s.audio_hash.is_some()))
+}
+
 /// Gets a newly added song's audio and lyrics in the background; false when the song
 /// already has its audio or is queued (the worker gets it then).
 #[tauri::command]
 pub fn start_adding(state: State<'_, AppState>, track_id: i64) -> Result<bool, AppError> {
     let queued = state.player.lock().unwrap().upcoming().contains(&track_id);
-    let has_audio = state.lib.lock().unwrap().selected_source(track_id).plain()?.is_some_and(|s| s.audio_hash.is_some());
+    let has_audio = has_audio(&state.lib.lock().unwrap(), track_id).plain()?;
     if queued || has_audio {
         return Ok(false);
     }

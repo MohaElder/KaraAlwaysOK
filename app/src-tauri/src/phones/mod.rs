@@ -241,12 +241,12 @@ pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: Unbou
     let conn = NEXT.fetch_add(1, Ordering::Relaxed);
     let state = app.state::<AppState>();
     let queue = state.player.lock().unwrap();
-    let snapshot = player::snapshot(&state.lib.lock().unwrap(), &queue);
+    let lib = state.lib.lock().unwrap();
     let joined = with(app, |s| {
         let new = s.room.admit(code, id, name, conn, tx.clone(), kara_core::now_ms())?;
         let _ = tx.send(Out::Text(encode(&ToPhone::Joined)));
-        if let Ok(snapshot) = &snapshot {
-            let _ = tx.send(Out::Text(encode(&ToPhone::Player { snapshot })));
+        if let Ok(snapshot) = player::snapshot(&lib, &queue) {
+            let _ = tx.send(Out::Text(encode(&ToPhone::Player { snapshot: &snapshot })));
         }
         let _ = tx.send(Out::Text(encode(&s.clock.message())));
         let g = &s.room.guests;
@@ -254,7 +254,7 @@ pub(crate) fn admit(app: &AppHandle, code: &str, id: &str, name: &str, tx: Unbou
     })
     .ok_or(ENDED)?
     .map_err(|r: room::Refusal| r.close_code())?;
-    drop(queue);
+    drop((lib, queue));
     changed(app);
     if let Some((mic, name)) = joined {
         let _ = app.emit("phone-news", News::Joined { name, mic });
@@ -324,13 +324,14 @@ fn add_link(app: &AppHandle, id: &str, name: &str, url: String, next: bool) -> R
 }
 
 /// The engine finished adding a song: a guest's link is queued now, or on failure the guest hears why and a song the link made
-/// leaves the library again.
+/// leaves the library again unless its audio was fetched.
 pub fn link_done(app: &AppHandle, e: &Event) {
     let (Event::Added { track_id } | Event::Failed { track_id, .. }) = e else { return };
     let Some(link) = with(app, |s| s.links.iter().position(|l| l.track_id == *track_id).map(|i| s.links.remove(i))).flatten() else { return };
     let refused = match e {
         Event::Failed { problem, .. } => {
-            if link.fresh {
+            let fetched = adding::has_audio(&app.state::<AppState>().lib.lock().unwrap(), link.track_id).unwrap_or(true);
+            if link.fresh && !fetched {
                 let _ = library::delete_track(app.clone(), app.state(), link.track_id);
                 let _ = app.emit("library", ());
             }
