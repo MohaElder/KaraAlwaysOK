@@ -248,6 +248,12 @@ const en = {
   "phone.partM": "Male part",
   "phone.partF": "Female part",
   "phone.partBoth": "Together",
+  "phone.effect": "Effect",
+  "phone.fxNone": "No effect",
+  "phone.fxKaraoke": "Karaoke mix",
+  "phone.fxAutotune": "Auto-tune",
+  "phone.fxStrength": "Effect strength",
+  "phone.fxStrengthValue": "Effect strength: {n}%",
 };
 
 export default en;

@@ -250,6 +250,12 @@ const ja: Record<Key, string> = {
   "phone.partM": "男性パート",
   "phone.partF": "女性パート",
   "phone.partBoth": "一緒に",
+  "phone.effect": "エフェクト",
+  "phone.fxNone": "エフェクトなし",
+  "phone.fxKaraoke": "カラオケミックス",
+  "phone.fxAutotune": "オートチューン",
+  "phone.fxStrength": "エフェクトの強さ",
+  "phone.fxStrengthValue": "エフェクトの強さ: {n}%",
 };
 
 export default ja;

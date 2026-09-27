@@ -6,6 +6,7 @@ import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
 export type Screen = "join" | "connecting" | "perm" | "mic" | "ended" | "lost" | "blocked";
 export type Refusal = "wrongCode" | "full" | "unreachable";
+export type EffectKind = "none" | "karaokeMix" | "autoTune";
 
 const ENDED = 4001;
 const FULL = 4002;
@@ -39,6 +40,17 @@ function keep(storage: () => Storage, key: string, value: string) {
   }
 }
 
+/** The effect this phone chose last time, or none at half strength. */
+function savedEffect(): { kind: EffectKind; amount: number } {
+  try {
+    const e = JSON.parse(localStorage.getItem("phone.effect") ?? "null");
+    if (["none", "karaokeMix", "autoTune"].includes(e?.kind) && Number.isInteger(e?.amount)) return e;
+  } catch {
+    return { kind: "none", amount: 50 };
+  }
+  return { kind: "none", amount: 50 };
+}
+
 /** The phone's side of the session: joining, the mic, staying connected, and what the computer shares. */
 class PhoneLink {
   screen = $state<Screen>("join");
@@ -53,6 +65,7 @@ class PhoneLink {
   clock = $state({ key: null as number | null, positionMs: 0, playing: false, at: 0 });
   lyrics = $state<{ trackId: number; lyrics: Lyrics } | null>(null);
   voice = $state(Number(recall(() => localStorage, "phone.voice") ?? 80));
+  effect = $state(savedEffect());
   current = $derived(this.entryAt(0));
   next = $derived(this.entryAt(1));
 
@@ -222,6 +235,7 @@ class PhoneLink {
   /** Sends what the computer keeps for this phone's row; called after every join. */
   private sendSettings() {
     this.send({ t: "voice", v: this.voice });
+    this.send({ t: "effect", ...this.effect });
     this.sendLive();
   }
 
@@ -242,6 +256,13 @@ class PhoneLink {
     this.sendSoon({ t: "singer", v });
   }
 
+  /** Chooses the voice effect and its strength (0–100); this phone remembers it. */
+  setEffect(kind: EffectKind, amount: number) {
+    this.effect = { kind, amount };
+    keep(() => localStorage, "phone.effect", JSON.stringify(this.effect));
+    this.sendSoon({ t: "effect", kind, amount });
+  }
+
   private entryAt(offset: number) {
     const s = this.snapshot;
     return s?.current == null ? null : (s.entries[s.current + offset] ?? null);
@@ -256,7 +277,7 @@ class PhoneLink {
   }
 
   /** Sends a slider's value at most every 100 ms, always ending on the latest one. */
-  private sendSoon(m: { t: string; v: number }) {
+  private sendSoon(m: { t: string; [k: string]: unknown }) {
     clearTimeout(this.later.get(m.t));
     const go = () => {
       this.sentAt.set(m.t, performance.now());

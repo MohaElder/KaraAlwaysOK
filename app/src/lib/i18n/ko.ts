@@ -250,6 +250,12 @@ const ko: Record<Key, string> = {
   "phone.partM": "남성 파트",
   "phone.partF": "여성 파트",
   "phone.partBoth": "함께",
+  "phone.effect": "효과",
+  "phone.fxNone": "효과 없음",
+  "phone.fxKaraoke": "노래방 믹스",
+  "phone.fxAutotune": "오토튠",
+  "phone.fxStrength": "효과 강도",
+  "phone.fxStrengthValue": "효과 강도: {n}%",
 };
 
 export default ko;

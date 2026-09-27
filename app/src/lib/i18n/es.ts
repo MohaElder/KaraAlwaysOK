@@ -250,6 +250,12 @@ const es: Record<Key, string> = {
   "phone.partM": "Parte masculina",
   "phone.partF": "Parte femenina",
   "phone.partBoth": "Juntos",
+  "phone.effect": "Efecto",
+  "phone.fxNone": "Sin efecto",
+  "phone.fxKaraoke": "Mezcla karaoke",
+  "phone.fxAutotune": "Autoafinación",
+  "phone.fxStrength": "Intensidad del efecto",
+  "phone.fxStrengthValue": "Intensidad del efecto: {n}%",
 };
 
 export default es;

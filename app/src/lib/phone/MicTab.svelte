@@ -1,24 +1,35 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { link } from "./link.svelte";
+  import { link, type EffectKind } from "./link.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { loudness } from "$lib/format";
   import { slide } from "$lib/motion";
   import Artwork from "$lib/components/Artwork.svelte";
   import PhoneLyrics from "./PhoneLyrics.svelte";
+  import MagicWandIcon from "phosphor-svelte/lib/MagicWandIcon";
   import MicrophoneSlashIcon from "phosphor-svelte/lib/MicrophoneSlashIcon";
   import MicrophoneStageIcon from "phosphor-svelte/lib/MicrophoneStageIcon";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
+  import ProhibitIcon from "phosphor-svelte/lib/ProhibitIcon";
+  import SparkleIcon from "phosphor-svelte/lib/SparkleIcon";
   import SpeakerHighIcon from "phosphor-svelte/lib/SpeakerHighIcon";
   import UserSoundIcon from "phosphor-svelte/lib/UserSoundIcon";
+  import WaveformIcon from "phosphor-svelte/lib/WaveformIcon";
   import WifiSlashIcon from "phosphor-svelte/lib/WifiSlashIcon";
 
+  const PRESETS = [
+    { kind: "none", label: "phone.fxNone", icon: ProhibitIcon },
+    { kind: "karaokeMix", label: "phone.fxKaraoke", icon: WaveformIcon },
+    { kind: "autoTune", label: "phone.fxAutotune", icon: SparkleIcon },
+  ] as const satisfies readonly { kind: EffectKind; label: string; icon: unknown }[];
+
   let now = $state(0);
-  let open = $state<"voice" | "singer" | null>(null);
+  let open = $state<"voice" | "singer" | "effect" | null>(null);
   let singerDraft = $state<number | null>(null);
   const track = $derived(link.current?.track ?? null);
   const upNext = $derived(link.next ? t("phone.upNext", { song: [link.next.track.title, link.next.track.artist].filter(Boolean).join(" · ") }) : "");
   const singer = $derived(singerDraft ?? track?.vocalRemoval ?? 100);
+  const singerLabel = $derived(singer === 0 ? t("singer.original") : singer === 100 ? t("singer.removed") : t("singer.partly", { n: singer }));
 
   $effect(() => {
     if (singerDraft === track?.vocalRemoval) singerDraft = null;
@@ -66,6 +77,7 @@
 <div class="pctrls">
   <button class="pctl glass" aria-pressed={open === "voice"} onclick={() => (open = open === "voice" ? null : "voice")}><SpeakerHighIcon size={16} />{t("phone.voice")}</button>
   <button class="pctl glass" aria-pressed={open === "singer"} onclick={() => (open = open === "singer" ? null : "singer")}><UserSoundIcon size={16} />{t("phone.singer")}</button>
+  <button class="pctl glass" aria-pressed={open === "effect"} onclick={() => (open = open === "effect" ? null : "effect")}><MagicWandIcon size={16} />{t("phone.effect")}</button>
 </div>
 {#if open === "voice"}
   <label class="pslide glass" transition:slide={{ y: 8 }}>
@@ -84,6 +96,7 @@
       value={singer}
       style:--v="{singer}%"
       aria-label={t("singer.aria")}
+      aria-valuetext={singerLabel}
       disabled={!track}
       oninput={(e) => {
         singerDraft = +e.currentTarget.value;
@@ -91,6 +104,30 @@
       }}
     />
   </label>
+{:else if open === "effect"}
+  <div class="pfx glass" transition:slide={{ y: 8 }}>
+    <div class="presets">
+      {#each PRESETS as p (p.kind)}
+        <button class="preset" aria-pressed={link.effect.kind === p.kind} onclick={() => link.setEffect(p.kind, link.effect.amount)}><p.icon size={16} />{t(p.label)}</button>
+      {/each}
+    </div>
+    <label class="pslide">
+      <MagicWandIcon size={18} />
+      <input
+        class="vs"
+        type="range"
+        min="0"
+        max="100"
+        value={link.effect.amount}
+        style:--v="{link.effect.amount}%"
+        aria-label={t("phone.fxStrength")}
+        aria-valuetext={t("phone.fxStrengthValue", { n: link.effect.amount })}
+        disabled={link.effect.kind === "none"}
+        oninput={(e) => link.setEffect(link.effect.kind, +e.currentTarget.value)}
+      />
+      <output class="num">{link.effect.amount}%</output>
+    </label>
+  </div>
 {/if}
 
 <style>
@@ -112,11 +149,16 @@
   .pstate { display: flex; justify-content: center; align-items: center; gap: var(--s2); margin-top: 36px; font-size: 13px; font-weight: 500; color: var(--muted); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ready); }
   .pstate.muted .dot { background: var(--faint); }
-  .pctrls { display: flex; justify-content: center; gap: var(--s3); margin-top: var(--s4); }
+  .pctrls { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3); margin-top: var(--s4); }
   .pctl { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 var(--s4); border-radius: 999px; font-size: 13px; font-weight: 500; }
   .pctl[aria-pressed="true"] { color: var(--accent); }
   .pslide { display: flex; align-items: center; gap: var(--s3); height: 44px; margin-top: var(--s3); padding: 0 var(--s4); border-radius: 999px; }
   .pslide > :global(svg) { color: var(--muted); }
   .pslide .vs { flex: 1; width: auto; }
   .pslide output { min-width: 4ch; text-align: right; }
+  .pfx { margin-top: var(--s3); padding: var(--s2); border-radius: var(--r-lg); }
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s1); }
+  .preset { display: grid; justify-items: center; gap: 2px; min-height: 52px; padding: var(--s2) var(--s1); border-radius: var(--r-sm); font-size: 12px; font-weight: 500; color: var(--muted); text-align: center; }
+  .preset[aria-pressed="true"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .pfx .pslide { margin-top: var(--s1); }
 </style>

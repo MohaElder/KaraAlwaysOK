@@ -146,3 +146,17 @@ test("Voice and Singer each open their own slider and send its value", async ({ 
   await joinAs(page);
   expect(await sent(page)).toContainEqual({ t: "voice", v: 55 });
 });
+
+test("Effect picks a preset and its strength, and the phone remembers it", async ({ page }) => {
+  await joinAs(page);
+  await page.getByRole("button", { name: "Effect", exact: true }).click();
+  await expect(page.getByRole("slider", { name: "Effect strength" })).toBeDisabled();
+  await page.getByRole("button", { name: "Auto-tune" }).click();
+  await page.getByRole("slider", { name: "Effect strength" }).fill("60");
+  await expect.poll(async () => (await sent(page)).filter((m) => m.t === "effect").at(-1)).toEqual({ t: "effect", kind: "autoTune", amount: 60 });
+  await page.reload();
+  await joinAs(page);
+  expect(await sent(page)).toContainEqual({ t: "effect", kind: "autoTune", amount: 60 });
+  await page.getByRole("button", { name: "Effect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Auto-tune" })).toHaveAttribute("aria-pressed", "true");
+});

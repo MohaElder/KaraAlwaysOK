@@ -250,6 +250,12 @@ const zhHant: Record<Key, string> = {
   "phone.partM": "男聲部分",
   "phone.partF": "女聲部分",
   "phone.partBoth": "合唱",
+  "phone.effect": "效果",
+  "phone.fxNone": "無效果",
+  "phone.fxKaraoke": "卡拉 OK 混音",
+  "phone.fxAutotune": "自動修音",
+  "phone.fxStrength": "效果強度",
+  "phone.fxStrengthValue": "效果強度：{n}%",
 };
 
 export default zhHant;
