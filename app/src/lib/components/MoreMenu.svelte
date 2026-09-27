@@ -5,6 +5,7 @@
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { slide } from "$lib/motion";
   import { tip } from "$lib/tooltip.svelte";
+  import NumberText from "./NumberText.svelte";
   import PianoKeysIcon from "phosphor-svelte/lib/PianoKeysIcon";
   import TimerIcon from "phosphor-svelte/lib/TimerIcon";
   import QuotesIcon from "phosphor-svelte/lib/QuotesIcon";
@@ -35,7 +36,7 @@
     <PianoKeysIcon size={18} /><span class="grow">{t("menu.key")}</span>
     <span class="stepper">
       <button use:tip={t("menu.lower")} disabled={key <= -6} onclick={() => player.setKey(key - 1)}><MinusIcon size={13} /></button>
-      <output>{signed(key)}</output>
+      <NumberText text={signed(key)} label={t("menu.key")} onEnter={(n) => player.setKey(Math.max(-6, Math.min(6, Math.round(n))))} />
       <button use:tip={t("menu.higher")} disabled={key >= 6} onclick={() => player.setKey(key + 1)}><PlusIcon size={13} /></button>
     </span>
   </div>
@@ -44,7 +45,7 @@
     <TimerIcon size={18} /><span class="grow">{t("menu.lyricsTiming")}</span>
     <span class="stepper">
       <button use:tip={t("menu.earlier")} onclick={() => player.setLyricOffset(offset - 100)}><MinusIcon size={13} /></button>
-      <output>{t("menu.seconds", { n: signed(offset / 1000, 1) })}</output>
+      <NumberText text={t("menu.seconds", { n: signed(offset / 1000, 1) })} label={t("menu.lyricsTiming")} onEnter={(n) => player.setLyricOffset(Math.round(n * 10) * 100)} />
       <button use:tip={t("menu.later")} onclick={() => player.setLyricOffset(offset + 100)}><PlusIcon size={13} /></button>
     </span>
   </div>

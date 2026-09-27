@@ -19,7 +19,7 @@ test("the singer slider names how much of the singer is removed", async ({ page 
   await expect.poll(async () => (await calls(page, "set_singer")).at(-1)).toEqual({ value: 40 });
 });
 
-test("the … menu opens outside the player bar, nudges the lyrics past 5 s, and closes on an outside click or Escape", async ({ page }) => {
+test("the … menu opens outside the player bar, nudges the lyrics past 5 s, takes a typed time on Enter, and closes on an outside click or Escape", async ({ page }) => {
   await sing(page, "Paper Boats");
   const more = page.getByRole("region", { name: "Player" }).getByRole("button", { name: "More" });
   const menu = page.getByRole("menu");
@@ -27,12 +27,17 @@ test("the … menu opens outside the player bar, nudges the lyrics past 5 s, and
   await expect(menu).toContainText("Lyrics timing");
   expect(await menu.evaluate((el) => el.closest(".bar"))).toBeNull();
   for (let i = 0; i < 51; i++) await menu.getByRole("button", { name: "Later" }).click();
-  await expect(menu).toContainText("+5.1 s");
+  const timing = menu.getByRole("textbox", { name: "Lyrics timing" });
+  await expect(timing).toHaveValue("+5.1 s");
   await expect.poll(async () => (await calls(page, "set_lyric_offset")).at(-1)).toEqual({ ms: 5100 });
+  await timing.fill("−12.3");
+  await timing.press("Enter");
+  await expect(timing).toHaveValue("−12.3 s");
+  await expect.poll(async () => (await calls(page, "set_lyric_offset")).at(-1)).toEqual({ ms: -12300 });
   await page.mouse.click(640, 400);
   await expect(menu).toBeHidden();
   await more.click();
-  await expect(menu).toContainText("+5.1 s");
+  await expect(timing).toHaveValue("−12.3 s");
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
 });
