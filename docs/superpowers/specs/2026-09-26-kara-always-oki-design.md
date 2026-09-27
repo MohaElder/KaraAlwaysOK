@@ -247,6 +247,10 @@ Rules:
 - The vocal slider and key follow the track; lyric timing follows the audio source (a version with an intro shifts it).
 - Not persisted: mic sessions, play queue, playback position.
 
+### Versions and upgrades
+
+The database's `user_version` is the version of both the tables and the files on disk. The engine keeps an ordered list of upgrade steps (SQL, or code when files need moving); on open it runs every step the library hasn't had, in one transaction, then sets the version. A library newer than the app is refused with a clear message, never opened. Every change to the tables or the file layout after the first release adds a step.
+
 ### Files on disk (`~/Library/Application Support/kara-always-oki/`)
 ```
 kara.db
