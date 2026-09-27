@@ -289,7 +289,6 @@ fn separate_stage(
         chunks_total: total,
         chunks_done: 0,
         status: SepStatus::Queued,
-        size_bytes: 0,
         last_used_at: Some(now_ms()),
     });
     row.chunks_done = start;

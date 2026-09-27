@@ -94,12 +94,11 @@ fn dir_size(dir: &Path) -> i64 {
         .sum()
 }
 
-/// All chunks are on disk: mark ready, record the size, drop the now-redundant source.
+/// All chunks are on disk: mark ready, drop the now-redundant source.
 pub fn finish(store: &Store, lib: &Library, hash: &str, model_id: &str) -> Result<()> {
     let mut row = lib.separation(hash, model_id)?.context("missing separation row")?;
     row.status = SepStatus::Ready;
     row.chunks_done = row.chunks_total;
-    row.size_bytes = dir_size(&store.stems_dir(hash, model_id));
     row.last_used_at = Some(crate::now_ms());
     lib.upsert_separation(&row)?;
     let _ = std::fs::remove_file(store.source_path(hash));
@@ -219,8 +218,8 @@ mod tests {
         ChunkOut { index, vocals: Stereo { right: neg(&v), left: v }, inst: Stereo { right: neg(&i), left: i } }
     }
 
-    fn sep_row(hash: &str, total: u32, status: SepStatus, size: i64, used: i64) -> SeparationRow {
-        SeparationRow { audio_hash: hash.into(), model_id: "m".into(), chunk_ms: 10_000, chunks_total: total, chunks_done: total, status, size_bytes: size, last_used_at: Some(used) }
+    fn sep_row(hash: &str, total: u32, status: SepStatus, used: i64) -> SeparationRow {
+        SeparationRow { audio_hash: hash.into(), model_id: "m".into(), chunk_ms: 10_000, chunks_total: total, chunks_done: total, status, last_used_at: Some(used) }
     }
 
     #[test]
@@ -270,11 +269,10 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         write_atomic(&s.source_path("h"), b"src").unwrap();
         write_chunk(&s, "h", "m", &chunk(0, 1000)).unwrap();
-        lib.upsert_separation(&sep_row("h", 1, SepStatus::Running, 0, 0)).unwrap();
+        lib.upsert_separation(&sep_row("h", 1, SepStatus::Running, 0)).unwrap();
         finish(&s, &lib, "h", "m").unwrap();
         let row = lib.separation("h", "m").unwrap().unwrap();
         assert_eq!(row.status, SepStatus::Ready);
-        assert!(row.size_bytes > 0);
         assert!(!s.source_path("h").exists());
     }
 
@@ -298,7 +296,7 @@ mod tests {
         add("gone", SourceKind::File, "/nowhere/gone.wav");
         for (h, status, used) in [("old", SepStatus::Ready, 1), ("gone", SepStatus::Ready, 2), ("new", SepStatus::Ready, 3), ("partial", SepStatus::Cancelled, 4), ("queued", SepStatus::Cancelled, 5)] {
             write_chunk(&s, h, "m", &chunk(0, 10)).unwrap();
-            lib.upsert_separation(&sep_row(h, 2, status, 80, used)).unwrap();
+            lib.upsert_separation(&sep_row(h, 2, status, used)).unwrap();
         }
         write_atomic(&s.source_path("partial"), b"src").unwrap();
 
@@ -322,7 +320,7 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         lib.set_setting("cache_budget_bytes", "0").unwrap();
         write_chunk(&s, "h", "m", &chunk(0, 10)).unwrap();
-        lib.upsert_separation(&sep_row("h", 1, SepStatus::Ready, 80, 1)).unwrap();
+        lib.upsert_separation(&sep_row("h", 1, SepStatus::Ready, 1)).unwrap();
         std::fs::write(s.audio_root().join(".DS_Store"), b"x").unwrap();
         assert_eq!(enforce_budget(&s, &lib, &[]).unwrap(), vec!["h".to_string()]);
     }
@@ -337,13 +335,13 @@ mod tests {
         std::fs::write(s.stems_dir("h", "m").join("0002.vocals.flac.part"), b"x").unwrap();
         std::fs::create_dir_all(s.tmp_dir()).unwrap();
         std::fs::write(s.tmp_dir().join("half.m4a"), b"x").unwrap();
-        let mut row = sep_row("h", 4, SepStatus::Running, 0, 0);
+        let mut row = sep_row("h", 4, SepStatus::Running, 0);
         row.chunks_done = 3; // DB claimed 3, but only 2 pairs made it to disk
         lib.upsert_separation(&row).unwrap();
         // A song whose chunks all landed but which crashed before `finish`.
         write_chunk(&s, "done", "m", &chunk(0, 100)).unwrap();
         write_atomic(&s.source_path("done"), b"src").unwrap();
-        lib.upsert_separation(&sep_row("done", 1, SepStatus::Running, 0, 0)).unwrap();
+        lib.upsert_separation(&sep_row("done", 1, SepStatus::Running, 0)).unwrap();
 
         startup_cleanup(&s, &lib, &s.lock().unwrap()).unwrap();
 

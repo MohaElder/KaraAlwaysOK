@@ -60,7 +60,6 @@ CREATE TABLE separation (
   chunks_total INTEGER NOT NULL,
   chunks_done  INTEGER NOT NULL DEFAULT 0,
   status       TEXT NOT NULL CHECK (status IN ('queued','running','ready','failed','cancelled')),
-  size_bytes   INTEGER NOT NULL DEFAULT 0,
   last_used_at INTEGER,
   PRIMARY KEY (audio_hash, model_id)
 );

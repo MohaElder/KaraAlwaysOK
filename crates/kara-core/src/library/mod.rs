@@ -89,7 +89,6 @@ pub struct SeparationRow {
     pub chunks_total: u32,
     pub chunks_done: u32,
     pub status: SepStatus,
-    pub size_bytes: i64,
     pub last_used_at: Option<i64>,
 }
 
@@ -102,7 +101,7 @@ pub struct LyricsRow {
 
 const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones";
 const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, status, error";
-const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, size_bytes, last_used_at";
+const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
 
 fn track_row(r: &Row) -> rusqlite::Result<Track> {
     Ok(Track {
@@ -139,8 +138,7 @@ fn sep_row(r: &Row) -> rusqlite::Result<SeparationRow> {
         chunks_total: r.get(3)?,
         chunks_done: r.get(4)?,
         status: r.get(5)?,
-        size_bytes: r.get(6)?,
-        last_used_at: r.get(7)?,
+        last_used_at: r.get(6)?,
     })
 }
 
@@ -347,8 +345,8 @@ impl Library {
 
     pub fn upsert_separation(&self, r: &SeparationRow) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT OR REPLACE INTO separation ({SEP_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
-            params![r.audio_hash, r.model_id, r.chunk_ms, r.chunks_total, r.chunks_done, r.status, r.size_bytes, r.last_used_at],
+            &format!("INSERT OR REPLACE INTO separation ({SEP_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
+            params![r.audio_hash, r.model_id, r.chunk_ms, r.chunks_total, r.chunks_done, r.status, r.last_used_at],
         )?;
         Ok(())
     }
@@ -497,7 +495,7 @@ mod tests {
     #[test]
     fn separation_rows_roundtrip() {
         let l = lib();
-        let mut row = SeparationRow { audio_hash: "h".into(), model_id: "m".into(), chunk_ms: 10_000, chunks_total: 5, chunks_done: 0, status: SepStatus::Running, size_bytes: 0, last_used_at: None };
+        let mut row = SeparationRow { audio_hash: "h".into(), model_id: "m".into(), chunk_ms: 10_000, chunks_total: 5, chunks_done: 0, status: SepStatus::Running, last_used_at: None };
         l.upsert_separation(&row).unwrap();
         row.chunks_done = 3;
         l.upsert_separation(&row).unwrap();
