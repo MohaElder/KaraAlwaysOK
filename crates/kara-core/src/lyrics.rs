@@ -1,5 +1,6 @@
 //! Synced lyrics: types, LRC parsing, word timing and lookup.
 
+use crate::fuzzy::{fold, Fuzzy};
 use crate::library::LyricsSource;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -132,7 +133,7 @@ pub fn parse_lrc(text: &str, duration_ms: i64) -> Vec<Line> {
 /// A source of synced (LRC) lyrics for a song.
 pub trait LyricsFetcher {
     /// Without an artist, matches by title and duration.
-    fn fetch(&self, title: &str, artist: Option<&str>, album: Option<&str>, duration_s: u64) -> Result<Option<String>>;
+    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>>;
 }
 
 /// lrclib.net — free, no key.
@@ -148,57 +149,190 @@ impl Lrclib {
             .build()?;
         Ok(Self { client })
     }
+
+    /// One search; a busy or unreachable service is a `Transient` error.
+    fn search(&self, query: &[(&str, &str)]) -> Result<Vec<Hit>> {
+        let transient = |e: reqwest::Error| anyhow::Error::new(e).context(Transient);
+        let resp = self.client.get("https://lrclib.net/api/search").query(query).send().map_err(transient)?;
+        let status = resp.status();
+        if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(anyhow::anyhow!(Transient));
+        }
+        resp.error_for_status()?.json().map_err(transient)
+    }
+}
+
+impl LyricsFetcher for Lrclib {
+    fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+        lookup(|q| self.search(q), title, artist, duration_s)
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LrclibHit {
-    synced_lyrics: Option<String>,
+struct Hit {
+    track_name: String,
+    artist_name: String,
     duration: f64,
+    synced_lyrics: Option<String>,
 }
 
-/// The synced lyrics of the only hit within 1 s of `duration_s`; none if zero or several match.
-fn sole_synced_match(hits: Vec<LrclibHit>, duration_s: u64) -> Option<String> {
-    let mut near = hits
-        .into_iter()
-        .filter(|h| (h.duration - duration_s as f64).abs() <= 1.0)
-        .filter_map(|h| h.synced_lyrics.filter(|s| is_synced(s)));
-    let only = near.next()?;
-    near.next().is_none().then_some(only)
-}
+/// A lookup that failed for now (service busy or unreachable) and is worth asking again.
+#[derive(Debug)]
+struct Transient;
 
-impl LyricsFetcher for Lrclib {
-    fn fetch(&self, title: &str, artist: Option<&str>, album: Option<&str>, duration_s: u64) -> Result<Option<String>> {
-        let Some(artist) = artist else {
-            let resp = self.client.get("https://lrclib.net/api/search").query(&[("track_name", title)]).send()?;
-            return Ok(sole_synced_match(resp.error_for_status()?.json()?, duration_s));
-        };
-        let mut q = vec![("track_name", title.to_string()), ("artist_name", artist.to_string()), ("duration", duration_s.to_string())];
-        if let Some(a) = album {
-            q.push(("album_name", a.to_string()));
-        }
-        let resp = self.client.get("https://lrclib.net/api/get").query(&q).send()?;
-        if resp.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-        let hit: LrclibHit = resp.error_for_status()?.json()?;
-        Ok(hit.synced_lyrics.filter(|s| is_synced(s)))
+impl std::fmt::Display for Transient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the lyrics service didn't answer")
     }
+}
+
+/// Pauses before asking a busy service again.
+const RETRY_WAITS_MS: [u64; 2] = if cfg!(test) { [1, 1] } else { [700, 2_000] };
+/// A recording further than this from the song's length is another version.
+const MAX_LENGTH_OFF_S: f64 = 60.0;
+
+/// Words that mark a version, a video or an upload rather than the song's name.
+const NOISE: &[&str] = &[
+    "official", "video", "mv", "audio", "lyrics", "lyric", "hd", "4k", "60fps", "remaster", "remastered", "live",
+    "piano only", "instrumental", "inst", "karaoke", "off vocal", "feat", "ft", "cover",
+    "现场版", "現場版", "伴奏", "カラオケ", "翻唱", "版本", "官方",
+];
+/// Endings channels add to a singer's name.
+const ARTIST_SUFFIXES: &[&str] = &["- topic", "- 主題", "vevo", "官方", "official"];
+
+/// Runs `f`, asking again after a short pause while the service is busy or unreachable.
+fn retrying<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
+    for wait in RETRY_WAITS_MS {
+        match f() {
+            Err(e) if e.is::<Transient>() => std::thread::sleep(Duration::from_millis(wait)),
+            done => return done,
+        }
+    }
+    f()
+}
+
+/// Looks the song up by title and singer, then by title alone, and returns the best matching synced lyrics.
+fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<String>> {
+    let (title, hint) = clean_title(title, artist);
+    let artists: Vec<String> = hint.iter().map(String::as_str).chain(artist).flat_map(clean_artist).collect();
+    if let Some(a) = artists.first() {
+        let hits = retrying(|| search(&[("track_name", &title), ("artist_name", a)]))?;
+        if let Some(lyrics) = best_match(hits, &title, &artists, duration_s) {
+            return Ok(Some(lyrics));
+        }
+    }
+    Ok(best_match(retrying(|| search(&[("q", &title)]))?, &title, &artists, duration_s))
+}
+
+/// The synced lyrics of the hit that best matches the song: the same title (or a close one by the same singer)
+/// within a minute of its length; the singer's own first, then the same title, then the closest length.
+fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<String> {
+    let title_key = key(title);
+    hits.into_iter()
+        .filter_map(|h| {
+            let lyrics = h.synced_lyrics.filter(|s| is_synced(s))?;
+            let off = if duration_s == 0 { 0.0 } else { (h.duration - duration_s as f64).abs() };
+            let (their_title, _) = clean_title(&h.track_name, Some(&h.artist_name));
+            let same_title = key(&their_title) == title_key;
+            let same_singer = clean_artist(&h.artist_name).iter().any(|a| artists.iter().any(|b| similar(a, b) || similar(b, a)));
+            let close_title = similar(title, &their_title) && similar(&their_title, title);
+            (off <= MAX_LENGTH_OFF_S && (same_title || (close_title && same_singer))).then_some(((!same_singer, !same_title, off as u64), lyrics))
+        })
+        .min_by_key(|(rank, _)| *rank)
+        .map(|(_, lyrics)| lyrics)
+}
+
+/// Traditional Chinese folded to Simplified, for matching only.
+fn simplified(text: &str) -> String {
+    fast2s::convert(text)
+}
+
+/// Letters and digits only, folded, for telling whether two names are the same.
+fn key(text: &str) -> String {
+    fold(&simplified(text)).chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+/// Whether `text` holds every word of `query`, forgiving small differences.
+fn similar(query: &str, text: &str) -> bool {
+    Fuzzy::new(&simplified(query)).and_then(|mut f| f.score(&simplified(text))).is_some()
+}
+
+/// Whether `text` holds a noise word (`NOISE`).
+fn noisy(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let words = format!(" {} ", lower.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
+    NOISE.iter().any(|n| if n.is_ascii() { words.contains(&format!(" {n} ")) } else { lower.contains(n) })
+}
+
+/// `text` without its bracketed parts — (…) （…） […] 【…】 — and those parts as (opening bracket, contents).
+fn brackets(text: &str) -> (String, Vec<(char, &str)>) {
+    let (mut outside, mut parts, mut rest) = (String::new(), Vec::new(), text);
+    while let Some(i) = rest.find(['(', '（', '[', '【']) {
+        let open = rest[i..].chars().next().unwrap_or('(');
+        let close = match open { '(' => ')', '（' => '）', '[' => ']', _ => '】' };
+        let inner = &rest[i + open.len_utf8()..];
+        let Some(j) = inner.find(close) else { break };
+        outside.push_str(&rest[..i]);
+        outside.push(' ');
+        parts.push((open, inner[..j].trim()));
+        rest = &inner[j + close.len_utf8()..];
+    }
+    outside.push_str(rest);
+    (outside.split_whitespace().collect::<Vec<_>>().join(" "), parts)
+}
+
+/// `text` without `suffix` at its end, ignoring ASCII case.
+fn strip_suffix_ci<'a>(text: &'a str, suffix: &str) -> Option<&'a str> {
+    let cut = text.len().checked_sub(suffix.len())?;
+    (text.is_char_boundary(cut) && text[cut..].eq_ignore_ascii_case(suffix)).then(|| text[..cut].trim_end())
+}
+
+/// A song's name as a lyrics service knows it, from a file's or upload's title: without tags like
+/// 【4K】 or (Official Video), version words and anything after " | "; the name in 《》「」『』 when there is one;
+/// the part after " - " when the part before is the singer. Also returns a singer named before 《》「」『』.
+pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>) {
+    if let Some((before, rest)) = title.split_once(['《', '「', '『']) {
+        if let Some((name, _)) = rest.split_once(['》', '」', '』']).filter(|(n, _)| !n.trim().is_empty()) {
+            let singer = brackets(before).0;
+            return (name.trim().to_string(), (!singer.is_empty()).then_some(singer));
+        }
+    }
+    let (outside, parts) = brackets(title);
+    let mut name = outside.split(" | ").next().unwrap_or_default().to_string();
+    for (open, part) in parts {
+        if matches!(open, '(' | '（') && !noisy(part) {
+            name = format!("{name} ({part})");
+        }
+    }
+    if let Some((left, right)) = name.split_once(" - ") {
+        let is_singer = |part: &str| artist.into_iter().flat_map(clean_artist).any(|a| key(&a) == key(part));
+        name = if is_singer(left) { right } else { left }.to_string();
+    }
+    let mut name = name.trim();
+    while let Some(rest) = NOISE.iter().filter(|n| !n.is_ascii()).find_map(|n| name.strip_suffix(n)).filter(|r| !r.trim().is_empty()) {
+        name = rest.trim_end();
+    }
+    if name.is_empty() { (title.trim().to_string(), None) } else { (name.to_string(), None) }
+}
+
+/// A singer's names as a lyrics service knows them: without endings like " - Topic" or "VEVO" and
+/// bracketed version words; a name in brackets is another name for the same singer.
+pub fn clean_artist(artist: &str) -> Vec<String> {
+    let (outside, parts) = brackets(artist);
+    let mut name = outside.as_str();
+    while let Some(rest) = ARTIST_SUFFIXES.iter().find_map(|s| strip_suffix_ci(name, s)).filter(|r| !r.is_empty()) {
+        name = rest;
+    }
+    std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| !n.is_empty()).map(String::from).collect()
 }
 
 /// Embedded synced lyrics first, then the online service, else none.
-pub fn find(
-    embedded: Option<&str>,
-    title: &str,
-    artist: Option<&str>,
-    album: Option<&str>,
-    duration_ms: i64,
-    fetcher: &dyn LyricsFetcher,
-) -> Result<(LyricsSource, Vec<Line>)> {
+pub fn find(embedded: Option<&str>, title: &str, artist: Option<&str>, duration_ms: i64, fetcher: &dyn LyricsFetcher) -> Result<(LyricsSource, Vec<Line>)> {
     if let Some(text) = embedded.filter(|t| is_synced(t)) {
         return Ok((LyricsSource::Embedded, parse_lrc(text, duration_ms)));
     }
-    if let Some(text) = fetcher.fetch(title, artist, album, (duration_ms / 1000) as u64)? {
+    if let Some(text) = fetcher.fetch(title, artist, (duration_ms / 1000) as u64)? {
         return Ok((LyricsSource::Lrclib, parse_lrc(&text, duration_ms)));
     }
     Ok((LyricsSource::None, Vec::new()))
@@ -207,7 +341,7 @@ pub fn find(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     #[test]
     fn parses_lines_and_times() {
@@ -255,7 +389,7 @@ mod tests {
 
     struct Fake(Option<&'static str>, RefCell<u32>);
     impl LyricsFetcher for Fake {
-        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
             *self.1.borrow_mut() += 1;
             Ok(self.0.map(String::from))
         }
@@ -264,35 +398,82 @@ mod tests {
     #[test]
     fn find_prefers_embedded_then_fetches_then_gives_up() {
         let f = Fake(Some("[00:01.00]online"), RefCell::new(0));
-        let (src, lines) = find(Some("[00:00.00]embedded"), "t", Some("a"), None, 5_000, &f).unwrap();
+        let (src, lines) = find(Some("[00:00.00]embedded"), "t", Some("a"), 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str(), *f.1.borrow()), (LyricsSource::Embedded, "embedded", 0));
-        let (src, lines) = find(Some("plain unsynced"), "t", Some("a"), None, 5_000, &f).unwrap();
+        let (src, lines) = find(Some("plain unsynced"), "t", Some("a"), 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Lrclib, "online"));
         let none = Fake(None, RefCell::new(0));
-        assert_eq!(find(None, "t", Some("a"), None, 5_000, &none).unwrap(), (LyricsSource::None, vec![]));
+        assert_eq!(find(None, "t", Some("a"), 5_000, &none).unwrap(), (LyricsSource::None, vec![]));
         // No artist: still asks, by title.
-        assert_eq!(find(None, "t", None, None, 5_000, &f).unwrap().0, LyricsSource::Lrclib);
+        assert_eq!(find(None, "t", None, 5_000, &f).unwrap().0, LyricsSource::Lrclib);
         // A leading UTF-8 BOM doesn't stop embedded text from being recognized as synced.
-        let (src, lines) = find(Some("\u{FEFF}[00:00.00]bommed"), "t", Some("a"), None, 5_000, &f).unwrap();
+        let (src, lines) = find(Some("\u{FEFF}[00:00.00]bommed"), "t", Some("a"), 5_000, &f).unwrap();
         assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Embedded, "bommed"));
     }
 
     #[test]
-    fn title_only_search_needs_exactly_one_synced_hit_within_a_second() {
-        let hit = |duration, lyrics: Option<&str>| LrclibHit { duration, synced_lyrics: lyrics.map(String::from) };
-        let hits = || {
+    fn cleans_titles_and_artists_as_files_and_uploads_give_them() {
+        let title = clean_title;
+        assert_eq!(title("Long Long Time | Piano Only", None), ("Long Long Time".into(), None));
+        assert_eq!(title("太陽與地球 伴奏", Some("盧廣仲(版本)")), ("太陽與地球".into(), None));
+        assert_eq!(title("【4K60FPS】张学友《李香兰》现场版", None), ("李香兰".into(), Some("张学友".into())));
+        assert_eq!(title("Juniper Row - Paper Boats (Official Video)", Some("JuniperRowVEVO")), ("Paper Boats".into(), None));
+        assert_eq!(title("Paper Boats - Remastered 2011", Some("Juniper Row")), ("Paper Boats".into(), None));
+        assert_eq!(title("Paper Boats (Part 2) [HD]", None), ("Paper Boats (Part 2)".into(), None));
+        assert_eq!(clean_artist("盧廣仲(版本)"), ["盧廣仲"]);
+        assert_eq!(clean_artist("盧廣仲 (Crowd Lu)"), ["盧廣仲", "Crowd Lu"]);
+        assert_eq!(clean_artist("Crowd Lu - Topic"), ["Crowd Lu"]);
+        assert_eq!(clean_artist("盧廣仲 - 主題"), ["盧廣仲"]);
+        assert_eq!(clean_artist("JuniperRowVEVO"), ["JuniperRow"]);
+    }
+
+    fn hit(track: &str, artist: &str, duration: f64, lyrics: Option<&str>) -> Hit {
+        Hit { track_name: track.into(), artist_name: artist.into(), duration, synced_lyrics: lyrics.map(String::from) }
+    }
+
+    #[test]
+    fn best_match_prefers_the_singer_then_the_closest_length_and_skips_weak_ones() {
+        let lin = vec!["林小雨".to_string()];
+        let night = vec![
+            hit("夜車", "Someone Else", 240.0, Some("[00:01.00]other singer")),
+            hit("夜车", "Lin Xiaoyu (林小雨)", 250.0, Some("[00:01.00]hers")),
+            hit("夜車", "林小雨", 240.0, Some("not synced")),
+        ];
+        assert_eq!(best_match(night, "夜車", &lin, 240).as_deref(), Some("[00:01.00]hers"));
+
+        let boats = || {
             vec![
-                hit(180.0, None),
-                hit(179.5, Some("plain, not synced")),
-                hit(181.0, Some("[00:01.00]only")),
-                hit(182.5, Some("[00:01.00]too far")),
+                hit("Paper Boats", "A", 290.0, Some("[00:01.00]far")),
+                hit("Paper Boats (Live)", "B", 230.0, Some("[00:01.00]near")),
+                hit("Paper Boats", "C", 215.0, Some("[00:01.00]nearest")),
             ]
         };
-        assert_eq!(sole_synced_match(hits(), 180).as_deref(), Some("[00:01.00]only"));
-        assert_eq!(sole_synced_match(hits(), 190), None);
-        let mut two = hits();
-        two.push(hit(179.2, Some("[00:01.00]another")));
-        assert_eq!(sole_synced_match(two, 180), None);
+        assert_eq!(best_match(boats(), "Paper Boats", &[], 200).as_deref(), Some("[00:01.00]nearest"));
+        assert_eq!(best_match(boats(), "Paper Boats", &[], 100), None);
+
+        let close_title = || vec![hit("Paper Boat", "Juniper Row", 200.0, Some("[00:01.00]close title"))];
+        assert_eq!(best_match(close_title(), "Paper Boats", &[], 200), None);
+        assert_eq!(best_match(close_title(), "Paper Boats", &["Juniper Row".into()], 200).as_deref(), Some("[00:01.00]close title"));
+    }
+
+    #[test]
+    fn a_busy_service_is_asked_again_and_an_outage_finds_nothing_to_store() {
+        let calls = Cell::new(0);
+        let flaky = |_: &[(&str, &str)]| {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                1 => Err(anyhow::anyhow!(Transient)),
+                _ => Ok(vec![hit("Paper Boats", "Juniper Row", 200.0, Some("[00:01.00]found"))]),
+            }
+        };
+        assert_eq!(lookup(flaky, "Paper Boats", None, 200).unwrap().as_deref(), Some("[00:01.00]found"));
+        let calls = Cell::new(0);
+        let down = |_: &[(&str, &str)]| -> Result<Vec<Hit>> {
+            calls.set(calls.get() + 1);
+            Err(anyhow::anyhow!(Transient))
+        };
+        assert!(lookup(down, "Paper Boats", None, 200).is_err());
+        assert_eq!(calls.get(), 3);
     }
 
     #[test]
@@ -313,9 +494,17 @@ mod tests {
 
     #[test]
     #[ignore = "network"]
-    fn lrclib_live_lookup_does_not_error() {
+    fn lrclib_live_lookup_finds_messy_titles() {
         let l = Lrclib::new().unwrap();
-        l.fetch("Bohemian Rhapsody", Some("Queen"), None, 355).unwrap();
-        l.fetch("zzqxv made up kara song", None, None, 200).unwrap();
+        for (title, artist, duration_s) in [
+            ("Long Long Time | Piano Only", None, 262),
+            ("太陽與地球 伴奏", Some("盧廣仲(版本)"), 262),
+            ("【4K60FPS】张学友《李香兰》现场版", None, 397),
+        ] {
+            let lines = l.fetch(title, artist, duration_s).unwrap().map(|t| parse_lrc(&t, 0).len());
+            println!("{title}: {lines:?} lines");
+            assert!(lines.is_some_and(|n| n > 0), "{title}");
+        }
+        assert_eq!(l.fetch("zzqxv made up kara song", None, 200).unwrap(), None);
     }
 }

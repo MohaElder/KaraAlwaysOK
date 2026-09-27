@@ -148,9 +148,26 @@ fn refresh_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> 
     if !lyrics_due(lib, track_id)? {
         return Ok(false);
     }
-    let t = lib.track(track_id)?;
-    let (src, lines) = lyrics::find(None, &t.title, t.artist.as_deref(), t.album.as_deref(), t.duration_ms.unwrap_or(0), fetcher)?;
+    let (src, lines) = look_up_lyrics(lib, track_id, fetcher)?;
     lib.set_lyrics(track_id, src, &lines, now_ms())?;
+    Ok(true)
+}
+
+fn look_up_lyrics(lib: &Library, track_id: i64, fetcher: &dyn LyricsFetcher) -> Result<(LyricsSource, Vec<lyrics::Line>)> {
+    let t = lib.track(track_id)?;
+    lyrics::find(None, &t.title, t.artist.as_deref(), t.duration_ms.unwrap_or(0), fetcher)
+}
+
+/// Looks up a song's lyrics now, even when it has some or none were found lately; saves any it finds
+/// and lines them up with the singing if the song is separated. Returns whether it found any.
+pub fn find_lyrics_again(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i64, emit: &mut dyn FnMut(Event)) -> Result<bool> {
+    let (src, lines) = look_up_lyrics(lib, track_id, fetcher).context(Problem::LyricsLookup)?;
+    if src == LyricsSource::None {
+        return Ok(false);
+    }
+    lib.set_lyrics(track_id, src, &lines, now_ms())?;
+    emit(Event::Lyrics { track_id });
+    let _ = sync_whole_song(ctx, lib, track_id, emit);
     Ok(true)
 }
 
@@ -564,14 +581,14 @@ mod tests {
 
     struct NoLyrics;
     impl LyricsFetcher for NoLyrics {
-        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
             Ok(None)
         }
     }
 
     struct MadeUpLyrics;
     impl LyricsFetcher for MadeUpLyrics {
-        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
             Ok(Some("[00:00.00]la la la\n".into()))
         }
     }
@@ -846,7 +863,7 @@ mod tests {
         /// Finds made-up lyrics once the test opens the gate.
         struct Gated(mpsc::Receiver<()>);
         impl LyricsFetcher for Gated {
-            fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
                 self.0.recv_timeout(Duration::from_secs(10))?;
                 Ok(Some("[00:00.00]la la la\n".into()))
             }
@@ -876,7 +893,7 @@ mod tests {
     fn lyrics_are_retried_for_an_already_ready_song() {
         struct Offline;
         impl LyricsFetcher for Offline {
-            fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
                 anyhow::bail!("offline")
             }
         }
@@ -924,7 +941,7 @@ mod tests {
     fn embedded_lyrics_are_kept_and_the_fetcher_is_not_called() {
         struct CountingFetcher(Arc<std::sync::atomic::AtomicU32>);
         impl LyricsFetcher for CountingFetcher {
-            fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+            fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
                 self.0.fetch_add(1, Ordering::Relaxed);
                 Ok(Some("[00:00.00]other made up text\n".into()))
             }
@@ -1014,7 +1031,7 @@ mod tests {
 
     struct Lrc(String);
     impl LyricsFetcher for Lrc {
-        fn fetch(&self, _: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
             Ok(Some(self.0.clone()))
         }
     }
@@ -1046,6 +1063,21 @@ mod tests {
         let row = SeparationRow { audio_hash: "h".into(), model_id: "test".into(), chunk_ms: 10_000, chunks_total: 12, chunks_done: 12, status: SepStatus::Ready, last_used_at: None };
         lib.upsert_separation(&row).unwrap();
         (t, s, lrc)
+    }
+
+    #[test]
+    fn finding_lyrics_again_replaces_none_found_and_lines_them_up_but_keeps_lyrics_when_nothing_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let (t, _, lrc) = separated_singing_song(&c, &lib);
+        lib.set_lyrics(t, LyricsSource::None, &[], now_ms()).unwrap();
+        let mut events = Vec::new();
+        assert!(find_lyrics_again(&c, &lib, &Lrc(lrc), t, &mut |e| events.push(e)).unwrap());
+        assert_eq!(events, [Event::Lyrics { track_id: t }, Event::LyricOffset { track_id: t }]);
+        assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 1_500);
+        assert!(!find_lyrics_again(&c, &lib, &NoLyrics, t, &mut |_| {}).unwrap());
+        assert_eq!(lib.lyrics(t).unwrap().unwrap().source, LyricsSource::Lrclib);
     }
 
     #[test]
@@ -1102,7 +1134,7 @@ mod tests {
     /// Reports each title it is asked about, then waits for the test to let it finish.
     struct Paced(mpsc::Receiver<()>, mpsc::Sender<String>);
     impl LyricsFetcher for Paced {
-        fn fetch(&self, title: &str, _: Option<&str>, _: Option<&str>, _: u64) -> Result<Option<String>> {
+        fn fetch(&self, title: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
             self.1.send(title.to_string())?;
             self.0.recv_timeout(Duration::from_secs(10))?;
             Ok(None)

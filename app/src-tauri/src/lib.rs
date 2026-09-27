@@ -47,6 +47,7 @@ pub fn run() {
             library::open_collection,
             library::get_track,
             library::track_lyrics,
+            library::find_lyrics_again,
             library::create_playlist,
             library::rename_playlist,
             library::delete_playlist,

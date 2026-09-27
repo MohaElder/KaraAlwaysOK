@@ -4,6 +4,7 @@ import {
   deletePlaylist,
   deleteTrack,
   editTrack,
+  findLyricsAgain,
   moveInPlaylist,
   removeFromPlaylist,
   renamePlaylist,
@@ -21,6 +22,7 @@ import ArrowCounterClockwiseIcon from "phosphor-svelte/lib/ArrowCounterClockwise
 import InfoIcon from "phosphor-svelte/lib/InfoIcon";
 import MinusCircleIcon from "phosphor-svelte/lib/MinusCircleIcon";
 import PlaylistIcon from "phosphor-svelte/lib/PlaylistIcon";
+import QuotesIcon from "phosphor-svelte/lib/QuotesIcon";
 import TrashIcon from "phosphor-svelte/lib/TrashIcon";
 import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 
@@ -64,6 +66,17 @@ class Manage {
     await library.refresh();
     await player.refresh();
     toasts.show(t("toast.saved"));
+  }
+
+  /** Looks up a song's lyrics again now, showing the search and its result in a toast. */
+  async findLyrics(track: Track) {
+    const toast = toasts.show(t("toast.findingLyrics"), { spin: true, sticky: true });
+    try {
+      const found = await findLyricsAgain(track.id);
+      toast.update(t(found ? "toast.lyricsFound" : "toast.noLyricsFound"), { icon: found ? QuotesIcon : InfoIcon });
+    } catch (e) {
+      toast.update(say(e), { icon: WarningIcon });
+    }
   }
 
   /** Hides a playlist now and deletes it when its Undo toast runs out. */

@@ -14,6 +14,7 @@
   import CheckIcon from "phosphor-svelte/lib/CheckIcon";
   import MinusCircleIcon from "phosphor-svelte/lib/MinusCircleIcon";
   import PencilSimpleIcon from "phosphor-svelte/lib/PencilSimpleIcon";
+  import QuotesIcon from "phosphor-svelte/lib/QuotesIcon";
   import TrashIcon from "phosphor-svelte/lib/TrashIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import PlusIcon from "phosphor-svelte/lib/PlusIcon";
@@ -73,8 +74,9 @@
       {#if playlistId != null}
         <button class="opt" onpointerenter={hideSub} onclick={() => run(() => manage.removeFromPlaylist(playlistId, track))}><MinusCircleIcon size={18} /><span class="grow">{t("menu.removeFromPlaylist")}</span></button>
       {/if}
+      <div class="msep"></div>
+      <button class="opt" onpointerenter={hideSub} onclick={() => run(() => manage.findLyrics(track))}><QuotesIcon size={18} /><span class="grow">{t("menu.findLyrics")}</span></button>
       {#if track.provider === "local"}
-        <div class="msep"></div>
         <button class="opt" onpointerenter={hideSub} onclick={() => run(() => (ui.sheet = { kind: "edit", track }))}><PencilSimpleIcon size={18} /><span class="grow">{t("menu.editInfo")}</span></button>
         <button class="opt" disabled={busy} onpointerenter={hideSub} onclick={() => (asking = true)}><TrashIcon size={18} /><span class="grow">{t("menu.deleteSong")}</span></button>
       {/if}

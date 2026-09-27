@@ -1,8 +1,9 @@
-use crate::state::{AppError, AppState, Plain};
+use crate::state::{ctx, AppError, AppState, Plain};
 use kara_core::cache;
 use kara_core::ingest;
+use kara_core::jobs;
 use kara_core::library::{CollectionKind, CollectionRow, Library, LyricsSource, Track};
-use kara_core::lyrics::Line;
+use kara_core::lyrics::{Line, Lrclib};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
@@ -73,6 +74,20 @@ pub fn track_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<Lyrics,
         Some(r) => Lyrics { source: Some(r.source), lines: r.lines },
         None => Lyrics { source: None, lines: Vec::new() },
     })
+}
+
+/// Looks up a song's lyrics again now; returns whether any were found.
+#[tauri::command]
+pub async fn find_lyrics_again(state: State<'_, AppState>, track_id: i64) -> Result<bool, AppError> {
+    let (store, events) = (state.store.clone(), state.events.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = Library::open(&store.db_path())?;
+        jobs::find_lyrics_again(&ctx(&store), &lib, &Lrclib::new()?, track_id, &mut |e| {
+            let _ = events.send(e);
+        })
+    })
+    .await?
+    .plain()
 }
 
 /// Deletes a song: it leaves the queue (so the worker stops on it) before it leaves the library and its audio is freed.

@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use unicode_normalization::UnicodeNormalization;
 
 /// Lowercases, folds full/half width to one form, strips accents from letters and turns hiragana into katakana.
-fn fold(text: &str) -> String {
+pub(crate) fn fold(text: &str) -> String {
     let hiragana_to_katakana = |c| if ('\u{3041}'..='\u{3096}').contains(&c) { char::from_u32(c as u32 + 0x60).unwrap_or(c) } else { c };
     text.to_lowercase().nfkd().filter(|c| !('\u{300}'..='\u{36f}').contains(c)).nfc().map(hiragana_to_katakana).collect()
 }

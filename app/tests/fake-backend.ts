@@ -151,6 +151,11 @@ const commands: Record<string, (a: any) => unknown> = {
   get_track: ({ trackId }) => need(tracks.get(trackId)),
   edit_track: ({ trackId, title, artist, album }) => Object.assign(need(tracks.get(trackId)), { title, artist: artist || null, album: album || null }),
   track_lyrics: ({ trackId }) => lyrics.get(trackId) ?? { source: "lrclib", lines: [line(undefined, ["La", 1000, 2000])] },
+  find_lyrics_again: ({ trackId }) => {
+    lyrics.set(trackId, { source: "lrclib", lines: [line(undefined, ["Hush", 1000, 2000])] });
+    void fake.engine({ kind: "lyrics", trackId });
+    return true;
+  },
   player_state: snapshot,
   queue_add: ({ trackId, next }) => {
     need(tracks.get(trackId));

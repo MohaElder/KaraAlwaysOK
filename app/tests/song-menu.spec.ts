@@ -28,6 +28,18 @@ test("Add to playlist checks the playlists that have the song and adds to one", 
   expect(await calls(page, "add_to_playlist")).toEqual([{ playlistId: 2, trackId: 5 }]);
 });
 
+test("Find lyrics again looks the song up now and shows what it found", async ({ page }) => {
+  const karaoke = await sing(page, "Quiet Hours");
+  await expect(karaoke.getByText("No lyrics found, sing it your way.")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await row(page, "Quiet Hours").click({ button: "right" });
+  await page.getByRole("menu").getByRole("button", { name: "Find lyrics again" }).click();
+  await expect(page.locator(".toasts")).toContainText("Found lyrics");
+  expect(await calls(page, "find_lyrics_again")).toEqual([{ trackId: 5 }]);
+  await page.locator(".np").click();
+  await expect(karaoke.getByText("No lyrics found, sing it your way.")).toBeHidden();
+});
+
 test("Edit info starts in the title and saves", async ({ page }) => {
   await row(page, "Paper Boats").click({ button: "right" });
   await page.getByRole("menu").getByRole("button", { name: "Edit info" }).click();

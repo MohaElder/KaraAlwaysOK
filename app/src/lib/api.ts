@@ -5,7 +5,7 @@ export type ProblemCode =
   | "newerLibrary" | "dataFolder" | "inUse" | "libraryOpen" | "engineDownload" | "engineStart" | "fileMoved" | "fileNotAllowed"
   | "notAudio" | "songGone" | "noAudio" | "download" | "downloaderSetup" | "unreadable" | "songAudio" | "empty" | "diskFull"
   | "save" | "separate" | "notPrepared" | "partNotReady" | "streamingLater" | "upgradeFailed" | "linkStreaming"
-  | "linkUnsupported" | "noSongAtLink" | "readFailed" | "nothingPlaying" | "notALink";
+  | "linkUnsupported" | "noSongAtLink" | "lyricsLookup" | "readFailed" | "nothingPlaying" | "notALink";
 
 /** How every command fails: a problem code to translate, and the English text. */
 export interface AppError { problem: ProblemCode | null; message: string }
@@ -60,6 +60,7 @@ export const openCollection = (id: number) => invoke<CollectionPage>("open_colle
 export const getTrack = (trackId: number) => invoke<Track>("get_track", { trackId });
 export const editTrack = (trackId: number, title: string, artist: string, album: string) => invoke<Track>("edit_track", { trackId, title, artist, album });
 export const trackLyrics = (trackId: number) => invoke<Lyrics>("track_lyrics", { trackId });
+export const findLyricsAgain = (trackId: number) => invoke<boolean>("find_lyrics_again", { trackId });
 
 export interface QueueEntry { key: number; track: Track }
 export interface PlayerSnapshot { entries: QueueEntry[]; current: number | null; ended: boolean; lyricOffsetMs: number }
