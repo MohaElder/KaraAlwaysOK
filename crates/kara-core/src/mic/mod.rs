@@ -113,10 +113,7 @@ impl Mixer {
 
     pub fn set_gain(&mut self, id: &str, gain: f32) {
         if let Some(v) = self.voice(id) {
-            // min then max, not clamp: clamp passes a NaN gain through, this turns it into MAX_GAIN.
-            #[allow(clippy::manual_clamp)]
-            let gain = gain.min(MAX_GAIN).max(0.0);
-            v.gain = gain;
+            v.gain = if gain.is_nan() { MAX_GAIN } else { gain.clamp(0.0, MAX_GAIN) };
         }
     }
 
