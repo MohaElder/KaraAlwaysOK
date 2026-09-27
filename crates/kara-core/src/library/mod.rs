@@ -25,7 +25,7 @@ macro_rules! str_enum {
         }
         impl rusqlite::types::FromSql for $name {
             fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
-                v.as_str()?.parse().map_err(|e: anyhow::Error| rusqlite::types::FromSqlError::Other(e.to_string().into()))
+                v.as_str()?.parse().map_err(|e: anyhow::Error| rusqlite::types::FromSqlError::Other(e.into()))
             }
         }
     };
@@ -199,7 +199,10 @@ impl Library {
 
     /// Prefix search over title/artist/album; accent-insensitive; never a syntax error.
     pub fn search(&self, query: &str, limit: u32) -> Result<Vec<Track>> {
-        let terms: Vec<String> = query.split_whitespace().map(|w| format!("\"{}\"*", w.replace('"', "\"\""))).collect();
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|w| format!("\"{}\"*", w.chars().filter(|c| !c.is_control()).collect::<String>().replace('"', "\"\"")))
+            .collect();
         if terms.is_empty() {
             return Ok(Vec::new());
         }
@@ -422,6 +425,7 @@ mod tests {
         assert_eq!(l.search("back bla", 10).unwrap()[0].artist.as_deref(), Some("AC/DC"));
         assert!(l.search("AC/DC \"Back\" *", 10).is_ok());
         assert!(l.search("   ", 10).unwrap().is_empty());
+        assert!(l.search("back\0bla", 10).is_ok());
     }
 
     #[test]
