@@ -33,10 +33,10 @@ pub fn looks_instrumental(texts: &[&str]) -> bool {
     })
 }
 
-/// Puts a local track in Local › Imported, plus its album and artist collections.
+/// Puts a local track in Local › Imported (newest first), plus its album and artist collections.
 pub fn link_collections(lib: &Library, track_id: i64, artist: Option<&str>, album: Option<&str>) -> Result<()> {
     let imported = lib.upsert_collection(ProviderId::Local, CollectionKind::Playlist, "imported", "Imported", None)?;
-    lib.add_to_collection(imported, track_id)?;
+    lib.add_to_front(imported, track_id)?;
     if let Some(artist) = artist {
         let key = format!("artist:{}", artist.to_lowercase());
         let id = lib.upsert_collection(ProviderId::Local, CollectionKind::Artist, &key, artist, None)?;
@@ -48,6 +48,15 @@ pub fn link_collections(lib: &Library, track_id: i64, artist: Option<&str>, albu
         lib.add_to_collection(id, track_id)?;
     }
     Ok(())
+}
+
+/// Saves a local song's title, artist and album, and files it under its new album and artist.
+pub fn edit_info(lib: &Library, track_id: i64, title: &str, artist: Option<&str>, album: Option<&str>) -> Result<()> {
+    lib.update_track_meta(track_id, title, artist, album)?;
+    lib.leave_collections(track_id, CollectionKind::Album)?;
+    lib.leave_collections(track_id, CollectionKind::Artist)?;
+    link_collections(lib, track_id, artist, album)?;
+    lib.prune_empty_collections()
 }
 
 /// Adds a local file; a file that is already in the library returns its existing track.
@@ -183,6 +192,19 @@ mod tests {
         assert_eq!(lib.collections(None, CollectionKind::Artist).unwrap().len(), 1);
         let albums = lib.collections(None, CollectionKind::Album).unwrap();
         assert_eq!((albums.len(), albums[0].subtitle.as_deref()), (1, Some("Juniper Row")));
+    }
+
+    #[test]
+    fn editing_info_moves_the_song_to_its_new_album_and_artist() {
+        let lib = Library::open_in_memory().unwrap();
+        let a = lib.add_track(&crate::library::NewTrack { provider: ProviderId::Local, provider_ref: None, title: "youtu.be link", artist: None, album: None, duration_ms: None }).unwrap();
+        link_collections(&lib, a, Some("Made Up Channel"), None).unwrap();
+        edit_info(&lib, a, "Paper Boats", Some("Juniper Row"), Some("Demos 2026")).unwrap();
+        assert_eq!(lib.track(a).unwrap().title, "Paper Boats");
+        let artists: Vec<_> = lib.collections(None, CollectionKind::Artist).unwrap().into_iter().map(|c| c.name).collect();
+        assert_eq!(artists, vec!["Juniper Row"]);
+        assert_eq!(lib.collections(None, CollectionKind::Album).unwrap()[0].name, "Demos 2026");
+        assert_eq!(lib.collection_tracks(lib.collections(None, CollectionKind::Playlist).unwrap()[0].id).unwrap().len(), 1);
     }
 
     #[test]

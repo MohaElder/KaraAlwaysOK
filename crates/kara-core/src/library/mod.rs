@@ -66,13 +66,16 @@ pub struct Track {
     pub instrumental: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CollectionRow {
     pub id: i64,
     pub provider: ProviderId,
     pub kind: CollectionKind,
     pub name: String,
     pub subtitle: Option<String>,
+    /// A user-made playlist, as opposed to Local › Imported or an album/artist.
+    pub user: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -109,6 +112,7 @@ pub struct LyricsRow {
 const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental";
 const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, status, error";
 const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
+const COLLECTION_COLS: &str = "id, provider, kind, name, subtitle, provider_ref LIKE 'user:%'";
 
 fn track_row(r: &Row) -> rusqlite::Result<Track> {
     Ok(Track {
@@ -136,6 +140,10 @@ fn source_row(r: &Row) -> rusqlite::Result<AudioSource> {
         status: r.get(7)?,
         error: r.get(8)?,
     })
+}
+
+fn collection_row(r: &Row) -> rusqlite::Result<CollectionRow> {
+    Ok(CollectionRow { id: r.get(0)?, provider: r.get(1)?, kind: r.get(2)?, name: r.get(3)?, subtitle: r.get(4)?, user: r.get(5)? })
 }
 
 fn sep_row(r: &Row) -> rusqlite::Result<SeparationRow> {
@@ -244,6 +252,12 @@ impl Library {
         Ok(())
     }
 
+    /// Deletes a song with its sources, lyrics and collection entries.
+    pub fn delete_track(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM track WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     /// Prefix search over title/artist/album; accent-insensitive; never a syntax error.
     pub fn search(&self, query: &str, limit: u32) -> Result<Vec<Track>> {
         let terms: Vec<String> = query
@@ -273,26 +287,101 @@ impl Library {
         )?)
     }
 
-    /// Appends at the end; adding a track that is already there does nothing.
-    pub fn add_to_collection(&self, collection_id: i64, track_id: i64) -> Result<()> {
-        self.conn.execute(
+    /// `provider = None` is the All view.
+    pub fn collections(&self, provider: Option<ProviderId>, kind: CollectionKind) -> Result<Vec<CollectionRow>> {
+        let sql = format!("SELECT {COLLECTION_COLS} FROM collection WHERE kind = ?1 AND (?2 IS NULL OR provider = ?2) ORDER BY name COLLATE NOCASE");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![kind, provider], collection_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn collection(&self, id: i64) -> Result<CollectionRow> {
+        let sql = format!("SELECT {COLLECTION_COLS} FROM collection WHERE id = ?1");
+        self.conn.query_row(&sql, [id], collection_row).with_context(|| format!("collection {id}"))
+    }
+
+    /// A new, empty user playlist under Local.
+    pub fn create_playlist(&self, name: &str) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "INSERT INTO collection (provider, kind, provider_ref, name)
+             VALUES ('local', 'playlist', 'user:' || (SELECT COALESCE(MAX(id), 0) + 1 FROM collection), ?1) RETURNING id",
+            [name],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Renames a user playlist; other collections are left alone.
+    pub fn rename_playlist(&self, id: i64, name: &str) -> Result<()> {
+        self.conn.execute("UPDATE collection SET name = ?2 WHERE id = ?1 AND provider_ref LIKE 'user:%'", params![id, name])?;
+        Ok(())
+    }
+
+    /// Deletes a user playlist; its songs stay in the library.
+    pub fn delete_playlist(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM collection WHERE id = ?1 AND provider_ref LIKE 'user:%'", [id])?;
+        Ok(())
+    }
+
+    /// Appends at the end; false when the song was already there.
+    pub fn add_to_collection(&self, collection_id: i64, track_id: i64) -> Result<bool> {
+        Ok(self.conn.execute(
             "INSERT OR IGNORE INTO collection_track (collection_id, track_id, position)
              VALUES (?1, ?2, (SELECT COALESCE(MAX(position) + 1, 0) FROM collection_track WHERE collection_id = ?1))",
             params![collection_id, track_id],
+        )? > 0)
+    }
+
+    /// Puts a song at the top; false when it was already there.
+    pub fn add_to_front(&self, collection_id: i64, track_id: i64) -> Result<bool> {
+        Ok(self.conn.execute(
+            "INSERT OR IGNORE INTO collection_track (collection_id, track_id, position)
+             VALUES (?1, ?2, (SELECT COALESCE(MIN(position) - 1, 0) FROM collection_track WHERE collection_id = ?1))",
+            params![collection_id, track_id],
+        )? > 0)
+    }
+
+    /// Ids of every collection holding this song.
+    pub fn collections_of(&self, track_id: i64) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare("SELECT collection_id FROM collection_track WHERE track_id = ?1")?;
+        let rows = stmt.query_map([track_id], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn remove_from_collection(&self, collection_id: i64, track_id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM collection_track WHERE collection_id = ?1 AND track_id = ?2", [collection_id, track_id])?;
+        Ok(())
+    }
+
+    /// Moves a song to index `to` of the collection's order.
+    pub fn move_in_collection(&self, collection_id: i64, track_id: i64, to: usize) -> Result<()> {
+        let mut ids: Vec<i64> = self.collection_tracks(collection_id)?.into_iter().map(|t| t.id).collect();
+        let Some(from) = ids.iter().position(|&t| t == track_id) else { return Ok(()) };
+        ids.remove(from);
+        ids.insert(to.min(ids.len()), track_id);
+        let tx = self.conn.unchecked_transaction()?;
+        for (pos, t) in ids.iter().enumerate() {
+            tx.execute("UPDATE collection_track SET position = ?3 WHERE collection_id = ?1 AND track_id = ?2", params![collection_id, t, pos as i64])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Takes a song out of every collection of `kind`.
+    pub fn leave_collections(&self, track_id: i64, kind: CollectionKind) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM collection_track WHERE track_id = ?1 AND collection_id IN (SELECT id FROM collection WHERE kind = ?2)",
+            params![track_id, kind],
         )?;
         Ok(())
     }
 
-    /// `provider = None` is the All view.
-    pub fn collections(&self, provider: Option<ProviderId>, kind: CollectionKind) -> Result<Vec<CollectionRow>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, provider, kind, name, subtitle FROM collection
-             WHERE kind = ?1 AND (?2 IS NULL OR provider = ?2) ORDER BY name COLLATE NOCASE",
+    /// Deletes albums and artists that no longer hold any song.
+    pub fn prune_empty_collections(&self) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM collection WHERE kind IN ('album', 'artist') AND id NOT IN (SELECT collection_id FROM collection_track)",
+            [],
         )?;
-        let rows = stmt.query_map(params![kind, provider], |r| {
-            Ok(CollectionRow { id: r.get(0)?, provider: r.get(1)?, kind: r.get(2)?, name: r.get(3)?, subtitle: r.get(4)? })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        Ok(())
     }
 
     pub fn collection_tracks(&self, collection_id: i64) -> Result<Vec<Track>> {
@@ -664,6 +753,38 @@ mod tests {
         drop(conn);
         let l = Library::open(&p).unwrap();
         assert!(!l.search("old", 1).unwrap()[0].instrumental);
+    }
+
+    #[test]
+    fn user_playlists_can_be_made_filled_reordered_and_removed() {
+        let l = lib();
+        let [a, b, c] = ["A", "B", "C"].map(|t| l.add_track(&local(t, None)).unwrap());
+        let imported = l.upsert_collection(ProviderId::Local, CollectionKind::Playlist, "imported", "Imported", None).unwrap();
+        let mix = l.create_playlist("Friday Mix").unwrap();
+        assert_ne!(mix, l.create_playlist("Friday Mix").unwrap());
+        for t in [a, b, c] {
+            l.add_to_collection(mix, t).unwrap();
+        }
+        assert!(!l.add_to_collection(mix, a).unwrap());
+        assert_eq!(l.collections_of(c).unwrap(), vec![mix]);
+        l.move_in_collection(mix, c, 0).unwrap();
+        l.remove_from_collection(mix, b).unwrap();
+        let titles: Vec<_> = l.collection_tracks(mix).unwrap().into_iter().map(|t| t.title).collect();
+        assert_eq!(titles, vec!["C", "A"]);
+        l.add_to_front(imported, a).unwrap();
+        l.add_to_front(imported, b).unwrap();
+        let newest_first: Vec<_> = l.collection_tracks(imported).unwrap().into_iter().map(|t| t.title).collect();
+        assert_eq!(newest_first, vec!["B", "A"]);
+        l.rename_playlist(mix, "Band Night").unwrap();
+        let row = l.collection(mix).unwrap();
+        assert_eq!((row.name.as_str(), row.user), ("Band Night", true));
+        l.rename_playlist(imported, "Mine").unwrap();
+        l.delete_playlist(imported).unwrap();
+        assert_eq!(l.collection(imported).unwrap().name, "Imported");
+        assert!(!l.collection(imported).unwrap().user);
+        l.delete_playlist(mix).unwrap();
+        assert!(l.collection(mix).is_err());
+        assert_eq!(l.track(a).unwrap().title, "A");
     }
 
     #[test]

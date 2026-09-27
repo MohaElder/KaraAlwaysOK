@@ -115,6 +115,22 @@ pub fn finish(lib: &Library, hash: &str, model_id: &str) -> Result<()> {
     lib.upsert_separation(&row)
 }
 
+/// Removes a song from the library, any album or artist left empty, and its
+/// audio folder unless another song shares the same audio.
+pub fn delete_track(store: &Store, lib: &Library, track_id: i64) -> Result<()> {
+    let hash = lib.selected_source(track_id)?.and_then(|s| s.audio_hash);
+    lib.delete_track(track_id)?;
+    lib.prune_empty_collections()?;
+    let Some(hash) = hash else { return Ok(()) };
+    if lib.sources_with_hash(&hash)?.is_empty() {
+        let _ = std::fs::remove_dir_all(store.audio_dir(&hash));
+        for r in lib.separations()?.iter().filter(|r| r.audio_hash == hash) {
+            lib.delete_separation(&hash, &r.model_id)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn budget(lib: &Library) -> Result<u64> {
     Ok(lib.setting("cache_budget_bytes")?.and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_BUDGET))
 }
@@ -208,7 +224,7 @@ pub fn startup_cleanup(store: &Store, lib: &Library, _lock: &DataLock) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::{NewTrack, ProviderId, SeparationRow};
+    use crate::library::{NewTrack, ProviderId, SeparationRow, SourceKind};
     use crate::separate::mdx::ChunkOut;
 
     fn e(size: i64, used: i64, protected: bool) -> Entry {
@@ -337,6 +353,34 @@ mod tests {
         lib.upsert_separation(&sep_row("h", 1, SepStatus::Ready, 1)).unwrap();
         std::fs::write(s.audio_root().join(".DS_Store"), b"x").unwrap();
         assert_eq!(enforce_budget(&s, &lib, &[]).unwrap(), vec!["h".to_string()]);
+    }
+
+    #[test]
+    fn deleting_a_song_frees_its_audio_unless_another_song_shares_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path());
+        let lib = Library::open_in_memory().unwrap();
+        let add = |title: &str, hash: &str| {
+            let t = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title, artist: Some("Juniper Row"), album: None, duration_ms: None }).unwrap();
+            crate::ingest::link_collections(&lib, t, Some("Juniper Row"), None).unwrap();
+            let src = lib.add_source(t, SourceKind::Link, &format!("https://youtu.be/{title}"), None).unwrap();
+            lib.set_source_audio(src, hash, 1000).unwrap();
+            t
+        };
+        let (a, copy, other) = (add("a", "shared"), add("copy", "shared"), add("other", "own"));
+        for h in ["shared", "own"] {
+            write_chunk(&s, h, "m", &chunk(0, 10)).unwrap();
+            lib.upsert_separation(&sep_row(h, 1, SepStatus::Ready, 1)).unwrap();
+        }
+        delete_track(&s, &lib, a).unwrap();
+        assert!(s.audio_dir("shared").exists());
+        delete_track(&s, &lib, copy).unwrap();
+        assert!(!s.audio_dir("shared").exists());
+        assert!(lib.separation("shared", "m").unwrap().is_none());
+        assert_eq!(lib.collections(None, crate::library::CollectionKind::Artist).unwrap().len(), 1);
+        delete_track(&s, &lib, other).unwrap();
+        assert!(lib.collections(None, crate::library::CollectionKind::Artist).unwrap().is_empty());
+        assert!(lib.track(a).is_err());
     }
 
     #[test]
