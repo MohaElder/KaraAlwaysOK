@@ -42,9 +42,13 @@ fn parse_timestamp(s: &str) -> Option<i64> {
     Some(m * 60_000 + sec * 1_000 + ms)
 }
 
+fn strip_bom(text: &str) -> &str {
+    text.strip_prefix('\u{FEFF}').unwrap_or(text)
+}
+
 /// Whether any line carries an `[mm:ss.xx]` timestamp.
 pub fn is_synced(text: &str) -> bool {
-    text.lines().any(|l| {
+    strip_bom(text).lines().any(|l| {
         l.trim_start()
             .strip_prefix('[')
             .and_then(|s| s.split_once(']'))
@@ -66,14 +70,15 @@ fn spread_words(text: &str, start: i64, end: i64) -> Vec<Word> {
 /// blank lines produce no line (a blank line still ends the line before it).
 pub fn parse_lrc(text: &str, duration_ms: i64) -> Vec<Line> {
     let mut stamped: Vec<(i64, String)> = Vec::new();
-    for raw in text.lines() {
+    for raw in strip_bom(text).lines() {
         let mut rest = raw.trim();
         let mut times = Vec::new();
         while let Some(inner) = rest.strip_prefix('[') {
             let Some(end) = inner.find(']') else { break };
             match parse_timestamp(&inner[..end]) {
                 Some(t) => times.push(t),
-                None => break,
+                None if times.is_empty() => break,
+                None => {}
             }
             rest = &inner[end + 1..];
         }
@@ -179,6 +184,9 @@ mod tests {
         assert_eq!(starts, vec![1_500, 10_000, 20_123]);
         // The blank line at 4.0 s ends the first line early.
         assert_eq!(lines[0].end_ms, 4_000);
+        // A stray non-timestamp tag after a real stamp is dropped, not kept as text.
+        let stray = parse_lrc("[00:01.00][01:02:50]hi\n[00:02.00]next\n", 3_000);
+        assert_eq!(stray[0].text, "hi");
     }
 
     #[test]
@@ -223,6 +231,9 @@ mod tests {
         assert_eq!(find(None, "t", Some("a"), None, 5_000, &none).unwrap(), (LyricsSource::None, vec![]));
         // No artist: don't even ask.
         assert_eq!(find(None, "t", None, None, 5_000, &f).unwrap().0, LyricsSource::None);
+        // A leading UTF-8 BOM doesn't stop embedded text from being recognized as synced.
+        let (src, lines) = find(Some("\u{FEFF}[00:00.00]bommed"), "t", Some("a"), None, 5_000, &f).unwrap();
+        assert_eq!((src, lines[0].text.as_str()), (LyricsSource::Embedded, "bommed"));
     }
 
     #[test]
