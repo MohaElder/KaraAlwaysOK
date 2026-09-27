@@ -255,7 +255,7 @@ Rules:
 
 ### Versions and upgrades
 
-The database's `user_version` is the version of both the tables and the files on disk. The engine keeps an ordered list of upgrade steps (SQL, or code when files need moving); on open it runs every step the library hasn't had, in one transaction, then sets the version. A library newer than the app is refused with a clear message, never opened. Every change to the tables or the file layout after the first release adds a step.
+The database's `user_version` is the version of both the tables and the files on disk. The engine keeps an ordered list of upgrade steps (SQL, or code when files need moving); on open it runs every step the library hasn't had, in one transaction, then sets the version. A library newer than the app is refused with a clear message, never opened. Every change to the tables or the file layout after the first release adds a step. A step that moves files must be safe to run twice (skip what's already moved), and it runs while the data folder is locked.
 
 ### Files on disk (`~/Library/Application Support/kara-always-oki/`)
 ```
