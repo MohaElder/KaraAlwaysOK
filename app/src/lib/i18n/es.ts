@@ -105,6 +105,7 @@ const es: Record<Key, string> = {
   "lyricsSource.embedded": "Del archivo de la canción",
   "lyricsSource.none": "No encontrada",
   "lyricsSource.looking": "Buscando…",
+  "lyricsSource.findAgain": "Buscar otra vez",
   "queue.title": "Cola",
   "common.close": "Cerrar",
   "queue.nowPlaying": "Sonando ahora",

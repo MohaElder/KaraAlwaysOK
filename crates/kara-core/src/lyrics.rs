@@ -191,9 +191,9 @@ impl std::fmt::Display for Transient {
 const RETRY_WAITS_MS: [u64; 2] = if cfg!(test) { [1, 1] } else { [700, 2_000] };
 /// A busy service is asked again only within this time from the start of a lookup.
 const RETRY_WITHIN: Duration = Duration::from_secs(3);
-/// A recording further than this from the song's length is another version: by the same singer,
+/// A recording further than this from the song's length is another version: by a like singer,
 /// with no singer known, and by another singer.
-const SAME_SINGER_OFF_S: f64 = 60.0;
+const LIKE_SINGER_OFF_S: f64 = 60.0;
 const UNKNOWN_SINGER_OFF_S: f64 = 10.0;
 const OTHER_SINGER_OFF_S: f64 = 3.0;
 
@@ -231,9 +231,9 @@ fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, art
     Ok(best_match(retrying(deadline, || search(&[("q", &title)]))?, &title, &artists, duration_s))
 }
 
-/// The synced lyrics of the hit that best matches the song: by the same singer, the same or a close title within
-/// a minute of its length; by another singer, the same title and nearly the same length.
-/// The singer's own first, then the same title, then the closest length.
+/// The synced lyrics of the hit that best matches the song, scored by title, singer and closeness of length.
+/// A hit by a like singer may have a close title and be up to a minute off; by another singer it needs
+/// the same title and nearly the same length.
 fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<String> {
     let title_key = key(title);
     hits.into_iter()
@@ -242,16 +242,29 @@ fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) 
             let off = if duration_s == 0 { 0.0 } else { (h.duration - duration_s as f64).abs() };
             let (their_title, _) = clean_title(&h.track_name, Some(&h.artist_name));
             let same_title = key(&their_title) == title_key;
-            let same_singer = clean_artist(&h.artist_name).iter().any(|a| artists.iter().any(|b| key(a) == key(b)));
-            let fits = if same_singer {
-                off <= SAME_SINGER_OFF_S && (same_title || (similar(title, &their_title) && similar(&their_title, title)))
+            let singer = clean_artist(&h.artist_name).iter().flat_map(|a| artists.iter().map(move |b| singer_likeness(a, b))).max().unwrap_or(0);
+            let fits = if singer > 0 {
+                off <= LIKE_SINGER_OFF_S && (same_title || (similar(title, &their_title) && similar(&their_title, title)))
             } else {
                 same_title && off <= if artists.is_empty() { UNKNOWN_SINGER_OFF_S } else { OTHER_SINGER_OFF_S }
             };
-            fits.then_some(((!same_singer, !same_title, off as u64), lyrics))
+            let score = if same_title { 2.0 } else { 1.0 } + f64::from(singer) + 1.0 - off / LIKE_SINGER_OFF_S;
+            fits.then_some((score, lyrics))
         })
-        .min_by_key(|(rank, _)| *rank)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, lyrics)| lyrics)
+}
+
+/// How alike two singers' names are: 2 the same, 1 close (names of 3+ letters only), 0 unlike.
+fn singer_likeness(a: &str, b: &str) -> u8 {
+    let (ka, kb) = (key(a), key(b));
+    if !ka.is_empty() && ka == kb {
+        2
+    } else if ka.chars().count() >= 3 && kb.chars().count() >= 3 && (similar(a, b) || similar(b, a)) {
+        1
+    } else {
+        0
+    }
 }
 
 /// Traditional Chinese folded to Simplified, for matching only.
@@ -334,14 +347,14 @@ pub fn clean_title(title: &str, artist: Option<&str>) -> (String, Option<String>
 }
 
 /// A singer's names as a lyrics service knows them: without endings like " - Topic" or "VEVO" and
-/// bracketed version words; a name in brackets is another name for the same singer. Single letters are no name.
+/// bracketed version words; a name in brackets is another name for the same singer.
 pub fn clean_artist(artist: &str) -> Vec<String> {
     let (outside, parts) = brackets(artist);
     let mut name = outside.as_str();
     while let Some(rest) = ARTIST_SUFFIXES.iter().find_map(|s| strip_suffix_ci(name, s)).filter(|r| !r.is_empty()) {
         name = rest;
     }
-    std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| key(n).chars().count() > 1).map(String::from).collect()
+    std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| !n.is_empty()).map(String::from).collect()
 }
 
 /// Embedded synced lyrics first, then the online service, else none.
@@ -446,7 +459,6 @@ mod tests {
         assert_eq!(clean_artist("Crowd Lu - Topic"), ["Crowd Lu"]);
         assert_eq!(clean_artist("盧廣仲 - 主題"), ["盧廣仲"]);
         assert_eq!(clean_artist("JuniperRowVEVO"), ["JuniperRow"]);
-        assert_eq!(clean_artist("(G)I-DLE"), ["I-DLE"]);
     }
 
     fn hit(track: &str, artist: &str, duration: f64, lyrics: Option<&str>) -> Hit {
@@ -478,9 +490,13 @@ mod tests {
         let stay = vec![hit("Stay - Big Star", "Big Star", 239.0, Some("[00:01.00]theirs")), hit("STAY", "Home Crew", 205.0, Some("[00:01.00]other"))];
         assert_eq!(best_match(stay, "Stay", &["Nobody Real".into()], 200), None);
 
-        let close_title = || vec![hit("Paper Boat", "Juniper Row", 200.0, Some("[00:01.00]close title"))];
+        let close_title = || vec![hit("Paper Boat", "Juniper Row & Friends", 230.0, Some("[00:01.00]close title"))];
         assert_eq!(best_match(close_title(), "Paper Boats", &[], 200), None);
         assert_eq!(best_match(close_title(), "Paper Boats", &["Juniper Row".into()], 200).as_deref(), Some("[00:01.00]close title"));
+        assert_eq!(best_match(vec![hit("Paper Boats", "G-Star", 220.0, Some("[00:01.00]g"))], "Paper Boats", &["G".into()], 200), None);
+
+        let other_script = vec![hit("夜車", "Lin Xiaoyu - Topic", 240.0, Some("[00:01.00]same length")), hit("夜車", "Someone Else", 262.0, Some("[00:01.00]other length"))];
+        assert_eq!(best_match(other_script, "夜車", &lin, 240).as_deref(), Some("[00:01.00]same length"));
     }
 
     #[test]

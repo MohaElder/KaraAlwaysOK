@@ -3,6 +3,8 @@
   import { dotProgress, itemAt, timeline, wordProgress } from "$lib/lyrics/timeline";
   import { t as text } from "$lib/i18n/index.svelte";
   import { fade } from "$lib/motion";
+  import { manage } from "$lib/state/manage.svelte";
+  import ArrowClockwiseIcon from "phosphor-svelte/lib/ArrowClockwiseIcon";
 
   const items = $derived(player.lyrics ? timeline(player.lyrics.lines) : []);
   const t = $derived(player.position - player.lyricOffset / 1000);
@@ -35,7 +37,13 @@
 
 <div class="lyr">
   {#if none}
-    <div class="nolyr" in:fade><h2>{text("karaoke.noLyrics")}</h2></div>
+    <div class="nolyr" in:fade>
+      <h2>{text("karaoke.noLyrics")}</h2>
+      {#if player.track}
+        {@const track = player.track}
+        <button class="btn glass pill" disabled={manage.findingLyrics} onclick={() => manage.findLyrics(track)}><ArrowClockwiseIcon size={16} />{text("menu.findLyrics")}</button>
+      {/if}
+    </div>
   {:else}
     <div class="track" class:placed bind:this={list}>
       {#each items as x, i (i)}
@@ -69,6 +77,7 @@
   .gap { display: flex; justify-content: center; align-items: center; gap: 14px; height: .7em; }
   .gap:not(.now) { opacity: 0; }
   .gap i { --p: 0; width: 14px; height: 14px; border-radius: 50%; background: var(--text); opacity: calc(.25 + var(--p) * .75); transform: scale(calc(1 + (var(--p) * .35 - .15) * var(--motion))); }
-  .nolyr { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .nolyr { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--s4); text-align: center; }
+  .pill { border-radius: 999px; }
   .nolyr h2 { font: 800 clamp(28px, 3.4vw, 40px)/1.1 var(--display); letter-spacing: -.02em; }
 </style>

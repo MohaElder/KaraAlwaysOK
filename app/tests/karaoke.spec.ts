@@ -1,4 +1,4 @@
-import { test, expect, sing, songAt } from "./app";
+import { test, expect, calls, sing, songAt } from "./app";
 
 test("the current line and its words fill with the song's position", async ({ page }) => {
   const karaoke = await sing(page, "Paper Boats");
@@ -27,7 +27,11 @@ test("duet lines sit left, right and center by voice", async ({ page }) => {
   await expect(karaoke.locator(".line", { hasText: "Tea for two" })).toHaveCSS("text-align", "center");
 });
 
-test("a song without lyrics says so", async ({ page }) => {
+test("a song without lyrics says so and can look for them again", async ({ page }) => {
   const karaoke = await sing(page, "Quiet Hours");
   await expect(karaoke.getByText("No lyrics found, sing it your way.")).toBeVisible();
+  await karaoke.getByRole("button", { name: "Find lyrics again" }).click();
+  await expect(page.locator(".toasts")).toContainText("Found lyrics");
+  await expect(karaoke.getByText("No lyrics found, sing it your way.")).toBeHidden();
+  expect(await calls(page, "find_lyrics_again")).toEqual([{ trackId: 5 }]);
 });

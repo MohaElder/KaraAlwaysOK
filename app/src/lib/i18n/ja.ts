@@ -105,6 +105,7 @@ const ja: Record<Key, string> = {
   "lyricsSource.embedded": "曲ファイルから",
   "lyricsSource.none": "見つかりません",
   "lyricsSource.looking": "検索中…",
+  "lyricsSource.findAgain": "もう一度探す",
   "queue.title": "キュー",
   "common.close": "閉じる",
   "queue.nowPlaying": "再生中",

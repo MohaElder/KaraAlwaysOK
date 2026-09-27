@@ -75,7 +75,7 @@
         <button class="opt" onpointerenter={hideSub} onclick={() => run(() => manage.removeFromPlaylist(playlistId, track))}><MinusCircleIcon size={18} /><span class="grow">{t("menu.removeFromPlaylist")}</span></button>
       {/if}
       <div class="msep"></div>
-      <button class="opt" onpointerenter={hideSub} onclick={() => run(() => manage.findLyrics(track))}><QuotesIcon size={18} /><span class="grow">{t("menu.findLyrics")}</span></button>
+      <button class="opt" disabled={manage.findingLyrics} onpointerenter={hideSub} onclick={() => run(() => manage.findLyrics(track))}><QuotesIcon size={18} /><span class="grow">{t("menu.findLyrics")}</span></button>
       {#if track.provider === "local"}
         <button class="opt" onpointerenter={hideSub} onclick={() => run(() => (ui.sheet = { kind: "edit", track }))}><PencilSimpleIcon size={18} /><span class="grow">{t("menu.editInfo")}</span></button>
         <button class="opt" disabled={busy} onpointerenter={hideSub} onclick={() => (asking = true)}><TrashIcon size={18} /><span class="grow">{t("menu.deleteSong")}</span></button>

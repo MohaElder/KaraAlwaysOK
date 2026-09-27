@@ -105,6 +105,7 @@ const ko: Record<Key, string> = {
   "lyricsSource.embedded": "노래 파일에서",
   "lyricsSource.none": "찾지 못함",
   "lyricsSource.looking": "찾는 중…",
+  "lyricsSource.findAgain": "다시 찾기",
   "queue.title": "대기열",
   "common.close": "닫기",
   "queue.nowPlaying": "지금 재생 중",

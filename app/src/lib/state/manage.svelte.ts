@@ -29,6 +29,9 @@ import WarningIcon from "phosphor-svelte/lib/WarningIcon";
 const failed = (e: unknown) => void toasts.show(say(e), { icon: WarningIcon });
 
 class Manage {
+  /** True while "Find lyrics again" is looking. */
+  findingLyrics = $state(false);
+
   /** Hides an item now and runs `commit` when its toast runs out, unless Undo is pressed (which also runs `onUndo`). */
   undoable(key: string, text: string, icon: Icon, commit: () => Promise<unknown>, onUndo?: () => void) {
     library.hidden.add(key);
@@ -70,6 +73,7 @@ class Manage {
 
   /** Looks up a song's lyrics again now, showing the search and its result in a toast. */
   async findLyrics(track: Track) {
+    this.findingLyrics = true;
     const toast = toasts.show(t("toast.findingLyrics"), { spin: true, sticky: true });
     try {
       const found = await findLyricsAgain(track.id);
@@ -77,6 +81,7 @@ class Manage {
     } catch (e) {
       toast.update(say(e), { icon: WarningIcon });
     }
+    this.findingLyrics = false;
   }
 
   /** Hides a playlist now and deletes it when its Undo toast runs out. */

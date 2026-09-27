@@ -105,6 +105,7 @@ const zhHans: Record<Key, string> = {
   "lyricsSource.embedded": "来自歌曲文件",
   "lyricsSource.none": "未找到",
   "lyricsSource.looking": "正在查找…",
+  "lyricsSource.findAgain": "重新查找",
   "queue.title": "队列",
   "common.close": "关闭",
   "queue.nowPlaying": "正在播放",

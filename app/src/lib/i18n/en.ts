@@ -103,6 +103,7 @@ const en = {
   "lyricsSource.embedded": "From the song file",
   "lyricsSource.none": "None found",
   "lyricsSource.looking": "Looking…",
+  "lyricsSource.findAgain": "Find again",
   "queue.title": "Queue",
   "common.close": "Close",
   "queue.nowPlaying": "Now playing",

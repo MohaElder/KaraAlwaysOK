@@ -1,12 +1,14 @@
 <script lang="ts">
   import { player } from "$lib/state/player.svelte";
   import { ui } from "$lib/state/ui.svelte";
+  import { manage } from "$lib/state/manage.svelte";
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { slide } from "$lib/motion";
   import { tip } from "$lib/tooltip.svelte";
   import PianoKeysIcon from "phosphor-svelte/lib/PianoKeysIcon";
   import TimerIcon from "phosphor-svelte/lib/TimerIcon";
   import QuotesIcon from "phosphor-svelte/lib/QuotesIcon";
+  import ArrowClockwiseIcon from "phosphor-svelte/lib/ArrowClockwiseIcon";
   import MinusIcon from "phosphor-svelte/lib/MinusIcon";
   import PlusIcon from "phosphor-svelte/lib/PlusIcon";
 
@@ -47,9 +49,18 @@
     </span>
   </div>
   <div class="msep"></div>
-  <div class="mrow"><QuotesIcon size={18} /><span class="grow">{t("menu.lyrics")}</span><span class="muted">{source}</span></div>
+  <div class="mrow">
+    <QuotesIcon size={18} /><span class="grow">{t("menu.lyrics")}</span>
+    {#if player.lyrics?.source === "none" && player.track}
+      {@const track = player.track}
+      <button class="btn soft pill" disabled={manage.findingLyrics} onclick={() => manage.findLyrics(track)}><ArrowClockwiseIcon size={13} />{t("lyricsSource.findAgain")}</button>
+    {:else}
+      <span class="muted">{source}</span>
+    {/if}
+  </div>
 </div>
 
 <style>
   .menu { position: fixed; }
+  .pill { height: 24px; padding: 0 var(--s3); border-radius: 999px; font-size: 12.5px; gap: var(--s1); }
 </style>
