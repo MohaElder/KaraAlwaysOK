@@ -144,7 +144,6 @@ fn sep_row(r: &Row) -> rusqlite::Result<SeparationRow> {
 
 /// Turns on write-ahead logging, retrying while another connection is switching it.
 fn enable_wal(conn: &Connection) -> Result<()> {
-    // journal_mode returns a row, so it can't go through pragma_update.
     let switch = || conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()));
     for _ in 0..100 {
         match switch() {

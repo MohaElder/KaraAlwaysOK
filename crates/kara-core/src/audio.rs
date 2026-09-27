@@ -301,10 +301,8 @@ pub fn encode_flac(a: &Stereo) -> Result<Vec<u8>> {
     Ok(sink.as_slice().to_vec())
 }
 
+/// Reads a FLAC file, trimmed to the sample count in its header.
 pub fn read_flac(path: &Path) -> Result<Stereo> {
-    // `encode_flac` pads the final block to a full block size with zeros, so the
-    // decoded stream can be longer than the original; STREAMINFO's total-sample
-    // count is still exact, so trim back to it.
     let expected = {
         let (format, _) = open(path)?;
         audio_track(format.as_ref())?.codec_params.n_frames.map(|n| n as usize)

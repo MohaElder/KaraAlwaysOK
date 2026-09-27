@@ -121,7 +121,6 @@ mod tests {
         let held = s.lock().unwrap();
         assert_eq!(s.lock().err().unwrap().to_string(), "kara is busy preparing another song.");
         drop(held);
-        // A child process another test is starting can share the handle until it execs.
         let relocked = (0..200).any(|_| {
             let ok = s.lock().is_ok();
             if !ok {
