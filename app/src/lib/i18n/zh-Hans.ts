@@ -147,6 +147,22 @@ const zhHans: Record<Key, string> = {
   "playlist.rename": "重命名",
   "playlist.delete": "删除播放列表",
   "playlist.nameLabel": "播放列表名称",
+  "settings.title": "设置",
+  "settings.storage": "存储空间",
+  "settings.used": "已用 {n} GB",
+  "settings.free": "可用 {n} GB",
+  "settings.limit": "上限",
+  "settings.lowerLimit": "降低上限",
+  "settings.raiseLimit": "提高上限",
+  "settings.gb": "{n} GB",
+  "settings.limitHelp": "空间满时，会先清除一段时间没唱的歌。下次唱时会重新准备。",
+  "settings.clear": "清除存储空间",
+  "settings.clearAsk": "清除所有已准备的歌曲？",
+  "settings.clearConfirm": "清除",
+  "settings.cleared": "已清除存储空间",
+  "settings.language": "语言",
+  "settings.systemLanguage": "跟随系统",
+  "settings.version": "版本 {v}",
 };
 
 export default zhHans;

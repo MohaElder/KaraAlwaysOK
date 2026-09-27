@@ -147,6 +147,22 @@ const zhHant: Record<Key, string> = {
   "playlist.rename": "重新命名",
   "playlist.delete": "刪除播放清單",
   "playlist.nameLabel": "播放清單名稱",
+  "settings.title": "設定",
+  "settings.storage": "儲存空間",
+  "settings.used": "已用 {n} GB",
+  "settings.free": "可用 {n} GB",
+  "settings.limit": "上限",
+  "settings.lowerLimit": "降低上限",
+  "settings.raiseLimit": "提高上限",
+  "settings.gb": "{n} GB",
+  "settings.limitHelp": "空間滿時，會先清除一段時間沒唱的歌。下次唱時會重新準備。",
+  "settings.clear": "清除儲存空間",
+  "settings.clearAsk": "清除所有已準備的歌曲？",
+  "settings.clearConfirm": "清除",
+  "settings.cleared": "已清除儲存空間",
+  "settings.language": "語言",
+  "settings.systemLanguage": "跟隨系統",
+  "settings.version": "版本 {v}",
 };
 
 export default zhHant;

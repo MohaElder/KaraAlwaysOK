@@ -145,6 +145,22 @@ const en = {
   "playlist.rename": "Rename",
   "playlist.delete": "Delete playlist",
   "playlist.nameLabel": "Playlist name",
+  "settings.title": "Settings",
+  "settings.storage": "Storage",
+  "settings.used": "{n} GB used",
+  "settings.free": "{n} GB free",
+  "settings.limit": "Limit",
+  "settings.lowerLimit": "Lower limit",
+  "settings.raiseLimit": "Raise limit",
+  "settings.gb": "{n} GB",
+  "settings.limitHelp": "When it's full, songs you haven't sung in a while are cleared first. They get ready again next time you sing them.",
+  "settings.clear": "Clear storage",
+  "settings.clearAsk": "Clear all prepared songs?",
+  "settings.clearConfirm": "Clear",
+  "settings.cleared": "Storage cleared",
+  "settings.language": "Language",
+  "settings.systemLanguage": "Same as the system",
+  "settings.version": "Version {v}",
 };
 
 export default en;

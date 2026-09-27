@@ -27,6 +27,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             settings::system_locale,
+            settings::storage_info,
+            settings::set_storage_limit,
+            settings::clear_storage,
+            settings::reduce_transparency,
             engine::startup_problem,
             engine::setup_engine,
             adding::search,

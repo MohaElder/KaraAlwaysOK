@@ -147,6 +147,22 @@ const ko: Record<Key, string> = {
   "playlist.rename": "이름 변경",
   "playlist.delete": "플레이리스트 삭제",
   "playlist.nameLabel": "플레이리스트 이름",
+  "settings.title": "설정",
+  "settings.storage": "저장 공간",
+  "settings.used": "{n}GB 사용 중",
+  "settings.free": "{n}GB 남음",
+  "settings.limit": "한도",
+  "settings.lowerLimit": "한도 낮추기",
+  "settings.raiseLimit": "한도 높이기",
+  "settings.gb": "{n}GB",
+  "settings.limitHelp": "가득 차면 한동안 부르지 않은 노래부터 지워집니다. 다음에 부를 때 다시 준비됩니다.",
+  "settings.clear": "저장 공간 비우기",
+  "settings.clearAsk": "준비된 노래를 모두 지울까요?",
+  "settings.clearConfirm": "지우기",
+  "settings.cleared": "저장 공간을 비웠습니다",
+  "settings.language": "언어",
+  "settings.systemLanguage": "시스템과 같게",
+  "settings.version": "버전 {v}",
 };
 
 export default ko;

@@ -13,6 +13,8 @@
   import VinylRecordIcon from "phosphor-svelte/lib/VinylRecordIcon";
   import UserIcon from "phosphor-svelte/lib/UserIcon";
   import TrayIcon from "phosphor-svelte/lib/TrayIcon";
+  import GearIcon from "phosphor-svelte/lib/GearIcon";
+  import { tip } from "$lib/tooltip.svelte";
 
   const tabs: { kind: Kind; label: Key; icon: Icon }[] = [
     { kind: "playlist", label: "kind.playlists", icon: PlaylistIcon },
@@ -54,7 +56,9 @@
       {#if library.loaded}<div class="note" in:fade><TrayIcon size={16} />{t("library.nothingHere")}</div>{/if}
     {/each}
   </nav>
-  <div class="foot"></div>
+  <div class="foot">
+    <button class="ib" use:tip={t("settings.title")} onclick={() => (ui.sheet = { kind: "settings" })}><GearIcon size={18} /></button>
+  </div>
 </aside>
 
 <style>

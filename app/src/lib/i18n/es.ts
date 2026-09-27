@@ -147,6 +147,22 @@ const es: Record<Key, string> = {
   "playlist.rename": "Cambiar nombre",
   "playlist.delete": "Eliminar lista",
   "playlist.nameLabel": "Nombre de la lista",
+  "settings.title": "Ajustes",
+  "settings.storage": "Almacenamiento",
+  "settings.used": "{n} GB usados",
+  "settings.free": "{n} GB libres",
+  "settings.limit": "Límite",
+  "settings.lowerLimit": "Bajar el límite",
+  "settings.raiseLimit": "Subir el límite",
+  "settings.gb": "{n} GB",
+  "settings.limitHelp": "Cuando se llena, se borran primero las canciones que hace tiempo que no cantas. Se vuelven a preparar la próxima vez que las cantes.",
+  "settings.clear": "Vaciar almacenamiento",
+  "settings.clearAsk": "¿Borrar todas las canciones preparadas?",
+  "settings.clearConfirm": "Borrar",
+  "settings.cleared": "Almacenamiento vaciado",
+  "settings.language": "Idioma",
+  "settings.systemLanguage": "Igual que el sistema",
+  "settings.version": "Versión {v}",
 };
 
 export default es;

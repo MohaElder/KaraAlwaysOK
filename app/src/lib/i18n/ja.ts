@@ -147,6 +147,22 @@ const ja: Record<Key, string> = {
   "playlist.rename": "名前を変更",
   "playlist.delete": "プレイリストを削除",
   "playlist.nameLabel": "プレイリスト名",
+  "settings.title": "設定",
+  "settings.storage": "ストレージ",
+  "settings.used": "{n} GB 使用中",
+  "settings.free": "{n} GB 空き",
+  "settings.limit": "上限",
+  "settings.lowerLimit": "上限を下げる",
+  "settings.raiseLimit": "上限を上げる",
+  "settings.gb": "{n} GB",
+  "settings.limitHelp": "いっぱいになると、しばらく歌っていない曲から消去されます。次に歌うときにまた準備されます。",
+  "settings.clear": "ストレージを消去",
+  "settings.clearAsk": "準備済みの曲をすべて消去しますか？",
+  "settings.clearConfirm": "消去",
+  "settings.cleared": "ストレージを消去しました",
+  "settings.language": "言語",
+  "settings.systemLanguage": "システムと同じ",
+  "settings.version": "バージョン {v}",
 };
 
 export default ja;

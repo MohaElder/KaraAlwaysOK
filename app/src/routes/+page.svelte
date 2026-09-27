@@ -13,6 +13,7 @@
   import SongMenu from "$lib/components/SongMenu.svelte";
   import PlaylistMenu from "$lib/components/PlaylistMenu.svelte";
   import EditSheet from "$lib/components/EditSheet.svelte";
+  import SettingsSheet from "$lib/components/SettingsSheet.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
@@ -24,7 +25,8 @@
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SearchResults from "$lib/components/SearchResults.svelte";
   import LinkResult from "$lib/components/LinkResult.svelte";
-  import type { Kind } from "$lib/api";
+  import { reduceTransparency, type Kind } from "$lib/api";
+  import { composing } from "$lib/keys";
 
   let searchBar: SearchBar | undefined = $state();
 
@@ -33,12 +35,39 @@
     void library.show(kind, id);
   }
 
+  async function syncTransparency() {
+    document.documentElement.toggleAttribute("data-reduce-transparency", await reduceTransparency());
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (composing(e)) return;
+    const target = e.target as Element;
+    const typing = !!target.closest?.("input, textarea, select");
+    if (e.key === "Escape") {
+      if (ui.menu) ui.menu = null;
+      else if (ui.moreOpen) ui.moreOpen = false;
+      else if (ui.sheet) ui.sheet = null;
+      else if (ui.queueOpen) ui.queueOpen = false;
+      else if (ui.karaoke) ui.karaoke = false;
+    } else if (e.key === " " && !typing && !target.closest?.("button, [role=button], [role=slider]") && player.track) {
+      e.preventDefault();
+      player.toggle();
+    } else if ((e.key === "/" && !typing) || (e.key === "f" && e.metaKey)) {
+      e.preventDefault();
+      ui.karaoke = false;
+      searchBar?.focus();
+    }
+  }
+
   onMount(() => {
+    void syncTransparency();
     engine.start();
     player.init();
     adding.init();
   });
 </script>
+
+<svelte:window onkeydown={onKey} onfocus={syncTransparency} />
 
 <div class="app">
   <Sidebar />
@@ -68,6 +97,7 @@
 <SongMenu />
 <PlaylistMenu />
 <EditSheet />
+<SettingsSheet />
 <DropOverlay />
 <Toasts />
 <Tooltip />

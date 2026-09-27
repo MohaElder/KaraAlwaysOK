@@ -119,3 +119,10 @@ export const addToPlaylist = (playlistId: number, trackId: number) => invoke<boo
 export const removeFromPlaylist = (playlistId: number, trackId: number) => invoke<void>("remove_from_playlist", { playlistId, trackId });
 export const moveInPlaylist = (playlistId: number, trackId: number, to: number) => invoke<void>("move_in_playlist", { playlistId, trackId, to });
 export const playlistsWith = (trackId: number) => invoke<number[]>("playlists_with", { trackId });
+
+export interface StorageInfo { usedBytes: number; limitBytes: number }
+
+export const storageInfo = () => invoke<StorageInfo>("storage_info");
+export const setStorageLimit = (bytes: number) => invoke<void>("set_storage_limit", { bytes });
+export const clearStorage = () => invoke<StorageInfo>("clear_storage");
+export const reduceTransparency = () => invoke<boolean>("reduce_transparency");
