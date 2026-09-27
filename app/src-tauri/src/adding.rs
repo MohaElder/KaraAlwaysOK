@@ -18,7 +18,8 @@ pub enum SearchOutcome {
 }
 
 /// What the search bar's text means: a link we can use, a link we can't, or words to look for.
-pub fn search_input(lib: &Library, input: &str) -> anyhow::Result<SearchOutcome> {
+/// The Imported playlist matches by `imported`, the name the user sees for it.
+pub fn search_input(lib: &Library, input: &str, imported: &str) -> anyhow::Result<SearchOutcome> {
     if let Some(url) = link::parse_link(input) {
         let host = url.host_str().unwrap_or_default().trim_start_matches("www.").trim_start_matches("open.").to_string();
         return Ok(match link::verdict(&url) {
@@ -32,14 +33,17 @@ pub fn search_input(lib: &Library, input: &str) -> anyhow::Result<SearchOutcome>
     }
     let mut collections = Vec::new();
     for kind in [CollectionKind::Playlist, CollectionKind::Album, CollectionKind::Artist] {
-        collections.extend(cards(lib, kind)?.into_iter().filter(|c| c.row.name.to_lowercase().contains(&query)));
+        collections.extend(cards(lib, kind)?.into_iter().filter(|c| {
+            let name = if kind == CollectionKind::Playlist && !c.row.user { imported } else { &c.row.name };
+            name.to_lowercase().contains(&query)
+        }));
     }
     Ok(SearchOutcome::Text { tracks: lib.search(input, 50)?, collections })
 }
 
 #[tauri::command]
-pub fn search(state: State<'_, AppState>, input: String) -> Result<SearchOutcome, AppError> {
-    search_input(&state.lib.lock().unwrap(), &input).plain()
+pub fn search(state: State<'_, AppState>, input: String, imported: String) -> Result<SearchOutcome, AppError> {
+    search_input(&state.lib.lock().unwrap(), &input, &imported).plain()
 }
 
 /// Streams what a pasted link points to: the site's quick preview when it has one, then the full details.
@@ -80,12 +84,16 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         let t = lib.add_track(&NewTrack { provider: ProviderId::Local, provider_ref: None, title: "Paper Boats", artist: Some("Juniper Row"), album: None, duration_ms: None }).unwrap();
         kara_core::ingest::link_collections(&lib, t, Some("Juniper Row"), None).unwrap();
-        let json = |input: &str| serde_json::to_value(search_input(&lib, input).unwrap()).unwrap();
+        let imported = lib.upsert_collection(ProviderId::Local, CollectionKind::Playlist, "imported", "Imported", None).unwrap();
+        lib.add_to_collection(imported, t).unwrap();
+        let json = |input: &str| serde_json::to_value(search_input(&lib, input, "読み込んだ曲").unwrap()).unwrap();
         let text = json("juni");
         assert_eq!(
             (text["kind"].as_str(), text["tracks"][0]["title"].as_str(), text["collections"][0]["name"].as_str()),
             (Some("text"), Some("Paper Boats"), Some("Juniper Row"))
         );
+        let ids = |input: &str| json(input)["collections"].as_array().unwrap().iter().map(|c| c["id"].as_i64()).collect::<Vec<_>>();
+        assert_eq!((ids("読み込"), ids("imp")), (vec![Some(imported)], vec![]));
         let link = json("youtu.be/abc");
         assert_eq!((link["kind"].as_str(), link["host"].as_str()), (Some("link"), Some("youtu.be")));
         let refused = json("https://open.spotify.com/track/x");

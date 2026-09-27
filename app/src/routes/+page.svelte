@@ -24,7 +24,7 @@
   let searchBar: SearchBar | undefined = $state();
 
   function openFromSearch(kind: Kind, id: number) {
-    ui.clearSearch();
+    searchBar?.clear();
     void library.show(kind, id);
   }
 

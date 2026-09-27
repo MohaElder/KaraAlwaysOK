@@ -14,12 +14,13 @@ export function fromOutcome(prev: SearchView, input: string, o: SearchOutcome): 
   return query ? { kind: "text", query, tracks: o.tracks, collections: o.collections } : { kind: "none" };
 }
 
-/** Adds a preview that arrived for `url`; one for any other link is dropped. Details only fill in. */
+/** Adds a preview that arrived for `url`, clearing an earlier failure; one for any other link is dropped. Details only fill in. */
 export function withPreview(view: SearchView, url: string, p: LinkPreview): SearchView {
   if (view.kind !== "link" || view.url !== url) return view;
   const old = view.preview;
   return {
     ...view,
+    failed: false,
     preview: {
       title: old?.title ?? p.title,
       channel: old?.channel ?? p.channel,

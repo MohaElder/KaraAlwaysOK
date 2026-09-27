@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { LinkPreview, SearchOutcome } from "./api";
-import { fromOutcome, withPreview } from "./search";
+import { fromOutcome, previewFailed, withPreview } from "./search";
 
 const link = (url: string): SearchOutcome => ({ kind: "link", url, host: "youtu.be" });
 const text: SearchOutcome = { kind: "text", tracks: [], collections: [] };
@@ -15,11 +15,11 @@ it("a_late_preview_for_an_older_link_is_ignored", () => {
   expect(withPreview(v, "https://youtu.be/b", preview("Late"))).toEqual(v);
 });
 
-it("keeps a link's preview while it is retyped, fills in later details, and clears on empty text", () => {
-  let v = fromOutcome({ kind: "none" }, "youtu.be/a", link("https://youtu.be/a"));
+it("a preview replaces an earlier failure, stays while the link is retyped, fills in later details, and clears on empty text", () => {
+  let v = previewFailed(fromOutcome({ kind: "none" }, "youtu.be/a", link("https://youtu.be/a")), "https://youtu.be/a");
   v = withPreview(v, "https://youtu.be/a", preview("Made Up Song", { thumbnail: "t.jpg", channel: "Made Up Channel" }));
   v = withPreview(v, "https://youtu.be/a", preview("Made Up Song", { durationMs: 205_000, thumbnail: "other.webp" }));
   v = fromOutcome(v, " youtu.be/a ", link("https://youtu.be/a"));
-  expect(v).toMatchObject({ preview: { channel: "Made Up Channel", durationMs: 205_000, thumbnail: "t.jpg" } });
+  expect(v).toMatchObject({ failed: false, preview: { channel: "Made Up Channel", durationMs: 205_000, thumbnail: "t.jpg" } });
   expect(fromOutcome(v, "  ", text)).toEqual({ kind: "none" });
 });

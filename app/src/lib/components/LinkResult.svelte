@@ -2,7 +2,7 @@
   import { ui } from "$lib/state/ui.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { duration } from "$lib/format";
-  import { fade } from "$lib/motion";
+  import { fade, fadeAway } from "$lib/motion";
   import { tip } from "$lib/tooltip.svelte";
   import LinkIcon from "phosphor-svelte/lib/LinkIcon";
   import PlusIcon from "phosphor-svelte/lib/PlusIcon";
@@ -21,12 +21,12 @@
 
 {#if view}
   {#key view.url}
-  <div in:fade>
+  <div in:fade|global out:fadeAway|global>
   <h2 class="sec"><LinkIcon size={18} />{t("search.fromLink")}</h2>
   {#if view.failed}
     <p class="hstack muted" in:fade><WarningIcon />{t("problem.noSongAtLink")}</p>
   {:else if !view.preview}
-    <div class="lrow" in:fade><span class="lthumb bone"></span><span class="grow"><i class="bone" style="width:55%"></i><i class="bone" style="width:30%"></i></span></div>
+    <div class="lrow" in:fade><span class="lthumb"><i class="bone"></i></span><span class="grow"><i class="bone" style="width:55%"></i><i class="bone" style="width:30%"></i></span></div>
   {:else}
     {@const p = view.preview}
     {@const add = (then: Then) => onAdd?.(view.url, then, p.title)}
@@ -54,6 +54,7 @@
   .lrow:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
   .lrow b { display: block; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
   .lthumb { position: relative; width: 160px; aspect-ratio: 16 / 9; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--raised) center / cover no-repeat; overflow: hidden; }
+  .lthumb .bone { width: 100%; height: 100%; margin: 0; border-radius: 0; }
   .ldur { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--bezel) 75%, transparent); color: var(--thumb); font: 500 11px var(--mono); }
   .lplus { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--bezel) 55%, transparent); color: var(--thumb); opacity: 0; transition: opacity var(--t) var(--ease); }
   .lrow:hover .lplus, .lrow:focus-visible .lplus { opacity: 1; }

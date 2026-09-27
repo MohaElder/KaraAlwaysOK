@@ -98,7 +98,7 @@ export type SearchOutcome =
   | { kind: "link"; url: string; host: string }
   | { kind: "rejected"; streaming: boolean; host: string };
 
-export const search = (input: string) => invoke<SearchOutcome>("search", { input });
+export const search = (input: string, imported: string) => invoke<SearchOutcome>("search", { input, imported });
 
 export async function linkPreview(url: string, onUpdate: (p: LinkPreview) => void): Promise<void> {
   const channel = new Channel<LinkPreview>();

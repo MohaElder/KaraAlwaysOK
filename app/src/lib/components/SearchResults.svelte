@@ -5,7 +5,7 @@
   import { ui } from "$lib/state/ui.svelte";
   import { player } from "$lib/state/player.svelte";
   import { cardName } from "$lib/state/library.svelte";
-  import { fade } from "$lib/motion";
+  import { fade, fadeAway } from "$lib/motion";
   import Cover from "./Cover.svelte";
   import Empty from "./Empty.svelte";
   import SongRow from "./SongRow.svelte";
@@ -27,7 +27,7 @@
 
 {#if view}
   {#key view.query}
-  <div in:fade>
+  <div in:fade|global out:fadeAway|global>
   {#if !view.tracks.length && !groups.length}
     <Empty icon={MagnifyingGlassMinusIcon} title={t("search.noMatchTitle", { query: view.query })}><p>{t("search.noMatchBody")}</p></Empty>
   {:else}

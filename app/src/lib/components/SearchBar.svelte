@@ -26,7 +26,7 @@
   async function run() {
     const mine = ++seq;
     const value = ui.query;
-    const outcome = await search(value);
+    const outcome = await search(value, t("library.imported"));
     if (mine !== seq) return;
     const before = ui.search;
     ui.search = fromOutcome(before, value, outcome);
@@ -36,7 +36,7 @@
     }
   }
 
-  function clear() {
+  export function clear() {
     seq++;
     clearTimeout(timer);
     ui.clearSearch();

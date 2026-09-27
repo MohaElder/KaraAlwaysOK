@@ -25,3 +25,9 @@ export function slide(node: Element, { x = 0, y = 8 }: { x?: number; y?: number 
   if (reducedMotion()) return fade(node);
   return { duration: DURATION, easing: ease, css: (t, u) => `opacity:${t};transform:translate(${u * x}px,${u * y}px)` };
 }
+
+/** A fade out that lifts the element out of the flow where it stands, so what replaces it doesn't jump. */
+export function fadeAway(node: HTMLElement): TransitionConfig {
+  const { offsetTop: top, offsetLeft: left, offsetWidth: width } = node;
+  return { duration: DURATION, easing: ease, css: (t) => `position:absolute;top:${top}px;left:${left}px;width:${width}px;opacity:${t}` };
+}

@@ -5,6 +5,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 const BIN_NAME: &str = "yt-dlp_macos";
 const BIN_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
@@ -17,8 +18,10 @@ pub fn sha_from_sums(sums: &str, name: &str) -> Option<String> {
     })
 }
 
-/// Path to a verified yt-dlp in `bin_dir`, installing it on first use.
+/// Path to a verified yt-dlp in `bin_dir`, installing it on first use (one install at a time).
 pub fn ensure(bin_dir: &Path) -> Result<PathBuf> {
+    static INSTALL: Mutex<()> = Mutex::new(());
+    let _one = INSTALL.lock().unwrap_or_else(|e| e.into_inner());
     let path = bin_dir.join("yt-dlp");
     if path.exists() {
         return Ok(path);
