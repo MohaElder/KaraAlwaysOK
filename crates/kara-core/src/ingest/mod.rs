@@ -19,7 +19,7 @@ pub struct Ingested {
 /// "salt-and_static.flac" -> "salt and static"
 pub fn title_from_file_name(name: &str) -> String {
     let stem = Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name);
-    stem.split(|c| c == '-' || c == '_').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ").trim().to_string()
+    stem.split(['-', '_']).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ").trim().to_string()
 }
 
 /// Puts a local track in Local › Imported, plus its album and artist collections.

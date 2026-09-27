@@ -234,8 +234,8 @@ mod tests {
         assert_eq!(v.len(), m.len());
         // Segment seams leave a small residual (< 4e-3 measured); a real
         // alignment bug (e.g. an off-by-one trim offset) misses by ~0.35.
-        for k in 100..1900 {
-            assert!((v.left[k] - expected[k]).abs() < 4e-3, "sample {k}: {} vs {}", v.left[k], expected[k]);
+        for (k, (got, want)) in v.left.iter().zip(&expected).enumerate().take(1900).skip(100) {
+            assert!((got - want).abs() < 4e-3, "sample {k}: {got} vs {want}");
         }
     }
 
