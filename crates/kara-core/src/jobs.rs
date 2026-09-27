@@ -62,6 +62,7 @@ pub fn prepare(
             if let Ok(Some(src)) = lib.selected_source(track_id) {
                 let _ = lib.set_source_status(src.id, SourceStatus::Ready, None);
             }
+            emit(Event::Ready { track_id });
         }
         Err(e) => {
             // Only the outermost context reaches the user.
@@ -78,6 +79,15 @@ pub fn prepare(
 
 fn is_ready(ctx: &Ctx, lib: &Library, hash: &str) -> Result<bool> {
     Ok(lib.separation(hash, &ctx.model_id)?.is_some_and(|r| r.status == SepStatus::Ready))
+}
+
+/// Whether a lyrics lookup is worth doing: none tried yet, or the last try
+/// found nothing and it's been a week.
+fn lyrics_due(lib: &Library, track_id: i64) -> Result<bool> {
+    Ok(match lib.lyrics(track_id)? {
+        None => true,
+        Some(l) => l.source == LyricsSource::None && now_ms() - l.fetched_at > LYRICS_RETRY_MS,
+    })
 }
 
 fn look_up_lyrics(track: &Track, fetcher: &(dyn LyricsFetcher + Sync)) -> Result<(LyricsSource, Vec<lyrics::Line>)> {
@@ -107,30 +117,33 @@ fn prepare_inner(
         .selected_source(track_id)
         .context("This song is no longer in your library.")?
         .context("This song has no audio to play.")?;
-    let need_lyrics = match lib.lyrics(track_id)? {
-        None => true,
-        Some(l) => l.source == LyricsSource::None && now_ms() - l.fetched_at > LYRICS_RETRY_MS,
-    };
 
     if let Some(hash) = &source.audio_hash {
         if is_ready(ctx, lib, hash)? {
             lib.touch_separation(hash, &ctx.model_id, now_ms())?;
-            if need_lyrics {
+            if lyrics_due(lib, track_id)? {
                 refresh_lyrics(lib, &track, fetcher);
             }
-            emit(Event::Ready { track_id });
+            if cancel.load(Ordering::Relaxed) {
+                return Ok(Outcome::Cancelled);
+            }
             return Ok(Outcome::Done);
         }
     }
 
     let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, emit)?;
     let track = lib.track(track_id).context("This song is no longer in your library.")?; // fetching may have filled in title/artist
+    // load_or_fetch may have just saved the file's own embedded lyrics, so
+    // this is re-checked, not the value from before it ran.
+    let need_lyrics = lyrics_due(lib, track_id)?;
     if is_ready(ctx, lib, &hash)? {
         lib.touch_separation(&hash, &ctx.model_id, now_ms())?;
         if need_lyrics {
             refresh_lyrics(lib, &track, fetcher);
         }
-        emit(Event::Ready { track_id });
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(Outcome::Cancelled);
+        }
         return Ok(Outcome::Done);
     }
     if cancel.load(Ordering::Relaxed) {
@@ -138,7 +151,7 @@ fn prepare_inner(
     }
 
     emit(Event::Stage { track_id, stage: Stage::Lyrics });
-    let outcome = std::thread::scope(|s| {
+    std::thread::scope(|s| {
         let lookup = need_lyrics.then(|| {
             let track = &track;
             s.spawn(move || look_up_lyrics(track, fetcher))
@@ -150,12 +163,7 @@ fn prepare_inner(
             }
         }
         outcome
-    })?;
-    // Emitted only after lyrics are saved, so the UI can rely on them being there on Ready.
-    if outcome == Outcome::Done {
-        emit(Event::Ready { track_id });
-    }
-    Ok(outcome)
+    })
 }
 
 /// The song in the standard format, plus its hash. Uses the stored copy when
@@ -510,8 +518,14 @@ mod tests {
         let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
         assert_eq!(lib.separation(&hash, "test").unwrap().unwrap().status, SepStatus::Failed);
 
-        let (r, _) = run(&c, &lib, t, &AtomicBool::new(false));
+        let mut status_at_ready = None;
+        let r = prepare(&c, &lib, &mut Silence, &NoLyrics, t, &AtomicBool::new(false), &mut |e| {
+            if let Event::Ready { .. } = e {
+                status_at_ready = Some(lib.selected_source(t).unwrap().unwrap().status);
+            }
+        });
         assert_eq!(r.unwrap(), Outcome::Done);
+        assert_eq!(status_at_ready, Some(SourceStatus::Ready)); // not the stale Failed from the first attempt
         let s = lib.selected_source(t).unwrap().unwrap();
         assert_eq!((s.status, s.error.as_deref()), (SourceStatus::Ready, None));
     }
@@ -553,6 +567,66 @@ mod tests {
         // than skip straight to Ready.
         prepare(&c, &lib, &mut Silence, &MadeUpLyrics, t, &AtomicBool::new(false), &mut |_| {}).unwrap();
         assert_eq!(lib.lyrics(t).unwrap().unwrap().lines[0].text, "la la la");
+    }
+
+    /// A FLAC with a made-up synced "lyrics" tag, built with ffmpeg since
+    /// this crate has no writer for tagged audio.
+    fn flac_with_embedded_lyrics(dir: &Path, name: &str) -> std::path::PathBuf {
+        let p = dir.join(name);
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=330:duration=2.5:sample_rate=44100",
+                "-ac",
+                "2",
+                "-metadata",
+                "lyrics=[00:00.00]embedded made up line\n",
+            ])
+            .arg(&p)
+            .status()
+            .expect("this test needs ffmpeg to build a tagged fixture file");
+        assert!(status.success());
+        p
+    }
+
+    #[test]
+    fn embedded_lyrics_are_kept_and_the_fetcher_is_not_called() {
+        struct CountingFetcher(std::sync::atomic::AtomicU32);
+        impl LyricsFetcher for CountingFetcher {
+            fn fetch(&self, _: &str, _: &str, _: Option<&str>, _: u64) -> Result<Option<String>> {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Ok(Some("[00:00.00]other made up text\n".into()))
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = ingest::add_file(&lib, &flac_with_embedded_lyrics(dir.path(), "a.flac")).unwrap().track_id;
+        lib.update_track_meta(t, "Title", Some("Artist"), None).unwrap();
+        let fetcher = CountingFetcher(std::sync::atomic::AtomicU32::new(0));
+        prepare(&c, &lib, &mut Silence, &fetcher, t, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        let lyr = lib.lyrics(t).unwrap().unwrap();
+        assert_eq!((lyr.source, lyr.lines[0].text.as_str()), (LyricsSource::Embedded, "embedded made up line"));
+        assert_eq!(fetcher.0.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn lyrics_are_looked_up_on_the_shared_audio_fast_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let p = song(dir.path(), "a.wav");
+        let t1 = ingest::add_file(&lib, &p).unwrap().track_id;
+        let t2 = ingest::add_file(&lib, &p).unwrap().track_id;
+        lib.update_track_meta(t2, "Title", Some("Artist"), None).unwrap();
+        run(&c, &lib, t1, &AtomicBool::new(false)).0.unwrap();
+        prepare(&c, &lib, &mut Silence, &MadeUpLyrics, t2, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(lib.lyrics(t2).unwrap().unwrap().lines[0].text, "la la la");
     }
 
     fn wait_for(rx: &mpsc::Receiver<Event>, want: &Event) -> Vec<Event> {
