@@ -444,14 +444,16 @@ body.k-open #bar{left:var(--s7)}
 .plyr .v-m{text-align:left}.plyr .v-f{text-align:right}.plyr .v-b{text-align:center}
 .part{display:inline-flex;align-items:center;gap:4px;margin-bottom:var(--s1)}
 .plyr .dots{justify-content:flex-start;height:34px}.plyr .dots i{width:12px;height:12px}
-.ptab{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;margin:0 calc(-1 * var(--s5));padding:0 var(--s5)}
-.ptabs{flex:none;display:grid;grid-template-columns:repeat(3,1fr);margin-top:var(--s3);padding:2px var(--s2);border-radius:999px}
+.ptab{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;margin:0 calc(-1 * var(--s5));padding:0 var(--s5) 90px;margin-bottom:calc(-1 * var(--s5))}
+.ptabs{position:absolute;z-index:2;left:var(--s5);right:var(--s5);bottom:var(--s5);display:grid;grid-template-columns:repeat(3,1fr);padding:2px var(--s2);border-radius:999px}
 .pctrls{display:flex;justify-content:center;gap:var(--s3);margin-top:var(--s4)}
 .pctl{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 var(--s4);border-radius:999px;font-size:13px;font-weight:500}
 .pctl .i{width:16px;height:16px}
 .pctl[aria-pressed="true"]{color:var(--accent)}
-.pslide{--fy:calc(var(--sy) * -1);display:flex;align-items:center;gap:var(--s3);height:44px;margin-top:var(--s3);padding:0 var(--s4);border-radius:999px}
-.pslide.gone{display:none}
+.pslot{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows var(--t) var(--ease),opacity var(--t) var(--ease)}
+.pslot.on{grid-template-rows:1fr;opacity:1}
+.pslot>div{min-height:0;overflow:hidden}
+.pslide{display:flex;align-items:center;gap:var(--s3);height:44px;margin-top:var(--s3);padding:0 var(--s4);border-radius:999px}
 .pslide .i{width:18px;height:18px;color:var(--muted)}
 .pslide .vs{flex:1;width:auto}
 .pslide output{font:12px var(--mono);color:var(--muted);min-width:4ch;text-align:right}
@@ -463,7 +465,7 @@ body.k-open #bar{left:var(--s7)}
 .psearch .i{width:24px;height:24px;color:var(--muted)}
 .psearch input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:18px}
 .psearch input::placeholder{color:var(--muted)}
-.plist{display:grid;margin-top:var(--s3)}
+.plist{display:grid;grid-template-columns:minmax(0,1fr);margin-top:var(--s3)}
 .plist .cap{display:flex;align-items:center;gap:6px;padding:var(--s3) 0 var(--s1)}
 .prow{display:flex;align-items:center;gap:var(--s3);min-height:62px}
 .prow .th{width:44px;height:44px;border-radius:var(--r-sm);flex:none}
@@ -1214,6 +1216,8 @@ const TL = {plain:timeline(LYRICS), duet:timeline(DUET)};
 const lyricsOf = s => s.lyrics === 'none' ? null : s.duet ? TL.duet : TL.plain;
 const itemAt = (tl, lt) => { let k = 0; tl.forEach((x, i) => { if (lt >= x.t - (x.gap ? 0 : .35)) k = i; }); return k; };
 const fillDots = (el, lt, x) => el && [...el.children].forEach((d, i) => d.style.setProperty('--p', Math.min(Math.max(lt - (x.end - 3) - i, 0), 1)));
+const fillWords = (el, lt, x) => el && x.words.forEach((w, j) => el.children[j].style.setProperty('--p', Math.min(Math.max((lt - w.t) / w.d, 0), 1)));
+const wordSpans = x => x.words.map(w => `<span class="w">${esc(w.w)}</span>`).join(' ');
 const DOTS = '<i></i><i></i><i></i>';
 const CHORDS = [[261.63,329.63,392],[196,246.94,293.66],[220,261.63,329.63],[174.61,220,261.63]];
 const events = [];
@@ -1275,7 +1279,7 @@ function load(i){
   $('#bTitle').textContent = $('#kTitle').textContent = cur.t;
   $('#bArtist').textContent = `${cur.ar} – ${cur.al}`; $('#kArtist').textContent = cur.ar;
   const tl = lyricsOf(cur);
-  $('#track').innerHTML = !tl ? '' : tl.map(x => x.gap ? `<p class="line gap dots">${DOTS}</p>` : `<p class="line${x.v ? ' v-' + x.v : ''}">${x.words.map(w => `<span class="w">${esc(w.w)}</span>`).join(' ')}</p>`).join('');
+  $('#track').innerHTML = !tl ? '' : tl.map(x => x.gap ? `<p class="line gap dots">${DOTS}</p>` : `<p class="line${x.v ? ' v-' + x.v : ''}">${wordSpans(x)}</p>`).join('');
   show('#noLyr', cur.lyrics === 'none');
   $('#vox').value = cur.vox; syncVox(); renderMenu();
   $$('.row').forEach(r => { const on = +r.dataset.add === cur.id; r.classList.toggle('on', on); r.querySelector('.th').innerHTML = I(on ? 'waveform' : 'list-plus'); });
@@ -1396,7 +1400,7 @@ function renderLyrics(t){
     lastLine = li;
   }
   if (x.gap) fillDots(lines[li], lt, x);
-  else x.words.forEach((w, j) => lines[li].children[j].style.setProperty('--p', Math.min(Math.max((lt - w.t) / w.d, 0), 1)));
+  else fillWords(lines[li], lt, x);
 }
 function renderPlayer(){
   const t = now(), sep = cur.status === 'ready' ? DUR : cur.sep;
@@ -1535,7 +1539,7 @@ const pTabs = {
     <button class="micbtn" id="pMic" aria-label="Mute"><span class="ring"></span></button>
     <div class="pstate" id="pState"></div>
     <div class="pctrls"><button class="pctl" data-pslide="voice">${I('speaker-high')}Voice</button><button class="pctl" data-pslide="singer">${I('user-sound')}Singer</button></div>
-    <div class="pslide fx off gone" id="pSlide"></div>`,
+    <div class="pslot" id="pSlot"><div><div class="pslide" id="pSlide"></div></div></div>`,
   songs: () => `<label class="psearch">${I('magnifying-glass')}<input id="pQ" placeholder="Search songs" value="${esc(P.q)}" aria-label="Search songs" autocomplete="off"></label><div class="plist" id="pRes"></div>`,
   queue: () => `<div class="plist" id="pQueue"></div>`,
 };
@@ -1575,10 +1579,10 @@ function pQueue(){
 function pSlide(k){
   const box = $('#pSlide'); P.slide = P.slide === k ? null : k;
   $$('[data-pslide]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pslide === P.slide));
-  if (!P.slide){ show(box, false); return setTimeout(() => !P.slide && box.classList.add('gone'), 240); }
+  $('#pSlot').classList.toggle('on', !!P.slide);
+  if (!P.slide) return;
   const v = k === 'voice' ? P.vol : cur ? cur.vox : 100;
   box.innerHTML = `${I(k === 'voice' ? 'speaker-high' : 'user-sound')}<input class="vs" id="${k === 'voice' ? 'pVol' : 'pVox'}" type="range" min="0" max="100" value="${v}" style="--v:${v}%" aria-label="${k === 'voice' ? 'Your voice volume' : 'Singer: left is the original, right removes the singer'}" ${k === 'singer' && !cur ? 'disabled' : ''}><output>${k === 'voice' ? v + '%' : ''}</output>`;
-  box.classList.remove('gone'); requestAnimationFrame(() => show(box));
 }
 const pQueueRefresh = () => { if (P.tab === 'queue') pQueue(); };
 let pTimer;
@@ -1628,11 +1632,11 @@ function pTick(force){
       : `<span class="th">${I('music-notes')}</span><div class="grow"><b>Waiting for a song</b><div class="muted">Pick one on the computer</div></div>`;
     const nxt = tl && tl.slice(li + 1).find(y => !y.gap), part = y => y.v ? `<span class="part cap">${I(PART[y.v][0])}${PART[y.v][1]}</span>` : '';
     $('#pLyr').innerHTML = !cur ? '' : !tl ? `<p class="now">No lyrics found, sing it your way.</p>`
-      : (x.gap ? `<p class="now dots">${DOTS}</p>` : `<div class="v-${x.v}">${part(x)}<p class="now">${esc(x.text)}</p></div>`)
+      : (x.gap ? `<p class="now dots">${DOTS}</p>` : `<div class="v-${x.v}">${part(x)}<p class="now">${wordSpans(x)}</p></div>`)
         + (nxt ? `<div class="v-${nxt.v}"><p class="next">${esc(nxt.text)}</p></div>` : '');
     if (key !== pLine) replay('#pLyr'); pLine = key;
   }
-  if (x?.gap) fillDots($('#pLyr .dots'), lt, x);
+  if (x?.gap) fillDots($('#pLyr .dots'), lt, x); else if (x) fillWords($('#pLyr .now'), lt, x);
   const singing = x && playing && !x.gap && lt < x.end;
   P.lv = P.muted || P.state === 'reconnecting' ? 0 : singing ? .5 + Math.random() * .5 : Math.random() * .15;
   $('#pMic').style.setProperty('--lv', P.lv.toFixed(2));
