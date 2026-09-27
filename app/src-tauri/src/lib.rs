@@ -22,6 +22,10 @@ pub fn run() {
                     if let Event::Ready { track_id } | Event::LyricOffset { track_id } | Event::Stage { track_id, stage: Stage::Separating } = e {
                         player::refresh_if_queued(&handle, track_id);
                     }
+                    if let Event::Lyrics { track_id } = e {
+                        phones::lyrics_changed(&handle, track_id);
+                    }
+                    phones::link_done(&handle, &e);
                 }
             });
             app.manage(engine::Startup(events));
@@ -83,6 +87,7 @@ pub fn run() {
             phones::phones_open,
             phones::phones_close,
             phones::phone_remove,
+            phones::phones_clock,
         ])
         .build(tauri::generate_context!())
         .expect("error while running KaraAlwaysOK")

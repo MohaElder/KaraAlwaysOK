@@ -163,6 +163,7 @@ pub(crate) fn update(
     }
     let snap = snapshot(&lib, &p).plain()?;
     let _ = app.emit("player", &snap);
+    crate::phones::send_player(app, &snap);
     Ok(snap)
 }
 
@@ -173,6 +174,7 @@ pub fn refresh_if_queued(app: &AppHandle, track_id: i64) {
     if p.entries.iter().any(|e| e.track_id == track_id) {
         if let Ok(snap) = snapshot(&state.lib.lock().unwrap(), &p) {
             let _ = app.emit("player", &snap);
+            crate::phones::send_player(app, &snap);
         }
     }
 }

@@ -25,6 +25,13 @@ const MAX_MESSAGE: usize = 64 * 1024;
 #[serde(tag = "t", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub(crate) enum FromPhone {
     Join { code: String, id: String, name: String },
+    Singer { v: u8 },
+    Add { track_id: i64, next: bool },
+    AddLink { url: String, next: bool },
+    Move { key: u64, to: usize },
+    Remove { key: u64 },
+    Search { q: String, imported: String },
+    Lyrics { track_id: i64 },
     Ping,
     Leave,
 }
@@ -157,12 +164,14 @@ async fn phone(app: AppHandle, mut ws: WebSocket) {
             msg = ws.recv() => {
                 heard = Instant::now();
                 match msg {
-                    Some(Ok(Message::Text(text))) => {
-                        if let Ok(FromPhone::Leave) = serde_json::from_str(text.as_str()) {
+                    Some(Ok(Message::Text(text))) => match serde_json::from_str(text.as_str()) {
+                        Ok(FromPhone::Leave) => {
                             super::leave(&app, &id);
                             return close_with(&mut ws, 1000).await;
                         }
-                    }
+                        Ok(msg) => super::handle(&app, &id, msg),
+                        Err(_) => {}
+                    },
                     Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                     Some(Ok(_)) => {}
                 }

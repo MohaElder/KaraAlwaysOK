@@ -75,5 +75,14 @@ await first.closed;
 const again = await phone(origin, "6");
 await until(() => heard(again, "joined"), "a phone joining after one left");
 
+const second = guests[1];
+await until(() => heard(second, "clock"), "where the song is");
+second.ws.send(JSON.stringify({ t: "search", q: "", imported: "Imported" }));
+await until(() => second.got.some((m) => m.t === "results" && m.q === ""), "search results");
+second.ws.send(JSON.stringify({ t: "add", trackId: 987654321, next: false }));
+await until(() => second.got.some((m) => m.t === "refused" && m.problem === "songGone"), "a missing song refused");
+second.ws.send(JSON.stringify({ t: "lyrics", trackId: 987654321 }));
+await until(() => heard(second, "lyrics"), "lyrics");
+
 console.log("phone check OK");
 for (const g of [...guests.slice(1), again]) g.ws.close();
