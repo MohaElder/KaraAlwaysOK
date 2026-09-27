@@ -1,17 +1,17 @@
 # Phase 3 — Apple Music Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The user's Apple Music playlists, albums and artists appear in KaraAlwaysOK after one login; tapping one of their songs finds a YouTube upload of it (official audio by ISRC first), prepares and plays it like any song, "Change match…" fixes wrong picks, animated covers loop where Apple has them, and Apple Music songs and phrases show up in search.
 
-**Architecture:** kara-core gains `apple` (a read-only client for `amp-api.music.apple.com` that uses the web player's own tokens, the macOS Keychain, parsers for Apple's answers, the library sync and catalog look-ups) and `matching` (YouTube Music songs by ISRC, then YouTube videos for "artist title", scored and filtered). Library upgrade step 7 adds the few columns this needs; matches are ordinary audio sources of kind `match`, so lyric timing stays per upload. The app gains `sources.rs` (an incognito Tauri login window polled with `eval_with_callback` — Apple's page gets no IPC — plus the status event and a background refresh) and `matches.rs`; the frontend adds Settings › Sources, the provider switcher, the Change match sheet, a `MotionArt` video layer and Apple results in search.
+**Architecture:** kara-core gains `apple` (a read-only client for `amp-api.music.apple.com` that uses the web player's own tokens, the macOS Keychain, parsers for Apple's answers, the library sync and catalog look-ups) and `matching` (YouTube Music songs by ISRC, then YouTube videos for "artist title", scored and filtered). One new library upgrade step adds the few columns this needs; matches are ordinary audio sources of kind `match`, so lyric timing stays per upload. The app gains `sources.rs` (an incognito Tauri login window polled with `eval_with_callback` — Apple's page gets no IPC — plus the status event and a background refresh) and `matches.rs`; the frontend adds Settings › Sources, the provider switcher, the Change match sheet, a `MotionArt` video layer and Apple results in search.
 
-**Tech Stack:** Rust 2021 (rusqlite, reqwest blocking + rustls, serde_json, `security-framework` 3 for the Keychain — already in the lock file), Tauri 2.12 (`WebviewWindowBuilder::incognito`, `on_new_window`, `eval_with_callback`, `cookies_for_url`), Svelte 5 + SvelteKit 2, vitest, Playwright with the faked backend.
+**Tech Stack:** Rust 2021 (rusqlite, reqwest blocking + rustls, serde_json, `security-framework` 3 for the Keychain — already in the lock file), Tauri 2.12 (`WebviewWindowBuilder::incognito`, `on_new_window`, `eval_with_callback`, `cookies_for_url`), Phase 2's shared YouTube search, artwork helper and isolated check, Svelte 5 + SvelteKit 2, vitest, Playwright with the faked backend.
 
-**Spec:** `docs/superpowers/specs/2026-09-27-phase3-streaming-providers-design.md` (authority). Its scope note rules: **Apple Music only**; everything about Spotify is deferred and not built here. Built on `docs/superpowers/specs/2026-09-26-kara-always-oki-design.md` (UI, copy, language and engineering rules; "Suggestions while typing"). Evidence: `docs/superpowers/spikes/2026-09-27-streaming-providers.md` (the web-player route, verified with the user's account). UX reference: `docs/prototype/hifi.html` — the provider switcher (`#prov`, `.seg`, `PROV`, `plogos`) and the Sources rows (`renderSources`, `.srow`).
+**Spec:** `docs/superpowers/specs/2026-09-27-phase3-streaming-providers-design.md` (authority). Runs after `docs/superpowers/plans/2026-09-27-phase2-phone-mics.md` (Phase 2) and builds on its code. Its scope note rules: **Apple Music only**; everything about Spotify is deferred and not built here. Built on `docs/superpowers/specs/2026-09-26-kara-always-oki-design.md` (UI, copy, language and engineering rules; "Suggestions while typing"). Evidence: `docs/superpowers/spikes/2026-09-27-streaming-providers.md` (the web-player route, verified with the user's account). UX reference: `docs/prototype/hifi.html` — the provider switcher (`#prov`, `.seg`, `PROV`, `plogos`) and the Sources rows (`renderSources`, `.srow`).
 
 **Probed while writing this plan (2026-09-27, public data only, no account):**
-- `amp-api.music.apple.com` answers catalog requests with the developer token that music.apple.com's own script hands MusicKit (`developerToken:<name>` … `<name>="eyJ…"` in `/assets/index~*.js`, linked from the page after its redirect to `/us/new`). Without the `Origin: https://music.apple.com` header it answers 401.
+- `amp-api.music.apple.com` answers the web player's requests only with the `Origin: https://music.apple.com` header (401 without it). The app takes the developer token only from the login window; it never reads it from Apple's page itself.
 - `GET /v1/catalog/us/songs?filter[isrc]=…` works; catalog songs carry `isrc` and `url` = `https://music.apple.com/us/album/<slug>/<albumId>?i=<songId>` (the album id without another request).
 - `GET /v1/catalog/us/search/suggestions?term=…&kinds=terms` answers `results.suggestions[]` with `kind`, `searchTerm`, `displayTerm`.
 - `extend=editorialVideo` works on `/v1/catalog/us/albums/<id>` and `/v1/catalog/us/playlists/<pl.id>`; it gives `motionDetailSquare`, `motionSquareVideo1x1`, `motionDetailTall`, `motionTallVideo3x4` (playlists also `motionWideVideo21x9`), each `{ previewFrame, video }` where `video` is an HLS `.m3u8` on `mvod.itunes.apple.com` that loads without any header.
@@ -21,34 +21,36 @@
 
 ## Global Constraints
 
-- Preconditions: Phase 1b (`docs/superpowers/plans/2026-09-27-phase1b-app.md`) is complete through Task 32 (fast YouTube search and suggestions: `ingest::youtube`, `suggest.ts` with `PHRASE_SOURCES`), i.e. `phase1b-app` at `e2c114e` or later. Work on a local branch `phase3-apple-music` made from the then-current `phase1b-app`. Phase 2 (phone mics) is independent; if it lands first, merge conflicts are in shared lists only (`lib.rs` command list, `api.ts`, i18n files, `fake-backend.ts`). The real code at HEAD wins over any snippet here: when a name or signature differs, follow HEAD and keep this plan's behavior.
+- Preconditions: Phase 2 (`docs/superpowers/plans/2026-09-27-phase2-phone-mics.md`) is finished — its last task done and reviewed — on `phase2-phone-mics`, which includes Phase 1b through Task 33 (`285675b`: `info_edited`, the lyrics swap-retry, keeping a song's info on re-download). Phase 3 works in its own git worktree (superpowers:using-git-worktrees) on branch `phase3-apple-music` made from the then-current tip of `phase2-phone-mics`. It reuses Phase 2's code: `adding::find_on_youtube` (moved into kara-core by Task 6), the `art.ts` picture helper and `phones::encode`'s artwork links (Task 8), `app/scripts/isolated-check.sh` and `window-id.swift` (used unchanged), `Entry.by` in the player. Every task that touches a file Phase 2 changed says "read the real code first": the code at HEAD wins over any snippet here — when a name or signature differs, follow HEAD and keep this plan's behavior.
 - **The user's dev app must never be disturbed.** The user runs `kara-app` with Vite on port 1420 while tasks run. No step may stop or restart it (`pkill`, `kill` by name), bind or wait on port 1420, run `app/scripts/app-check.sh`, `npm run app-check` or `npm run tauri:dev`, or build into the shared `target/` with different features. Running the app is only through the **isolated check** (Task 7): its own target folder, its own build with the page inside, its own process id, scratch data. The last task asks the user to restart their dev app; it starts nothing.
-- Work in a separate git worktree (superpowers:using-git-worktrees) on branch `phase3-apple-music`: the user's dev app hot-reloads the page from the main checkout, so half-done frontend work must never land there.
-- Never read or write `~/Library/Application Support/kara-always-oki`. The isolated check sets `KARA_DATA=.superpowers/sdd/2026-09-27-phase3-apple-music/data`.
+- The worktree matters: the user's dev app hot-reloads the page from the main checkout, so half-done frontend work must never land there.
+- Never read or write `~/Library/Application Support/kara-always-oki`. The isolated check is Phase 2's script, which uses its own scratch data folder and target folder; pictures and logs go to `.superpowers/sdd/2026-09-27-phase3-apple-music/shots/`.
 - Before any `cargo` command run `source "$HOME/.cargo/env"`.
 - Code bar (the user's): comments only summarize what a function does (a constant or field gets one only if someone would reasonably ask) — no reasoning, history or postmortems; code explains itself through names and structure; less code and reuse over new layers (YAGNI); every test must be necessary — no redundant tests.
-- Probe over reasoning: when an API or behavior is in doubt, run a focused command or test or read the real source (`~/.cargo/registry/src/*/<crate>`, `app/node_modules/<pkg>`) before deciding. Read-only live probes are allowed against Apple's **catalog** (public web token), YouTube and YouTube Music; never against the user's account. If the environment refuses a probe, skip it and rely on the samples.
+- Probe over reasoning: when an API or behavior is in doubt, run a focused command or test or read the real source (`~/.cargo/registry/src/*/<crate>`, `app/node_modules/<pkg>`) before deciding. Read-only live probes are allowed against YouTube and YouTube Music only — never any request to Apple Music with a token. If the environment refuses a probe, skip it and rely on the samples.
 - Every task's checks are commands a subagent can run without the user's Apple account. Anything that needs the real account is in the final checklist (Task 15).
-- **The login is secret.** The developer token, the user token and the `media-user-token` cookie live only in memory and in the macOS Keychain (service `world.aako.kara-always-oki`, account `apple-music`). They are sent only to `amp-api.music.apple.com` (and nothing is sent to `music.apple.com` but plain page loads). They never go into the library database, logs, `eprintln!`/`println!`, error messages, test output, task reports, commits or `Debug` output (`Tokens` has a redacting `Debug`). The login window gets no IPC permissions: `app/src-tauri/capabilities/default.json` stays `"windows": ["main"]`.
+- **The login is secret.** The developer token, the user token and the `media-user-token` cookie live only in memory and in the macOS Keychain (service `world.aako.kara-always-oki`, account `apple-music`). They are sent only to `amp-api.music.apple.com`. They never go into the library database, logs, `eprintln!`/`println!`, error messages, test output, task reports, commits or `Debug` output (`Tokens` has a redacting `Debug`). The login window gets no IPC permissions: `app/src-tauri/capabilities/default.json` stays `"windows": ["main"]`. The Keychain item is shared by every data folder, so no check (isolated or scratch) ever presses Connect or Disconnect.
 - Read-only: the app only sends GET requests to Apple Music and never changes the user's Apple Music library.
 - UI copy is plain: no engineering words ("token", "API", "Keychain", "sync", "ISRC", "HLS", "cookie", "web player") — Apple Music and "login" are fine. Every piece of UI text goes through `t(key, params)` in all six locales (`app/src/lib/i18n/{en,ja,ko,zh-Hans,zh-Hant,es}.ts`, appended at the end of each file); a task that adds or removes text changes all six; `npm run check:i18n` must pass. Each new `Problem` gets a `problem.<code>` key and joins `ProblemCode` in `app/src/lib/api.ts`. Song titles, artists and album names show exactly as Apple gives them.
 - Phase 1 UI rules: tokens only from `app/src/styles/tokens.css`, Phosphor Bold icons from `phosphor-svelte/lib/<Name>Icon`, glass for everything floating, motion only through `$lib/motion` (`fade`, `slide`; fade only under reduced motion), icon beside every label except song info, providers shown by their logos (Apple Music: `AppleLogoIcon`; Local: `FolderIcon`; All: `SquaresFourIcon`).
 - Sample data in code and tests is made up (titles, artists, ids, URLs); recorded samples are anonymized (no real titles, ids, names or tokens). Ignored network tests may use a real public query or video. Never real lyrics.
-- Numbers: requests to Apple at most one per 250 ms; a 429 with `Retry-After` ≤ 30 s is waited out once, otherwise "busy"; a refused login (401/403) first renews the developer token from music.apple.com once; the app refreshes the library on start when the last refresh is older than 6 hours; library lists and collection songs are read 100 per page; artwork URLs use `600x600`; an animated cover (or its absence) is kept 30 days; matching accepts official audio within 15 s of the song's length and videos within 90 s, keeps 8 uploads per song; Apple search asks for 10 songs and 5 phrases, 280 ms after typing stops (the same timer as YouTube).
+- Numbers: requests to Apple at most one per 250 ms; a 429 with `Retry-After` ≤ 30 s is waited out once, otherwise "busy"; a refused login (401/403) marks Apple Music signed out at once ("Log in to Apple Music again"); the app refreshes the library on start when the last refresh is older than 6 hours; library lists and collection songs are read 100 per page; artwork URLs use `600x600`; an animated cover (or its absence) is kept 30 days; matching accepts official audio within 15 s of the song's length and videos within 90 s, keeps 8 uploads per song; Apple search asks for 10 songs and 5 phrases, 280 ms after typing stops (the same timer as YouTube).
 - No remote actions: no `git push`, no `gh`, no tags.
-- Verification per task: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cd app && npm run check && npm test && npm run check:i18n`, Playwright `cd app && npx playwright test <file>` (its own port 1430), and from Task 7 on the isolated check where the task says so. The task report names every command run and its result.
+- Verification per task: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cd app && npm run check && npm test && npm run check:i18n`, Playwright `cd app && npx playwright test <file>` (its own port 1430), and from Task 7 on the isolated check (Phase 2's `app/scripts/isolated-check.sh`) where the task says so. The task report names every command run and its result.
 
 ## Review Focus
 
 1. **An Apple playlist mistaken for Imported** — today the app calls every non-user playlist "Imported" (the sidebar name, search by "Imported", "reveal" after adding). An Apple playlist must keep its own name, never match a search for "Imported", and adding a song must still reveal Local › Imported. Tests: Task 8 `an_apple_playlist_is_found_by_its_own_name_not_as_imported`; Task 11 `an Apple Music playlist keeps its own name and its songs queue like any other`.
 2. **The login leaking** — tokens must not appear in `Debug` output, error text (anyhow chains included), logs or the database. Test: Task 3 `the_login_never_shows_in_debug_output_or_error_messages`; Task 1 stores no token column; Task 7 leaves the login window without IPC permission (reviewer checks `capabilities/default.json` is unchanged).
-3. **A refresh that fails, or races the queue** — a failed refresh leaves the synced library as it was; songs in the queue or already sung are never pruned (the queue snapshot would break); disconnecting keeps songs sung or in your own playlists. Tests: Task 5 `a_sync_that_fails_leaves_the_library_as_it_was`, `a_later_sync_refetches_only_changed_collections_drops_gone_ones_and_keeps_sung_or_queued_songs`, `disconnecting_removes_apple_music_but_keeps_songs_sung_or_in_your_own_playlists`.
-4. **Expiry** — the web player's developer token lasts about 60 days: the app renews it from music.apple.com instead of asking for a login; a truly refused login marks the account signed out once (one toast with Log in), not an error per request. Tests: Task 3 `a_refused_developer_token_is_renewed_once_and_a_refused_login_means_signed_out`; Task 10 `a login that ran out says so, and Log in opens the login window again`.
+3. **A refresh that fails, or races the queue** — a failed refresh keeps everything already synced (the list of collections may be half updated, but nothing that still exists is lost and nothing is pruned before a sync completes); songs in the queue or already sung are never pruned (the queue snapshot would break); disconnecting keeps songs sung or in your own playlists. Tests: Task 5 `a_sync_that_fails_leaves_the_library_as_it_was`, `a_later_sync_refetches_only_changed_collections_drops_gone_ones_and_keeps_sung_or_queued_songs`, `disconnecting_removes_apple_music_but_keeps_songs_sung_or_in_your_own_playlists`.
+4. **A login that runs out** — a refused login (401/403) marks the account signed out once (one toast with Log in), not an error per request, and synced songs keep working. Tests: Task 3 `a_refused_login_means_signed_out_after_one_request`; Task 10 `a login that ran out says so, and Log in opens the login window again`.
 5. **Wrong versions and non-Latin titles** — live, karaoke, cover, sped-up and other singers' uploads are refused unless the song itself is one; titles in 「」《》 with the singer outside still match; a song whose uploads are all refused keeps them for Change match and isn't searched again on every play. Tests: Task 6 `the_official_audio_found_by_isrc_is_used_and_other_songs_and_versions_are_refused`, `a_songs_own_live_version_accepts_live_uploads_and_titles_in_brackets_match`, `a_song_nothing_fits_keeps_the_uploads_for_change_match_and_is_not_searched_again`.
 
 ---
 
 ## File Structure
+
+Paths are as on `phase2-phone-mics` when Phase 2 is finished; files Phase 2 created or changed are marked "(Phase 2)".
 
 ```
 kara-always-oki/
@@ -58,48 +60,48 @@ kara-always-oki/
 │  └─ src/
 │     ├─ lib.rs                                 + pub mod apple, matching
 │     ├─ problem.rs                             + AppleSignedOut, AppleUnreachable, AppleChanged, AppleBusy, LoginSave, NoMatch, MatchLookup; − StreamingLater
-│     ├─ library/mod.rs                         step 7; StreamingTrack/Collection, Account; streaming upserts, versions, pruning, accounts,
-│     │                                         motion cache; match sources (add_match, sources, select_source); search shows only your songs
+│     ├─ library/mod.rs                         the next upgrade step; StreamingTrack/Collection (with artwork), Account; CollectionRow.artwork_path;
+│     │                                         streaming upserts, versions, pruning, accounts, motion cache; match sources; search shows only your songs
 │     ├─ lyrics.rs                              key, similar, singer_likeness, words → pub(crate)
-│     ├─ jobs.rs                                a streaming song gets matched before fetching; match downloads are temporary files
+│     ├─ jobs.rs                                a streaming song gets matched before fetching; match downloads are temporary; no lyrics rename for streaming songs
 │     ├─ matching.rs              (new)         Finder, YouTube, score, find, search_once, ensure
 │     ├─ ingest/
-│     │  ├─ mod.rs                              match sources download without renaming the song; search_videos
+│     │  ├─ mod.rs                              match sources download without renaming the song; find_on_youtube (moved from the app)
 │     │  ├─ youtube.rs                          clock_ms → pub(crate)
 │     │  ├─ ytmusic.rs            (new)         YouTube Music songs search
 │     │  └─ ytmusic-search.sample.json (new)
 │     └─ apple/
-│        ├─ mod.rs                (new)         Tokens, Reply, Client (pace, renew, 429, pages), web_developer_token
+│        ├─ mod.rs                (new)         Tokens, Reply, Client (pace, 429, pages)
 │        ├─ keychain.rs           (new)         load/save/delete the login (macOS)
 │        ├─ parse.rs              (new)         Apple answers → StreamingTrack/StreamingCollection, motion, phrases
 │        ├─ sync.rs               (new)         sync, disconnect
 │        ├─ catalog.rs            (new)         motion (cached), search, suggestions
 │        └─ samples/*.json        (new)         anonymized answers
 ├─ app/
-│  ├─ scripts/isolated-check.sh   (new unless Phase 2 made it)
-│  ├─ scripts/window-id.swift                   also finds a window by process id
+│  ├─ scripts/isolated-check.sh, window-id.swift (Phase 2)   used unchanged
 │  ├─ src-tauri/src/
-│  │  ├─ lib.rs                                 Apple state, start refresh, KARA_APPLE_LOGIN_CHECK, commands
+│  │  ├─ lib.rs                   (Phase 2)     Apple state, start refresh, KARA_APPLE_LOGIN_CHECK, commands
 │  │  ├─ sources.rs               (new)         login window, status event, refresh, disconnect, motion, Apple search
 │  │  ├─ matches.rs               (new)         match_candidates, choose_match, choose_match_link
 │  │  ├─ library.rs                             cards/page by provider, artists merged in All, providers on cards
-│  │  ├─ adding.rs                              Imported only for Local; youtube_search uses ingest::search_videos
-│  │  └─ player.rs                              Player::track_ids, Player::renew, restart
+│  │  ├─ adding.rs                (Phase 2)     Imported only for Local; calls ingest::find_on_youtube
+│  │  ├─ phones/mod.rs            (Phase 2)     encode keeps web artwork addresses as they are
+│  │  └─ player.rs                (Phase 2)     Player::track_ids, Player::renew, restart
 │  ├─ src/lib/
-│  │  ├─ api.ts                                 Apple, match and motion commands; CollectionCard.providers; problem codes
-│  │  ├─ art.ts                                 artworkUrl (web addresses as they are)
-│  │  ├─ format.ts / format.test.ts             ago()
+│  │  ├─ api.ts                                 Apple, match and motion commands; CollectionCard.providers/artworkPath; problem codes
+│  │  ├─ art.ts                   (Phase 2)     one picture helper: /art/ links and web addresses as they are
+│  │  ├─ format.ts                              ago()
 │  │  ├─ search.ts / search.test.ts             Apple results in the text view
-│  │  ├─ suggest.ts                             Apple phrases
-│  │  ├─ state/sources.svelte.ts  (new)         Apple status, toasts
+│  │  ├─ state/sources.svelte.ts  (new)         Apple status, toasts, Apple phrases while signed in
 │  │  ├─ state/library.svelte.ts                provider, cardName fix
 │  │  ├─ state/adding.svelte.ts                 reveal finds Local › Imported
-│  │  ├─ state/player.svelte.ts                 "No singable version" offers Change match
-│  │  ├─ state/ui.svelte.ts                     sheet kind "match"
+│  │  ├─ state/player.svelte.ts   (Phase 2)     "No singable version" offers Change match
+│  │  ├─ state/ui.svelte.ts       (Phase 2)     sheet kind "match"
 │  │  ├─ components/SettingsSheet.svelte        Sources section
 │  │  ├─ components/Sidebar.svelte              provider switcher, logos, Apple notes
+│  │  ├─ components/Cover.svelte                a collection's own artwork when it has one
 │  │  ├─ components/ProviderLogos.svelte (new)
-│  │  ├─ components/CollectionView.svelte       logos, animated cover
+│  │  ├─ components/CollectionView.svelte       logos, own artwork, animated cover
 │  │  ├─ components/SongRow.svelte              source logo in your own playlists
 │  │  ├─ components/MatchSheet.svelte   (new)   Change match
 │  │  ├─ components/SongMenu.svelte / MoreMenu.svelte   Change match…
@@ -107,42 +109,43 @@ kara-always-oki/
 │  │  ├─ components/KaraokeBackground.svelte    animated background, web artwork
 │  │  ├─ components/SearchBar.svelte / SearchResults.svelte   Apple results
 │  │  └─ i18n/*.ts                              keys per task
-│  ├─ src/routes/+page.svelte                   sources.init, MatchSheet, empty state per provider
+│  ├─ src/routes/+page.svelte     (Phase 2)     sources.init, MatchSheet, empty state per provider
 │  └─ tests/
-│     ├─ fake-backend.ts                        Apple account, collections by provider, matches, motion, Apple search
+│     ├─ fake-backend.ts          (Phase 2)     Apple account, collections by provider, matches, motion, Apple search
 │     └─ apple-music.spec.ts      (new)
 ```
 
 ## Task list
 
-1. Library: streaming songs and collections, accounts, animated-cover cache (upgrade step 7)
+1. Library: streaming songs and collections (with artwork), accounts, animated-cover cache (the next upgrade step)
 2. Match uploads as audio sources; downloading a match
 3. Apple Music client: the login, the Keychain, requests
 4. Reading Apple's answers (with anonymized samples)
 5. Sync and disconnect
-6. Matching a streaming song to an upload
-7. The app: login window, Sources status, refresh, disconnect; the isolated check
-8. The app: collections by source, artists merged in All, Imported only for Local
+6. Matching a streaming song to an upload (on Phase 2's shared YouTube search)
+7. The app: login window, Sources status, refresh, disconnect
+8. The app: collections by source, artists merged in All, Imported only for Local; web artwork on the Mac and on phones
 9. The app: Change match, animated covers and Apple search commands
 10. Settings › Sources
-11. The provider switcher
+11. The provider switcher, and collections' own artwork
 12. The Change match sheet
 13. Animated covers
 14. Apple Music in search
-15. README, full check and the user's checklist
+15. README, full check and the user's checklist (on a copy of the library)
 
 ---
 
-### Task 1: Library — streaming songs and collections, accounts, animated-cover cache (upgrade step 7)
+### Task 1: Library — streaming songs and collections (with artwork), accounts, animated-cover cache (the next upgrade step)
 
 **Files:**
-- Modify: `crates/kara-core/src/library/mod.rs` (types after `LyricsRow`; `STEPS`; methods in a new `// ---- streaming ----` block after `// ---- lyrics ----`; tests)
+- Modify: `crates/kara-core/src/library/mod.rs` (types after `LyricsRow`; `CollectionRow`, `COLLECTION_COLS`, `collection_row`; `STEPS`; methods in a new `// ---- streaming ----` block after the `// ---- settings ----` methods; tests)
 
 **Interfaces:**
 - Consumes: `Library`, `ProviderId`, `CollectionKind`, `STEPS` (existing).
 - Produces (all `pub`, in `kara_core::library`):
   - `struct StreamingTrack { provider_ref: String, title: String, artist: Option<String>, album: Option<String>, duration_ms: Option<i64>, isrc: Option<String>, album_ref: Option<String>, artwork: Option<String> }` (derive `Clone, Debug, PartialEq`)
-  - `struct StreamingCollection { kind: CollectionKind, provider_ref: String, name: String, subtitle: Option<String>, catalog_ref: Option<String>, version: Option<String> }` (derive `Clone, Debug, PartialEq`)
+  - `struct StreamingCollection { kind: CollectionKind, provider_ref: String, name: String, subtitle: Option<String>, artwork: Option<String>, catalog_ref: Option<String>, version: Option<String> }` (derive `Clone, Debug, PartialEq`)
+  - `CollectionRow` gains `artwork_path: Option<String>` (JSON `artworkPath`): a streaming collection's own artwork (a web address); None for local ones.
   - `struct Account { display_name: Option<String>, refreshed_at: Option<i64>, signed_out: bool }` (derive `Clone, Debug, PartialEq, serde::Serialize`, `camelCase`)
   - `Library::upsert_streaming_track(&self, provider: ProviderId, t: &StreamingTrack) -> Result<i64>`
   - `Library::track_isrc(&self, id: i64) -> Result<Option<String>>`, `Library::track_album_ref(&self, id: i64) -> Result<Option<String>>`
@@ -154,7 +157,7 @@ kara-always-oki/
   - `Library::account(&self, provider: ProviderId) -> Result<Option<Account>>`, `connect_account(&self, provider, display_name: Option<&str>) -> Result<()>`, `set_refreshed(&self, provider, at_ms: i64) -> Result<()>`, `set_signed_out(&self, provider) -> Result<()>`, `delete_account(&self, provider) -> Result<()>`
   - `Library::motion(&self, reference: &str) -> Result<Option<(Option<String>, i64)>>`, `Library::set_motion(&self, reference: &str, url: Option<&str>) -> Result<()>`
   - test helper `fn streaming(id: &str, title: &str) -> StreamingTrack` in `library::tests` (Task 2 reuses it)
-  - Step 7 also adds `audio_source.channel` and `audio_source.thumbnail` (used by Task 2).
+  - The step also adds `audio_source.channel` and `audio_source.thumbnail` (used by Task 2).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -194,10 +197,19 @@ In `crates/kara-core/src/library/mod.rs`, inside `mod tests`, add:
         let l = lib();
         let [listed, sung, queued, gone] = ["1", "2", "3", "4"].map(|r| l.upsert_streaming_track(ProviderId::Apple, &streaming(r, r)).unwrap());
         let local_orphan = l.add_track(&local("Local orphan", None)).unwrap();
-        let playlist = StreamingCollection { kind: CollectionKind::Playlist, provider_ref: "p.1".into(), name: "Late Night Drive".into(), subtitle: None, catalog_ref: None, version: Some("v1".into()) };
+        let playlist = StreamingCollection {
+            kind: CollectionKind::Playlist,
+            provider_ref: "p.1".into(),
+            name: "Late Night Drive".into(),
+            subtitle: None,
+            artwork: Some("https://example.com/made-up/playlist/600x600bb.jpg".into()),
+            catalog_ref: None,
+            version: Some("v1".into()),
+        };
         let pl = l.upsert_streaming_collection(ProviderId::Apple, &playlist).unwrap();
         l.set_collection_tracks(pl, &[listed, listed], Some("v1")).unwrap();
         assert_eq!(l.collection_version(pl).unwrap().as_deref(), Some("v1"));
+        assert_eq!(l.collection(pl).unwrap().artwork_path.as_deref(), Some("https://example.com/made-up/playlist/600x600bb.jpg"));
         let s = l.add_source(sung, SourceKind::Match, "https://www.youtube.com/watch?v=aaaaaaaaaaa", None).unwrap();
         l.set_source_audio(s, "h", 1000).unwrap();
 
@@ -235,7 +247,7 @@ Expected: compile errors — `StreamingTrack`, `upsert_streaming_track`, `Accoun
 
 - [ ] **Step 3: Add the upgrade step**
 
-Append to `STEPS` (after the `lyric_synced_at` step):
+Append at the very end of `STEPS`, after the last step at HEAD (`info_edited` today). Never write its number anywhere; the tests use `STEPS.len()`:
 
 ```rust
     |tx| {
@@ -281,6 +293,8 @@ pub struct StreamingCollection {
     pub provider_ref: String,
     pub name: String,
     pub subtitle: Option<String>,
+    /// A web address of its own artwork.
+    pub artwork: Option<String>,
     /// The service's catalog id for it, where its animated cover lives.
     pub catalog_ref: Option<String>,
     /// Differs from the last one seen whenever its songs may have changed.
@@ -297,6 +311,18 @@ pub struct Account {
     pub signed_out: bool,
 }
 
+```
+
+Give `CollectionRow` its artwork (after `user`):
+
+```rust
+    /// A streaming collection's own artwork (a web address); None for local ones.
+    pub artwork_path: Option<String>,
+```
+
+and read it: `const COLLECTION_COLS: &str = "id, provider, kind, name, subtitle, provider_ref LIKE 'user:%', artwork_path";`, and in `collection_row` add `artwork_path: r.get(6)?`.
+
+```rust
 /// "1,2,3", for an SQL `IN (…)` list of ids.
 fn id_list(ids: &[i64]) -> String {
     ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
@@ -332,10 +358,11 @@ After the `// ---- settings ----` methods (still inside `impl Library`) add:
     /// Adds a streaming playlist or album, or updates the one with the same service id; returns its id.
     pub fn upsert_streaming_collection(&self, provider: ProviderId, c: &StreamingCollection) -> Result<i64> {
         Ok(self.conn.query_row(
-            "INSERT INTO collection (provider, kind, provider_ref, name, subtitle, catalog_ref) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT (provider, kind, provider_ref) DO UPDATE SET name = excluded.name, subtitle = excluded.subtitle, catalog_ref = excluded.catalog_ref
+            "INSERT INTO collection (provider, kind, provider_ref, name, subtitle, artwork_path, catalog_ref) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT (provider, kind, provider_ref) DO UPDATE SET name = excluded.name, subtitle = excluded.subtitle,
+               artwork_path = excluded.artwork_path, catalog_ref = excluded.catalog_ref
              RETURNING id",
-            params![provider, c.kind, c.provider_ref, c.name, c.subtitle, c.catalog_ref],
+            params![provider, c.kind, c.provider_ref, c.name, c.subtitle, c.artwork, c.catalog_ref],
             |r| r.get(0),
         )?)
     }
@@ -458,10 +485,10 @@ git commit -m "feat(core): library keeps streaming songs, collections, accounts 
 - Modify: `app/src/lib/api.ts` (`ProblemCode`: remove `"streamingLater"`), `app/src/lib/i18n/{en,ja,ko,zh-Hans,zh-Hant,es}.ts` (remove `"problem.streamingLater"`)
 
 **Interfaces:**
-- Consumes: Task 1's step 7 columns and `streaming()` test helper; `ingest::preview::SearchHit { url, preview: LinkPreview { title, channel, duration_ms, thumbnail } }`.
+- Consumes: Task 1's upgrade step columns and `streaming()` test helper; `ingest::preview::SearchHit { url, preview: LinkPreview { title, channel, duration_ms, thumbnail } }`.
 - Produces:
   - `AudioSource` gains `duration_ms: Option<i64>`, `channel: Option<String>`, `thumbnail: Option<String>`, `selected: bool`.
-  - `Library::add_match(&self, track_id: i64, hit: &SearchHit) -> Result<i64>` — saved not in use.
+  - `Library::add_match(&self, track_id: i64, hit: &SearchHit) -> Result<i64>` — saved not in use; an upload the song already has keeps its id (no duplicates when two searches race).
   - `Library::sources(&self, track_id: i64) -> Result<Vec<AudioSource>>` — in the order added.
   - `Library::select_source(&self, track_id: i64, source_id: i64) -> Result<()>` — fails (and changes nothing) when the source isn't the song's.
   - `ingest::fetch_audio` downloads a `SourceKind::Match` source like a link but never renames the song, files it in collections or saves its thumbnail.
@@ -481,6 +508,7 @@ In `library/mod.rs` tests add (top of `mod tests`: `use crate::ingest::preview::
         };
         let a = l.add_match(t, &hit("aaaaaaaaaaa", "Neon Tidewater")).unwrap();
         let b = l.add_match(t, &hit("bbbbbbbbbbb", "Neon Tidewater (Official Video)")).unwrap();
+        assert_eq!(l.add_match(t, &hit("aaaaaaaaaaa", "Neon Tidewater")).unwrap(), a);
         assert_eq!(l.selected_source(t).unwrap(), None);
         l.select_source(t, a).unwrap();
         l.set_lyric_offset(a, 1_500).unwrap();
@@ -559,8 +587,12 @@ const SOURCE_COLS: &str =
 After `selected_source` add:
 
 ```rust
-    /// Saves an upload a streaming song could be sung from, not yet in use; returns its id.
+    /// Saves an upload a streaming song could be sung from, not yet in use; returns its id (the saved one's, when the song has it already).
     pub fn add_match(&self, track_id: i64, hit: &SearchHit) -> Result<i64> {
+        let saved = self.conn.query_row("SELECT id FROM audio_source WHERE track_id = ?1 AND uri = ?2", params![track_id, hit.url], |r| r.get(0)).optional()?;
+        if let Some(id) = saved {
+            return Ok(id);
+        }
         self.conn.execute(
             "INSERT INTO audio_source (track_id, kind, uri, label, duration_ms, channel, thumbnail, status) VALUES (?1, 'match', ?2, ?3, ?4, ?5, ?6, 'pending')",
             params![track_id, hit.url, hit.preview.title, hit.preview.duration_ms, hit.preview.channel, hit.preview.thumbnail],
@@ -600,7 +632,7 @@ fn download_from_page(store: &Store, url: &Url) -> Result<ytdlp::Fetched> {
 }
 ```
 
-Replace the `SourceKind::Link => { … }` and `SourceKind::Match => bail!(Problem::StreamingLater),` arms with one arm:
+Read `fetch_audio` at HEAD first (Task 33 guards the song's info with `if source.audio_hash.is_none()`; keep that guard exactly). Replace the `SourceKind::Link => { … }` and `SourceKind::Match => bail!(Problem::StreamingLater),` arms with one arm whose `Extractable` body is HEAD's, only fetching through `download_from_page`, plus one guard arm for matches:
 
 ```rust
         SourceKind::Link | SourceKind::Match => {
@@ -610,13 +642,15 @@ Replace the `SourceKind::Link => { … }` and `SourceKind::Match => bail!(Proble
                 LinkVerdict::Extractable if source.kind == SourceKind::Match => Ok(download_from_page(store, &url)?.path),
                 LinkVerdict::Extractable => {
                     let f = download_from_page(store, &url)?;
-                    lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
-                    let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
-                    texts.extend(f.tags.iter().map(String::as_str));
-                    if looks_instrumental(&texts) {
-                        lib.mark_instrumental(track.id)?;
+                    if source.audio_hash.is_none() {
+                        lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
+                        let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
+                        texts.extend(f.tags.iter().map(String::as_str));
+                        if looks_instrumental(&texts) {
+                            lib.mark_instrumental(track.id)?;
+                        }
+                        link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     }
-                    link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     if let Some(url) = f.thumbnail.as_deref().filter(|_| track.artwork_path.is_none()) {
                         let _ = download_artwork(lib, store, track.id, url);
                     }
@@ -642,7 +676,7 @@ Delete the `StreamingLater` variant and its `Display` arm from `problem.rs`; del
 - [ ] **Step 6: Run the tests and checks**
 
 Run: `source "$HOME/.cargo/env" && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cd app && npm run check && npm run check:i18n`
-Expected: all pass. Optionally run `cargo test -p kara-core a_youtube_match_downloads -- --ignored` (network; ~20 s) and report the result.
+Expected: all pass — including the existing `ingest::tests::downloading_a_link_again_keeps_the_songs_info`. Optionally run `cargo test -p kara-core a_youtube_match_downloads -- --ignored` (network; ~20 s) and report the result.
 
 - [ ] **Step 7: Commit**
 
@@ -665,17 +699,16 @@ git commit -m "feat(core): a streaming song's uploads are audio sources it can s
   - `struct Tokens { developer: String, user: String, storefront: String }` (derive `Clone, PartialEq, Serialize, Deserialize`; `Debug` shows only the storefront)
   - `struct Reply { status: u16, retry_after_s: Option<u64>, body: String }`
   - `pub(crate) type Get = Box<dyn Fn(&str, &[(&str, &str)]) -> Result<Reply> + Send + Sync>`
-  - `Client::new(tokens: Tokens) -> Client`; `pub(crate) Client::with(tokens, get: Get, fresh_developer: Box<dyn Fn() -> Result<String> + Send + Sync>) -> Client`
-  - `Client::tokens(&self) -> Tokens`, `Client::storefront(&self) -> String`
-  - `Client::find(&self, path: &str) -> Result<Option<serde_json::Value>>` (None on 404), `Client::get(&self, path) -> Result<Value>`, `Client::all(&self, path) -> Result<Vec<Value>>` (every page's `data`, empty on 404)
-  - `web_developer_token() -> Result<String>`
-  - `#[cfg(test)] pub(crate) fn fake_client(answer: impl Fn(&str, &str) -> Reply + Send + Sync + 'static) -> (Client, Arc<Mutex<Vec<String>>>)` — answers `(url, developer token)`, records every URL; its login is `dev-old` / `user-secret` / `us`, and a renewal gives `dev-new`. `#[cfg(test)] pub(crate) fn reply(status: u16, body: impl ToString) -> Reply`.
+  - `Client::new(tokens: Tokens) -> Client`; `pub(crate) Client::with(tokens: Tokens, get: Get) -> Client`
+  - `Client::storefront(&self) -> String`
+  - `Client::find(&self, path: &str) -> Result<Option<serde_json::Value>>` (None on 404; 401/403 → `Problem::AppleSignedOut` at once), `Client::get(&self, path) -> Result<Value>`, `Client::all(&self, path) -> Result<Vec<Value>>` (every page's `data`, empty on 404)
+  - `#[cfg(test)] pub(crate) fn fake_client(answer: impl Fn(&str) -> Reply + Send + Sync + 'static) -> (Client, Arc<Mutex<Vec<String>>>)` — answers each URL and records every URL asked; its login is `dev-secret` / `user-secret` / `us`. `#[cfg(test)] pub(crate) fn reply(status: u16, body: impl ToString) -> Reply`.
   - `apple::keychain::{load() -> Result<Option<Tokens>>, save(&Tokens) -> Result<()>, delete() -> Result<()>}` (macOS)
   - `Problem::{AppleSignedOut, AppleUnreachable, AppleChanged, AppleBusy, LoginSave}`
 
 - [ ] **Step 1: Add the problems and their text**
 
-In `problem.rs` add the variants after `LyricsLookup` and their `Display` arms:
+In `problem.rs` add the variants after the last one at HEAD and their `Display` arms:
 
 ```rust
     AppleSignedOut,
@@ -686,7 +719,7 @@ In `problem.rs` add the variants after `LyricsLookup` and their `Display` arms:
 ```
 
 ```rust
-            Self::AppleSignedOut => "Your Apple Music login has run out. Log in again to refresh your library.",
+            Self::AppleSignedOut => "Log in to Apple Music again to refresh your library.",
             Self::AppleUnreachable => "Couldn't reach Apple Music. Check your connection.",
             Self::AppleChanged => "Apple Music changed how it works, so your library can't refresh for now. Your songs still work.",
             Self::AppleBusy => "Apple Music is busy. Your library refreshes again later.",
@@ -697,7 +730,7 @@ In `app/src/lib/api.ts` add `| "appleSignedOut" | "appleUnreachable" | "appleCha
 
 `en.ts`:
 ```ts
-  "problem.appleSignedOut": "Your Apple Music login has run out. Log in again to refresh your library.",
+  "problem.appleSignedOut": "Log in to Apple Music again to refresh your library.",
   "problem.appleUnreachable": "Couldn't reach Apple Music. Check your connection.",
   "problem.appleChanged": "Apple Music changed how it works, so your library can't refresh for now. Your songs still work.",
   "problem.appleBusy": "Apple Music is busy. Your library refreshes again later.",
@@ -705,7 +738,7 @@ In `app/src/lib/api.ts` add `| "appleSignedOut" | "appleUnreachable" | "appleCha
 ```
 `ja.ts`:
 ```ts
-  "problem.appleSignedOut": "Apple Music のログインの期限が切れました。ライブラリを更新するには、もう一度ログインしてください。",
+  "problem.appleSignedOut": "ライブラリを更新するには、Apple Music にもう一度ログインしてください。",
   "problem.appleUnreachable": "Apple Music に接続できませんでした。インターネット接続を確認してください。",
   "problem.appleChanged": "Apple Music の仕組みが変わったため、今はライブラリを更新できません。曲はそのまま使えます。",
   "problem.appleBusy": "Apple Music が混み合っています。ライブラリはあとでもう一度更新されます。",
@@ -713,7 +746,7 @@ In `app/src/lib/api.ts` add `| "appleSignedOut" | "appleUnreachable" | "appleCha
 ```
 `ko.ts`:
 ```ts
-  "problem.appleSignedOut": "Apple Music 로그인이 만료되었습니다. 보관함을 새로 고치려면 다시 로그인하세요.",
+  "problem.appleSignedOut": "보관함을 새로 고치려면 Apple Music에 다시 로그인하세요.",
   "problem.appleUnreachable": "Apple Music에 연결할 수 없습니다. 인터넷 연결을 확인하세요.",
   "problem.appleChanged": "Apple Music의 작동 방식이 바뀌어 지금은 보관함을 새로 고칠 수 없습니다. 노래는 그대로 쓸 수 있습니다.",
   "problem.appleBusy": "Apple Music이 혼잡합니다. 보관함은 나중에 다시 새로 고쳐집니다.",
@@ -721,7 +754,7 @@ In `app/src/lib/api.ts` add `| "appleSignedOut" | "appleUnreachable" | "appleCha
 ```
 `zh-Hans.ts`:
 ```ts
-  "problem.appleSignedOut": "你的 Apple Music 登录已过期。请重新登录以刷新资料库。",
+  "problem.appleSignedOut": "请重新登录 Apple Music 以刷新资料库。",
   "problem.appleUnreachable": "无法连接 Apple Music。请检查网络连接。",
   "problem.appleChanged": "Apple Music 的运作方式有变，暂时无法刷新资料库。你的歌曲仍可正常使用。",
   "problem.appleBusy": "Apple Music 正忙。资料库稍后会再次刷新。",
@@ -729,7 +762,7 @@ In `app/src/lib/api.ts` add `| "appleSignedOut" | "appleUnreachable" | "appleCha
 ```
 `zh-Hant.ts`:
 ```ts
-  "problem.appleSignedOut": "你的 Apple Music 登入已過期。請重新登入以重新整理資料庫。",
+  "problem.appleSignedOut": "請重新登入 Apple Music 以重新整理資料庫。",
   "problem.appleUnreachable": "無法連線到 Apple Music。請檢查網路連線。",
   "problem.appleChanged": "Apple Music 的運作方式有所改變，暫時無法重新整理資料庫。你的歌曲仍可正常使用。",
   "problem.appleBusy": "Apple Music 目前忙碌中。資料庫稍後會再次重新整理。",
@@ -737,7 +770,7 @@ In `app/src/lib/api.ts` add `| "appleSignedOut" | "appleUnreachable" | "appleCha
 ```
 `es.ts`:
 ```ts
-  "problem.appleSignedOut": "Tu sesión de Apple Music ha caducado. Vuelve a iniciar sesión para actualizar tu biblioteca.",
+  "problem.appleSignedOut": "Vuelve a iniciar sesión en Apple Music para actualizar tu biblioteca.",
   "problem.appleUnreachable": "No se pudo conectar con Apple Music. Revisa tu conexión.",
   "problem.appleChanged": "Apple Music cambió su funcionamiento, así que por ahora tu biblioteca no se puede actualizar. Tus canciones siguen funcionando.",
   "problem.appleBusy": "Apple Music está ocupado. Tu biblioteca se actualizará más tarde.",
@@ -768,67 +801,47 @@ mod tests {
                 reply(200, r#"{"data":[{"id":"a"},{"id":"b"}],"next":"/v1/me/library/playlists?offset=2"}"#)
             })
         });
-        let tokens = Tokens { developer: "dev-old".into(), user: "user-secret".into(), storefront: "us".into() };
-        let c = Client::with(tokens, get, Box::new(|| Ok("dev-new".into())));
+        let c = Client::with(Tokens { developer: "dev-secret".into(), user: "user-secret".into(), storefront: "us".into() }, get);
         let ids: Vec<_> = c.all("/v1/me/library/playlists?limit=2&include=catalog").unwrap().iter().map(|v| v["id"].as_str().unwrap().to_string()).collect();
         assert_eq!(ids, ["a", "b", "c"]);
-        assert_eq!(headers.lock().unwrap()[0], ["Authorization: Bearer dev-old", "Origin: https://music.apple.com", "media-user-token: user-secret"]);
-        let (c, _) = fake_client(|_, _| reply(404, ""));
+        assert_eq!(headers.lock().unwrap()[0], ["Authorization: Bearer dev-secret", "Origin: https://music.apple.com", "media-user-token: user-secret"]);
+        let (c, _) = fake_client(|_| reply(404, ""));
         assert!(c.all("/v1/me/library/playlists/p.1/tracks").unwrap().is_empty());
     }
 
     #[test]
-    fn a_refused_developer_token_is_renewed_once_and_a_refused_login_means_signed_out() {
-        let (c, asked) = fake_client(|_, developer| if developer == "dev-new" { reply(200, "{}") } else { reply(401, "") });
-        c.get("/v1/me/storefront").unwrap();
-        assert_eq!((c.tokens().developer.as_str(), asked.lock().unwrap().len()), ("dev-new", 2));
-        c.get("/v1/me/storefront").unwrap();
-        assert_eq!(asked.lock().unwrap().len(), 3);
-
-        let (c, asked) = fake_client(|_, _| reply(403, ""));
-        assert_eq!(problem(&c.get("/v1/me/storefront").unwrap_err()), Some(Problem::AppleSignedOut));
-        assert_eq!(asked.lock().unwrap().len(), 2);
+    fn a_refused_login_means_signed_out_after_one_request() {
+        for status in [401, 403] {
+            let (c, asked) = fake_client(move |_| reply(status, ""));
+            assert_eq!(problem(&c.get("/v1/me/storefront").unwrap_err()), Some(Problem::AppleSignedOut));
+            assert_eq!(asked.lock().unwrap().len(), 1);
+        }
     }
 
     #[test]
     fn a_busy_apple_music_is_asked_again_once_when_it_says_how_long_to_wait() {
         let busy = |s: u64| Reply { status: 429, retry_after_s: Some(s), body: String::new() };
         let n = AtomicUsize::new(0);
-        let (c, _) = fake_client(move |_, _| if n.fetch_add(1, SeqCst) == 0 { busy(0) } else { reply(200, "{}") });
+        let (c, _) = fake_client(move |_| if n.fetch_add(1, SeqCst) == 0 { busy(0) } else { reply(200, "{}") });
         c.get("/v1/x").unwrap();
-        let (c, asked) = fake_client(move |_, _| busy(0));
+        let (c, asked) = fake_client(move |_| busy(0));
         assert_eq!(problem(&c.get("/v1/x").unwrap_err()), Some(Problem::AppleBusy));
         assert_eq!(asked.lock().unwrap().len(), 2);
-        let (c, asked) = fake_client(move |_, _| busy(3600));
+        let (c, asked) = fake_client(move |_| busy(3600));
         assert_eq!(problem(&c.get("/v1/x").unwrap_err()), Some(Problem::AppleBusy));
         assert_eq!(asked.lock().unwrap().len(), 1);
     }
 
     #[test]
     fn the_login_never_shows_in_debug_output_or_error_messages() {
-        let (c, _) = fake_client(|_, _| reply(500, "dev-old user-secret"));
+        let tokens = Tokens { developer: "dev-secret".into(), user: "user-secret".into(), storefront: "us".into() };
+        let (c, _) = fake_client(|_| reply(500, "dev-secret user-secret"));
         let err = c.get("/v1/x").unwrap_err();
-        let (c2, _) = fake_client(|_, _| reply(200, "not json dev-old user-secret"));
+        let (c2, _) = fake_client(|_| reply(200, "not json dev-secret user-secret"));
         let err2 = c2.get("/v1/x").unwrap_err();
-        for text in [format!("{:?}", c.tokens()), format!("{err:#}"), format!("{err:?}"), format!("{err2:#}"), format!("{err2:?}")] {
-            assert!(!text.contains("user-secret") && !text.contains("dev-old"), "{text}");
+        for text in [format!("{tokens:?}"), format!("{err:#}"), format!("{err:?}"), format!("{err2:#}"), format!("{err2:?}")] {
+            assert!(!text.contains("user-secret") && !text.contains("dev-secret"), "{text}");
         }
-    }
-
-    #[test]
-    fn the_developer_token_is_read_from_the_web_players_script() {
-        let js = r#"const xUa="eyJnope";Ua="eyJmadeup.part.two",k=1;e.configure({developerToken:Ua,app:fY})"#;
-        assert_eq!(token_in_script(js).as_deref(), Some("eyJmadeup.part.two"));
-        assert_eq!(token_in_script("e.configure({app:fY})"), None);
-    }
-
-    #[test]
-    #[ignore = "network"]
-    fn live_web_page_still_names_a_developer_token_that_apple_music_accepts() {
-        let developer = web_developer_token().unwrap();
-        let bearer = format!("Bearer {developer}");
-        let r = http_get(&format!("{API}/v1/catalog/us/search?term=piano&types=songs&limit=1"), &[("Authorization", &bearer), ("Origin", WEB)]).unwrap();
-        assert_eq!(r.status, 200);
     }
 }
 ```
@@ -857,7 +870,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 const API: &str = "https://amp-api.music.apple.com";
-const WEB: &str = "https://music.apple.com";
+const ORIGIN: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 /// Time between two requests.
 const PACE: Duration = Duration::from_millis(if cfg!(test) { 0 } else { 250 });
@@ -887,52 +900,34 @@ pub struct Reply {
 
 /// Sends a GET with headers.
 pub(crate) type Get = Box<dyn Fn(&str, &[(&str, &str)]) -> Result<Reply> + Send + Sync>;
-/// Reads the developer token the web player uses now.
-type FreshDeveloper = Box<dyn Fn() -> Result<String> + Send + Sync>;
 
 pub struct Client {
-    tokens: Mutex<Tokens>,
+    tokens: Tokens,
     get: Get,
-    fresh_developer: FreshDeveloper,
     last: Mutex<Option<Instant>>,
 }
 
 impl Client {
     pub fn new(tokens: Tokens) -> Self {
-        Self::with(tokens, Box::new(http_get), Box::new(web_developer_token))
+        Self::with(tokens, Box::new(http_get))
     }
 
-    pub(crate) fn with(tokens: Tokens, get: Get, fresh_developer: FreshDeveloper) -> Self {
-        Self { tokens: Mutex::new(tokens), get, fresh_developer, last: Mutex::new(None) }
-    }
-
-    /// The login as it is now; its developer token may have been renewed.
-    pub fn tokens(&self) -> Tokens {
-        self.tokens.lock().unwrap().clone()
+    pub(crate) fn with(tokens: Tokens, get: Get) -> Self {
+        Self { tokens, get, last: Mutex::new(None) }
     }
 
     pub fn storefront(&self) -> String {
-        self.tokens.lock().unwrap().storefront.clone()
+        self.tokens.storefront.clone()
     }
 
-    /// GETs `path` ("/v1/…"); None when Apple has nothing there. A refused developer token is renewed once;
-    /// a busy answer is waited out once when it says how long.
+    /// GETs `path` ("/v1/…"); None when Apple has nothing there. A busy answer is waited out once when it says how long.
     pub fn find(&self, path: &str) -> Result<Option<Value>> {
-        let (mut renewed, mut waited) = (false, false);
+        let mut waited = false;
         loop {
             let reply = self.send(path)?;
             match reply.status {
                 200..=299 => return Ok(Some(serde_json::from_str(&reply.body).context(Problem::AppleChanged)?)),
                 404 => return Ok(None),
-                401 | 403 if !renewed => {
-                    renewed = true;
-                    let fresh = (self.fresh_developer)().context(Problem::AppleUnreachable)?;
-                    let mut tokens = self.tokens.lock().unwrap();
-                    if fresh == tokens.developer {
-                        bail!(Problem::AppleSignedOut);
-                    }
-                    tokens.developer = fresh;
-                }
                 401 | 403 => bail!(Problem::AppleSignedOut),
                 429 => match reply.retry_after_s.map(Duration::from_secs) {
                     Some(wait) if !waited && wait <= MAX_WAIT => {
@@ -973,14 +968,13 @@ impl Client {
             }
             *last = Some(Instant::now());
         }
-        let tokens = self.tokens();
-        let bearer = format!("Bearer {}", tokens.developer);
-        let headers = [("Authorization", bearer.as_str()), ("Origin", WEB), ("media-user-token", tokens.user.as_str())];
+        let bearer = format!("Bearer {}", self.tokens.developer);
+        let headers = [("Authorization", bearer.as_str()), ("Origin", ORIGIN), ("media-user-token", self.tokens.user.as_str())];
         (self.get)(&format!("{API}{path}"), &headers).context(Problem::AppleUnreachable)
     }
 }
 
-/// `next` with the parts of `path`'s query it doesn't set itself (Apple's `next` may keep only the offset).
+/// `next` with the parts of `path`'s query it doesn't set itself.
 fn with_query(next: &str, path: &str) -> String {
     let (base, own) = next.split_once('?').unwrap_or((next, ""));
     let name = |p: &str| p.split('=').next().unwrap_or_default().to_string();
@@ -1013,40 +1007,16 @@ fn http_get(url: &str, headers: &[(&str, &str)]) -> Result<Reply> {
     Ok(Reply { status: resp.status().as_u16(), retry_after_s, body: resp.text()? })
 }
 
-/// The developer token music.apple.com's player uses now, read from the page's script.
-pub fn web_developer_token() -> Result<String> {
-    let page = http().get(WEB).send()?.error_for_status()?.text()?;
-    let script = page.split('"').find(|s| s.starts_with("/assets/index~") && s.ends_with(".js")).context(Problem::AppleChanged)?;
-    let js = http().get(format!("{WEB}{script}")).send()?.error_for_status()?.text()?;
-    token_in_script(&js).context(Problem::AppleChanged)
-}
-
-/// The string the script hands MusicKit as `developerToken:<name>`, from where it sets `<name>="…"`.
-fn token_in_script(js: &str) -> Option<String> {
-    let ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    let name: String = js.split_once("developerToken:")?.1.chars().take_while(|&c| ident(c)).collect();
-    if name.is_empty() {
-        return None;
-    }
-    let pattern = format!("{name}=\"");
-    let (at, _) = js.match_indices(&pattern).find(|(i, _)| !js[..*i].ends_with(ident))?;
-    let value = js[at + pattern.len()..].split('"').next()?;
-    value.starts_with("eyJ").then(|| value.to_string())
-}
-
-/// A client for tests: `answer(url, developer token)` answers every request and every URL asked is recorded.
-/// Its login is dev-old / user-secret / us; renewing gives dev-new.
+/// A client for tests: `answer(url)` answers every request and every URL asked is recorded.
 #[cfg(test)]
-pub(crate) fn fake_client(answer: impl Fn(&str, &str) -> Reply + Send + Sync + 'static) -> (Client, std::sync::Arc<Mutex<Vec<String>>>) {
+pub(crate) fn fake_client(answer: impl Fn(&str) -> Reply + Send + Sync + 'static) -> (Client, std::sync::Arc<Mutex<Vec<String>>>) {
     let asked = std::sync::Arc::new(Mutex::new(Vec::new()));
     let log = asked.clone();
-    let get: Get = Box::new(move |url: &str, headers: &[(&str, &str)]| {
+    let get: Get = Box::new(move |url: &str, _: &[(&str, &str)]| {
         log.lock().unwrap().push(url.to_string());
-        let developer = headers.iter().find(|(k, _)| *k == "Authorization").map_or("", |(_, v)| v.trim_start_matches("Bearer "));
-        Ok(answer(url, developer))
+        Ok(answer(url))
     });
-    let tokens = Tokens { developer: "dev-old".into(), user: "user-secret".into(), storefront: "us".into() };
-    (Client::with(tokens, get, Box::new(|| Ok("dev-new".into()))), asked)
+    (Client::with(Tokens { developer: "dev-secret".into(), user: "user-secret".into(), storefront: "us".into() }, get), asked)
 }
 
 #[cfg(test)]
@@ -1097,12 +1067,12 @@ pub fn delete() -> Result<()> {
 }
 ```
 
-The Keychain isn't touched by any test (it is the user's real Keychain); the final checklist covers it.
+The Keychain isn't touched by any test (it is the user's real Keychain, shared by every data folder); the final checklist covers it.
 
 - [ ] **Step 6: Run the tests and checks**
 
 Run: `source "$HOME/.cargo/env" && cargo test -p kara-core apple:: && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cd app && npm run check && npm run check:i18n`
-Expected: all pass. Optionally run `cargo test -p kara-core live_web_page -- --ignored` (network, reads a public page; it prints nothing) and report pass/fail only.
+Expected: all pass.
 
 - [ ] **Step 7: Commit**
 
@@ -1124,8 +1094,9 @@ git commit -m "feat(core): read-only Apple Music client with the web player's lo
 - Consumes: `library::{StreamingTrack, StreamingCollection, CollectionKind}` (Task 1).
 - Produces (in `kara_core::apple::parse`, each taking `&serde_json::Value`):
   - `song(item) -> Option<StreamingTrack>` — `songs`/`library-songs` only; `provider_ref` = catalog id when known, else the library id; ISRC and album id from the catalog song (`include=catalog`); artwork at 600×600
-  - `playlist(item) -> Option<StreamingCollection>` — `version` = `lastModifiedDate` (else `dateAdded`); `catalog_ref` = `playParams.globalId` or the catalog relationship's id; `subtitle` = the catalog playlist's `curatorName`
-  - `album(item) -> Option<StreamingCollection>` — `subtitle` = `artistName`; `catalog_ref` = catalog id; `version` = `"<dateAdded>:<trackCount>"`
+  - `playlist(item) -> Option<StreamingCollection>` — `version` = `lastModifiedDate` only (None: its songs are read on every refresh — Apple-made and followed playlists change without the user); `artwork` = its own, else the catalog playlist's, at 600×600; `catalog_ref` = `playParams.globalId` or the catalog relationship's id; `subtitle` = the catalog playlist's `curatorName`
+  - `album(item) -> Option<StreamingCollection>` — `subtitle` = `artistName`; `artwork` at 600×600; `catalog_ref` = catalog id; `version` = `"<dateAdded>:<trackCount>"`
+  - Artwork templates have `{w}x{h}` and may have `{c}` / `{f}`; they become `600x600`, `bb` and `jpg`.
   - `motion(answer) -> Option<String>` — `motionDetailSquare`, else `motionSquareVideo1x1`
   - `storefront(answer) -> Option<String>`, `display_name(answer) -> Option<String>`
   - `search_songs(answer) -> Vec<StreamingTrack>`, `suggestions(answer) -> Vec<String>` (terms only)
@@ -1163,7 +1134,7 @@ The catalog samples are trimmed from real answers (field names and nesting as Ap
         "hasCatalog": true,
         "dateAdded": "2026-01-05T12:00:00Z",
         "lastModifiedDate": "2026-09-26T04:00:00Z",
-        "artwork": { "url": "https://is1-ssl.mzstatic.com/image/thumb/Features/v4/ma/de/up/madeup.jpg/{w}x{h}SC.jpg", "width": 1080, "height": 1080 },
+        "artwork": { "url": "https://is1-ssl.mzstatic.com/image/thumb/Features/v4/ma/de/up/madeup.jpg/{w}x{h}{c}.{f}", "width": 1080, "height": 1080 },
         "playParams": { "id": "p.MadeUp0002", "kind": "playlist", "isLibrary": true, "globalId": "pl.madeup00000000000000000000000002" }
       },
       "relationships": {
@@ -1316,8 +1287,6 @@ The catalog samples are trimmed from real answers (field names and nesting as Ap
 }
 ```
 
-Optional probe (read-only, public; skip if refused): compare the catalog samples' field names with a live answer using the ignored test from Task 3 as a starting point, and report differences in names only — never print tokens.
-
 - [ ] **Step 2: Write the failing tests**
 
 Create `crates/kara-core/src/apple/parse.rs` with the doc line from Step 4 and these tests; add `pub mod parse;` to `apple/mod.rs`:
@@ -1339,12 +1308,21 @@ mod tests {
         assert_eq!(
             lists,
             vec![
-                StreamingCollection { kind: CollectionKind::Playlist, provider_ref: "p.MadeUp0001".into(), name: "Late Night Drive".into(), subtitle: None, catalog_ref: None, version: Some("2026-09-20T21:04:11Z".into()) },
+                StreamingCollection {
+                    kind: CollectionKind::Playlist,
+                    provider_ref: "p.MadeUp0001".into(),
+                    name: "Late Night Drive".into(),
+                    subtitle: None,
+                    artwork: None,
+                    catalog_ref: None,
+                    version: Some("2026-09-20T21:04:11Z".into()),
+                },
                 StreamingCollection {
                     kind: CollectionKind::Playlist,
                     provider_ref: "p.MadeUp0002".into(),
                     name: "Harbor Hits".into(),
                     subtitle: Some("Made Up Radio".into()),
+                    artwork: Some("https://is1-ssl.mzstatic.com/image/thumb/Features/v4/ma/de/up/madeup.jpg/600x600bb.jpg".into()),
                     catalog_ref: Some("pl.madeup00000000000000000000000002".into()),
                     version: Some("2026-09-26T04:00:00Z".into()),
                 },
@@ -1362,6 +1340,7 @@ mod tests {
                 provider_ref: "l.MadeUp0003".into(),
                 name: "Night Line".into(),
                 subtitle: Some("Juniper Row".into()),
+                artwork: Some("https://is1-ssl.mzstatic.com/image/thumb/Music/v4/ma/de/up/madeup.jpg/600x600bb.jpg".into()),
                 catalog_ref: Some("900001".into()),
                 version: Some("2026-03-14T18:22:05Z:2".into()),
             })
@@ -1428,9 +1407,9 @@ fn text(v: &Value) -> Option<String> {
     v.as_str().filter(|s| !s.is_empty()).map(String::from)
 }
 
-/// An artwork URL template ("…/{w}x{h}bb.jpg") at the size the app shows.
+/// An artwork URL template ("…/{w}x{h}bb.jpg", "…/{w}x{h}{c}.{f}") at the size the app shows.
 fn artwork(attrs: &Value) -> Option<String> {
-    text(&attrs["artwork"]["url"]).map(|u| u.replace("{w}x{h}", ARTWORK_SIZE))
+    text(&attrs["artwork"]["url"]).map(|u| u.replace("{w}x{h}", ARTWORK_SIZE).replace("{c}", "bb").replace("{f}", "jpg"))
 }
 
 /// The album id in a catalog song's link ("…/album/<name>/<id>?i=…").
@@ -1464,7 +1443,7 @@ pub fn song(item: &Value) -> Option<StreamingTrack> {
     })
 }
 
-/// A library playlist.
+/// A library playlist; without `lastModifiedDate` it has no version, so its songs are read on every refresh.
 pub fn playlist(item: &Value) -> Option<StreamingCollection> {
     let attrs = &item["attributes"];
     Some(StreamingCollection {
@@ -1472,8 +1451,9 @@ pub fn playlist(item: &Value) -> Option<StreamingCollection> {
         provider_ref: text(&item["id"])?,
         name: text(&attrs["name"])?,
         subtitle: text(&catalog(item)["attributes"]["curatorName"]),
+        artwork: artwork(attrs).or_else(|| artwork(&catalog(item)["attributes"])),
         catalog_ref: text(&attrs["playParams"]["globalId"]).or_else(|| text(&catalog(item)["id"])),
-        version: text(&attrs["lastModifiedDate"]).or_else(|| text(&attrs["dateAdded"])),
+        version: text(&attrs["lastModifiedDate"]),
     })
 }
 
@@ -1485,6 +1465,7 @@ pub fn album(item: &Value) -> Option<StreamingCollection> {
         provider_ref: text(&item["id"])?,
         name: text(&attrs["name"])?,
         subtitle: text(&attrs["artistName"]),
+        artwork: artwork(attrs),
         catalog_ref: text(&catalog(item)["id"]).or_else(|| text(&attrs["playParams"]["catalogId"])),
         version: Some(format!("{}:{}", text(&attrs["dateAdded"]).unwrap_or_default(), attrs["trackCount"].as_i64().unwrap_or(0))),
     })
@@ -1544,7 +1525,7 @@ git commit -m "feat(core): read Apple Music playlists, albums, songs, animated c
 **Interfaces:**
 - Consumes: `Client::{all, get}`, `fake_client`, `reply` (Task 3); `parse::{playlist, album, song}` (Task 4); Task 1's library methods.
 - Produces (in `kara_core::apple::sync`):
-  - `sync(lib: &Library, client: &Client, keep: &[i64], listed: &mut dyn FnMut()) -> Result<()>` — lists playlists and albums (adding, renaming, deleting gone ones), calls `listed()`, reads the songs of each collection whose version changed, rebuilds Apple artists from album artists, prunes songs in no collection that were never prepared (except `keep`), sets `refreshed_at`. A failure leaves what was saved before it.
+  - `sync(lib: &Library, client: &Client, keep: &[i64], listed: &mut dyn FnMut()) -> Result<()>` — lists playlists and albums (adding, renaming, deleting gone ones), calls `listed()`, reads the songs of each collection whose version changed or that has none, rebuilds Apple artists from album artists, prunes songs in no collection that were never prepared (except `keep`), sets `refreshed_at`. A failure stops it where it is: what it saved stays, nothing is pruned.
   - `disconnect(lib: &Library, keep: &[i64]) -> Result<()>` — deletes Apple's collections and account; keeps songs that were prepared, are in your own playlists, or are in `keep`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1564,6 +1545,11 @@ mod tests {
         json!({ "id": id, "type": "library-playlists", "attributes": { "name": name, "lastModifiedDate": version, "playParams": { "id": id, "kind": "playlist", "isLibrary": true } } })
     }
 
+    /// A followed or Apple-made playlist: Apple gives it no `lastModifiedDate`.
+    fn followed(id: &str, name: &str) -> Value {
+        json!({ "id": id, "type": "library-playlists", "attributes": { "name": name, "playParams": { "id": id, "kind": "playlist", "isLibrary": true } } })
+    }
+
     fn album(id: &str, name: &str, artist: &str) -> Value {
         json!({ "id": id, "type": "library-albums", "attributes": { "name": name, "artistName": artist, "trackCount": 1, "dateAdded": "2026-03-14T18:22:05Z" } })
     }
@@ -1574,7 +1560,7 @@ mod tests {
 
     /// A client answering each URL from the first entry whose key it contains, else "nothing there".
     fn apple(answers: Vec<(&'static str, Vec<Value>)>) -> (Client, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
-        fake_client(move |url, _| match answers.iter().find(|(key, _)| url.contains(key)) {
+        fake_client(move |url| match answers.iter().find(|(key, _)| url.contains(key)) {
             Some((_, items)) => reply(200, json!({ "data": items })),
             None => reply(404, ""),
         })
@@ -1592,9 +1578,10 @@ mod tests {
     fn first_sync(lib: &Library) {
         lib.connect_account(ProviderId::Apple, None).unwrap();
         let (c, _) = apple(vec![
-            ("library/playlists?", vec![playlist("p.1", "Late Night Drive", "v1"), playlist("p.2", "Rainy Day", "v1")]),
+            ("library/playlists?", vec![playlist("p.1", "Late Night Drive", "v1"), playlist("p.2", "Rainy Day", "v1"), followed("p.3", "Harbor Hits")]),
             ("library/albums?", vec![album("l.1", "Night Line", "Juniper Row")]),
             ("playlists/p.1/tracks", vec![song("901", "Neon Tidewater", "Juniper Row"), song("902", "Umbrella Weather", "Odd Hours Club")]),
+            ("playlists/p.3/tracks", vec![song("907", "Salt Road", "Mina Okada")]),
             ("playlists/p.2/tracks", vec![song("903", "Kettle Rain", "Ada Vale"), song("904", "Window Seat", "Ada Vale"), song("906", "Paper Lanterns", "Ada Vale")]),
             ("albums/l.1/tracks", vec![song("901", "Neon Tidewater", "Juniper Row")]),
         ]);
@@ -1611,7 +1598,7 @@ mod tests {
     fn the_first_sync_brings_playlists_albums_their_songs_and_album_artists() {
         let lib = Library::open_in_memory().unwrap();
         first_sync(&lib);
-        assert_eq!(names(&lib, CollectionKind::Playlist), ["Late Night Drive", "Rainy Day"]);
+        assert_eq!(names(&lib, CollectionKind::Playlist), ["Harbor Hits", "Late Night Drive", "Rainy Day"]);
         assert_eq!((names(&lib, CollectionKind::Album), names(&lib, CollectionKind::Artist)), (vec!["Night Line".to_string()], vec!["Juniper Row".to_string()]));
         assert_eq!(songs_of(&lib, CollectionKind::Playlist, "Late Night Drive"), ["Neon Tidewater", "Umbrella Weather"]);
         assert_eq!(songs_of(&lib, CollectionKind::Artist, "Juniper Row"), ["Neon Tidewater"]);
@@ -1628,14 +1615,16 @@ mod tests {
         lib.set_source_audio(s, "h", 1000).unwrap();
         let queued = id_of(&lib, "Window Seat");
         let (c, asked) = apple(vec![
-            ("library/playlists?", vec![playlist("p.1", "Late Night Drive", "v2")]),
+            ("library/playlists?", vec![playlist("p.1", "Late Night Drive", "v2"), followed("p.3", "Harbor Hits")]),
             ("library/albums?", vec![album("l.1", "Night Line", "Juniper Row")]),
             ("playlists/p.1/tracks", vec![song("902", "Umbrella Weather", "Odd Hours Club"), song("905", "Glass Harbor", "Juniper Row")]),
+            ("playlists/p.3/tracks", vec![song("908", "Tin Roof", "Mina Okada")]),
             ("albums/l.1/tracks", vec![song("901", "Neon Tidewater", "Juniper Row")]),
         ]);
         sync(&lib, &c, &[queued], &mut || {}).unwrap();
-        assert_eq!(names(&lib, CollectionKind::Playlist), ["Late Night Drive"]);
+        assert_eq!(names(&lib, CollectionKind::Playlist), ["Harbor Hits", "Late Night Drive"]);
         assert_eq!(songs_of(&lib, CollectionKind::Playlist, "Late Night Drive"), ["Umbrella Weather", "Glass Harbor"]);
+        assert_eq!(songs_of(&lib, CollectionKind::Playlist, "Harbor Hits"), ["Tin Roof"], "a playlist without a version is read every time");
         assert!(!asked.lock().unwrap().iter().any(|u| u.contains("albums/l.1/tracks")));
         assert!(!lib.search("Neon Tidewater", 1).unwrap().is_empty(), "still on its album");
         assert!(lib.track(sung).is_ok(), "sung");
@@ -1648,9 +1637,9 @@ mod tests {
         let lib = Library::open_in_memory().unwrap();
         first_sync(&lib);
         let before = lib.account(ProviderId::Apple).unwrap();
-        let (c, _) = fake_client(|_, _| reply(500, ""));
+        let (c, _) = fake_client(|_| reply(500, ""));
         assert_eq!(problem(&sync(&lib, &c, &[], &mut || {}).unwrap_err()), Some(Problem::AppleUnreachable));
-        assert_eq!(names(&lib, CollectionKind::Playlist), ["Late Night Drive", "Rainy Day"]);
+        assert_eq!(names(&lib, CollectionKind::Playlist), ["Harbor Hits", "Late Night Drive", "Rainy Day"]);
         assert_eq!(songs_of(&lib, CollectionKind::Playlist, "Rainy Day"), ["Kettle Rain", "Window Seat", "Paper Lanterns"]);
         assert_eq!(lib.account(ProviderId::Apple).unwrap(), before);
     }
@@ -1726,6 +1715,7 @@ fn songs_path(kind: CollectionKind, id: &str) -> String {
 
 /// Adds and updates Apple Music's playlists and albums and deletes gone ones, calls `listed`, reads the songs
 /// of those that changed, rebuilds the album artists, and prunes songs no longer anywhere except those in `keep`.
+/// A failure stops it where it is: what it saved stays, and nothing is pruned.
 pub fn sync(lib: &Library, client: &Client, keep: &[i64], listed: &mut dyn FnMut()) -> Result<()> {
     let mut remote: Vec<_> = client.all(PLAYLISTS)?.iter().filter_map(parse::playlist).collect();
     remote.extend(client.all(ALBUMS)?.iter().filter_map(parse::album));
@@ -1792,25 +1782,25 @@ git commit -m "feat(core): sync Apple Music playlists, albums and artists into t
 
 ---
 
-### Task 6: Matching a streaming song to an upload
+### Task 6: Matching a streaming song to an upload (on Phase 2's shared YouTube search)
 
 **Files:**
 - Create: `crates/kara-core/src/ingest/ytmusic.rs`, `crates/kara-core/src/ingest/ytmusic-search.sample.json`, `crates/kara-core/src/matching.rs`
-- Modify: `crates/kara-core/src/ingest/mod.rs` (`pub mod ytmusic;`, `search_videos`), `crates/kara-core/src/ingest/youtube.rs` (`clock_ms` → `pub(crate)`), `crates/kara-core/src/lyrics.rs` (`key`, `similar`, `singer_likeness`, `words` → `pub(crate)`), `crates/kara-core/src/lib.rs` (`pub mod matching;`), `crates/kara-core/src/jobs.rs` (`prepare_inner`), `crates/kara-core/src/problem.rs`
-- Modify: `app/src-tauri/src/adding.rs` (`youtube_search` calls `ingest::search_videos`)
+- Modify: `crates/kara-core/src/ingest/mod.rs` (`pub mod ytmusic;`, `find_on_youtube` moved here), `crates/kara-core/src/ingest/youtube.rs` (`clock_ms` → `pub(crate)`), `crates/kara-core/src/lyrics.rs` (`key`, `similar`, `singer_likeness`, `words` → `pub(crate)`), `crates/kara-core/src/lib.rs` (`pub mod matching;`), `crates/kara-core/src/jobs.rs` (`prepare_inner`; `rename` leaves streaming songs alone), `crates/kara-core/src/problem.rs`
+- Modify (read them first — Phase 2's code): `app/src-tauri/src/adding.rs` (`find_on_youtube` leaves for kara-core) and every caller of `adding::find_on_youtube` (the `youtube_search` command and Phase 2's phone search)
 - Modify: `app/src/lib/api.ts` (`ProblemCode`), `app/src/lib/i18n/*.ts`
 
 **Interfaces:**
 - Consumes: `Library::{track, track_isrc, add_match, sources, select_source, selected_source}` (Tasks 1–2); `ingest::youtube::search`, `ingest::ytdlp`, `ingest::preview::{search, SearchHit, LinkPreview}`; `lyrics::{clean_title, clean_artist}`.
 - Produces:
   - `ingest::ytmusic::{Song { hit: SearchHit, album: Option<String> }, songs(query: &str) -> Result<Vec<Song>>, parse_songs(json: &str) -> Result<Vec<Song>>}`
-  - `ingest::search_videos(bin_dir: &Path, query: &str) -> Result<Vec<SearchHit>>` — YouTube's web search, else yt-dlp's
-  - `matching::Finder` trait `{ fn songs(&self, query: &str) -> Result<Vec<Song>>; fn videos(&self, query: &str) -> Result<Vec<SearchHit>>; }`, `matching::YouTube { bin_dir: PathBuf }`
+  - `ingest::find_on_youtube(store: &Store, query: &str) -> Result<Vec<SearchHit>>` — Phase 2's `adding::find_on_youtube` (YouTube's web search, else yt-dlp's), moved unchanged into kara-core so the app, the phones and matching share one function
+  - `matching::Finder` trait `{ fn songs(&self, query: &str) -> Result<Vec<Song>>; fn videos(&self, query: &str) -> Result<Vec<SearchHit>>; }`, `matching::YouTube { store: Store }`
   - `matching::score(track: &Track, hit: &SearchHit, album: Option<&str>, official: bool) -> Option<f64>`
   - `matching::find(track: &Track, isrc: Option<&str>, finder: &dyn Finder) -> Result<Vec<(Option<f64>, SearchHit)>>` — accepted best first, then refused in found order, at most 8
   - `matching::search_once(lib: &Library, track_id: i64, finder: &dyn Finder) -> Result<()>` — saves them, puts the best accepted one in use
   - `matching::ensure(lib: &Library, track_id: i64, finder: &dyn Finder) -> Result<()>` — searches only when the song has no uploads; `Problem::NoMatch` when none is in use
-  - `Problem::{NoMatch, MatchLookup}`; `jobs::prepare` matches a streaming song before fetching it.
+  - `Problem::{NoMatch, MatchLookup}`; `jobs::prepare` matches a streaming song before fetching it; the lyrics swap-retry (`jobs::rename`) never renames a streaming song (the service's names are kept).
 
 - [ ] **Step 1: Problems and their text**
 
@@ -1950,25 +1940,26 @@ mod tests {
     struct Fake {
         songs: Vec<Song>,
         videos: Vec<SearchHit>,
-        fail: bool,
+        songs_fail: bool,
+        videos_fail: bool,
         asked: Cell<usize>,
     }
 
     impl Fake {
         fn new(songs: Vec<Song>, videos: Vec<SearchHit>) -> Self {
-            Self { songs, videos, fail: false, asked: Cell::new(0) }
+            Self { songs, videos, songs_fail: false, videos_fail: false, asked: Cell::new(0) }
         }
     }
 
     impl Finder for Fake {
         fn songs(&self, _: &str) -> Result<Vec<Song>> {
             self.asked.set(self.asked.get() + 1);
-            anyhow::ensure!(!self.fail, "offline");
+            anyhow::ensure!(!self.songs_fail, "offline");
             Ok(self.songs.clone())
         }
         fn videos(&self, _: &str) -> Result<Vec<SearchHit>> {
             self.asked.set(self.asked.get() + 1);
-            anyhow::ensure!(!self.fail, "offline");
+            anyhow::ensure!(!self.videos_fail, "offline");
             Ok(self.videos.clone())
         }
     }
@@ -2039,14 +2030,16 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_search_saves_nothing_so_the_next_play_searches_again() {
+    fn a_search_that_failed_without_a_fitting_upload_saves_nothing_so_the_next_play_searches_again() {
         let lib = Library::open_in_memory().unwrap();
         let t = apple_song(&lib, "Paper Boats", "Juniper Row", None, 200, Some("QZZZZ2600010"));
-        let finder = Fake { fail: true, ..Fake::new(vec![], vec![]) };
+        let finder = Fake { songs_fail: true, ..Fake::new(vec![], vec![hit("eeeeeeeeeee", "Paper Boats", "Other Band", 200)]) };
         assert_eq!(problem(&ensure(&lib, t, &finder).unwrap_err()), Some(Problem::MatchLookup));
         assert!(lib.sources(t).unwrap().is_empty());
+        let offline = Fake { songs_fail: true, videos_fail: true, ..Fake::new(vec![], vec![]) };
+        assert_eq!(problem(&ensure(&lib, t, &offline).unwrap_err()), Some(Problem::MatchLookup));
         ensure(&lib, t, &finder).unwrap_err();
-        assert_eq!(finder.asked.get(), 4);
+        assert_eq!((finder.asked.get(), offline.asked.get()), (4, 2));
     }
 }
 ```
@@ -2071,7 +2064,7 @@ use std::time::Duration;
 
 /// The web client music.youtube.com identifies as.
 const CLIENT_VERSION: &str = "1.20260921.01.00";
-/// The "Songs" filter (ytmusicapi's songs filter, without spelling correction).
+/// The "Songs" filter.
 const SONGS_ONLY: &str = "EgWKAQIIAWoKEAkQBRAKEAMQBA==";
 
 /// A song found on YouTube Music, with its album when it names one.
@@ -2137,16 +2130,16 @@ fn song(row: &Value) -> Option<Song> {
 }
 ```
 
-In `ingest/mod.rs` add (and `use preview::SearchHit;` if not in scope):
+Move Phase 2's `adding::find_on_youtube` (read it at HEAD) into `ingest/mod.rs` unchanged — at the time of writing Phase 2's plan gives it as:
 
 ```rust
-/// The top YouTube videos for `query`: YouTube's own web search, else yt-dlp's.
-pub fn search_videos(bin_dir: &Path, query: &str) -> Result<Vec<preview::SearchHit>> {
-    youtube::search(query).or_else(|_| ytdlp::ensure(bin_dir).and_then(|bin| preview::search(&bin, query)))
+/// The top YouTube videos for `query`: YouTube's own web search, or yt-dlp's when that fails.
+pub fn find_on_youtube(store: &Store, query: &str) -> Result<Vec<preview::SearchHit>> {
+    youtube::search(query).or_else(|_| ytdlp::ensure(&store.bin_dir()).and_then(|bin| preview::search(&bin, query)))
 }
 ```
 
-In `app/src-tauri/src/adding.rs`, `youtube_search`'s blocking body becomes `ingest::search_videos(&bin_dir, &query).map_err(|e| coded(e, kara_core::problem::Problem::NoSongAtLink))` (drop the now-unused imports).
+Delete it from `adding.rs` and point its callers (the `youtube_search` command, Phase 2's phone search) at `ingest::find_on_youtube`; drop the imports that become unused. One function, used by the Mac, the phones and matching.
 
 - [ ] **Step 5: Write the matching**
 
@@ -2157,14 +2150,14 @@ In `lyrics.rs` make `key`, `similar`, `singer_likeness` and `words` `pub(crate)`
 //! for "artist title", scored on title, singer, album and length, with other versions refused.
 
 use crate::ingest::preview::SearchHit;
-use crate::ingest::search_videos;
+use crate::ingest::find_on_youtube;
 use crate::ingest::ytmusic::{self, Song};
 use crate::library::{Library, Track};
 use crate::lyrics::{clean_artist, clean_title, key, similar, singer_likeness, words};
 use crate::problem::Problem;
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use crate::store::Store;
 
 /// How far an official audio upload's length may be from the song's.
 const SONG_OFF_S: f64 = 15.0;
@@ -2186,9 +2179,9 @@ pub trait Finder {
     fn videos(&self, query: &str) -> Result<Vec<SearchHit>>;
 }
 
-/// YouTube Music and YouTube, with yt-dlp (in `bin_dir`) when YouTube's own search fails.
+/// YouTube Music and YouTube (with the app's yt-dlp in `store` when YouTube's own search fails).
 pub struct YouTube {
-    pub bin_dir: PathBuf,
+    pub store: Store,
 }
 
 impl Finder for YouTube {
@@ -2196,7 +2189,7 @@ impl Finder for YouTube {
         ytmusic::songs(query)
     }
     fn videos(&self, query: &str) -> Result<Vec<SearchHit>> {
-        search_videos(&self.bin_dir, query)
+        find_on_youtube(&self.store, query)
     }
 }
 
@@ -2214,7 +2207,7 @@ pub fn score(track: &Track, hit: &SearchHit, album: Option<&str>, official: bool
     let (theirs, named) = clean_title(&hit.preview.title, hit.preview.channel.as_deref());
     let (ours, _) = clean_title(&track.title, track.artist.as_deref());
     let same_title = key(&theirs) == key(&ours);
-    if !same_title && !(similar(&ours, &theirs) && similar(&theirs, &ours)) {
+    if !(same_title || similar(&ours, &theirs) && similar(&theirs, &ours)) {
         return None;
     }
     if OTHER_VERSIONS.iter().any(|v| has(&hit.preview.title, v) && !has(&track.title, v)) {
@@ -2241,7 +2234,8 @@ pub fn score(track: &Track, hit: &SearchHit, album: Option<&str>, official: bool
 }
 
 /// Uploads for `track`, each with its score (None: refused): official audio for its ISRC, then videos for "artist title";
-/// accepted ones best first, then refused ones as found, at most `KEEP`. Fails only when every search failed.
+/// accepted ones best first, then refused ones as found, at most `KEEP`. Fails when a search failed and nothing found fits,
+/// so a worse list is never kept for good.
 pub fn find(track: &Track, isrc: Option<&str>, finder: &dyn Finder) -> Result<Vec<(Option<f64>, SearchHit)>> {
     let mut found = Vec::new();
     let mut failed = None;
@@ -2256,7 +2250,7 @@ pub fn find(track: &Track, isrc: Option<&str>, finder: &dyn Finder) -> Result<Ve
         Ok(videos) => found.extend(videos.into_iter().map(|v| (score(track, &v, None, false), v))),
         Err(e) => failed = failed.or(Some(e)),
     }
-    if let (true, Some(e)) = (found.is_empty(), failed) {
+    if let Some(e) = failed.filter(|_| !found.iter().any(|(score, _)| score.is_some())) {
         return Err(e.context(Problem::MatchLookup));
     }
     let mut seen = HashSet::new();
@@ -2300,41 +2294,68 @@ In `jobs.rs` `prepare_inner`, right after `let track = lib.track(track_id).conte
 
 ```rust
     if track.provider != ProviderId::Local {
-        crate::matching::ensure(lib, track_id, &crate::matching::YouTube { bin_dir: ctx.store.bin_dir() })?;
+        crate::matching::ensure(lib, track_id, &crate::matching::YouTube { store: ctx.store.clone() })?;
     }
 ```
 
 (import `ProviderId` from `crate::library`).
 
+Read `rename` in `jobs.rs` at HEAD (Task 33). A streaming service's names are the song's names: change its filter to `swapped.filter(|_| !t.info_edited && t.provider == ProviderId::Local)` and its doc's last clause to "a song whose info the user edited, or a streaming service's song, keeps it." Add next to `a_song_whose_info_the_user_edited_keeps_it_when_lyrics_are_found_swapped` in `jobs.rs` tests:
+
+```rust
+    #[test]
+    fn a_streaming_song_keeps_its_services_names_when_lyrics_are_found_swapped() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let song = crate::library::StreamingTrack {
+            provider_ref: "900002".into(),
+            title: "Made Up Album".into(),
+            artist: Some("City of Stars".into()),
+            album: None,
+            duration_ms: Some(150_000),
+            isrc: None,
+            album_ref: None,
+            artwork: None,
+        };
+        let t = lib.upsert_streaming_track(crate::library::ProviderId::Apple, &song).unwrap();
+        let mut events = Vec::new();
+        assert!(find_lyrics_again(&c, &lib, &lyrics::Candidates(vec![("City of Stars", "Ryan Gosling & Emma Stone", 150.0)]), t, &mut |e| events.push(e)).unwrap());
+        let track = lib.track(t).unwrap();
+        assert_eq!((track.title.as_str(), track.artist.as_deref(), events), ("Made Up Album", Some("City of Stars"), vec![Event::Lyrics { track_id: t }]));
+    }
+```
+
+(It fails before the filter change: the song would be renamed and filed under Local › Imported.)
+
 - [ ] **Step 7: Run the tests and checks**
 
-Run: `source "$HOME/.cargo/env" && cargo test -p kara-core ingest::ytmusic matching && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cd app && npm run check && npm run check:i18n`
+Run: `source "$HOME/.cargo/env" && cargo test -p kara-core ingest::ytmusic && cargo test -p kara-core matching && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cd app && npm run check && npm run check:i18n`
 Expected: all pass. If a scoring expectation fails, print `score(...)` for that hit in the test (temporarily) and fix the rule, not the expectation — each expectation is a behavior the spec asks for. Optionally run `cargo test -p kara-core live_isrc_search -- --ignored --nocapture` (network) and report its time.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/kara-core app/src-tauri/src/adding.rs app/src/lib/api.ts app/src/lib/i18n
+git add crates/kara-core app/src-tauri/src app/src/lib/api.ts app/src/lib/i18n
 git commit -m "feat(core): match streaming songs to YouTube uploads, official audio by ISRC first"
 ```
 
 ---
 
-### Task 7: The app — login window, Sources status, refresh, disconnect; the isolated check
+### Task 7: The app — login window, Sources status, refresh, disconnect
 
 **Files:**
 - Create: `app/src-tauri/src/sources.rs`
 - Modify: `app/src-tauri/src/lib.rs` (`mod sources;`, manage `sources::Apple`, `sources::start`, commands), `app/src-tauri/src/player.rs` (`Player::track_ids`)
-- Create unless it exists (Phase 2 makes the same script): `app/scripts/isolated-check.sh`; modify `app/scripts/window-id.swift`
+- Use unchanged: Phase 2's `app/scripts/isolated-check.sh` and `window-id.swift` (read them first)
 
 **Interfaces:**
 - Consumes: `apple::{Client, Tokens, keychain, parse, sync}` (Tasks 3–5), `Library::{account, connect_account, set_signed_out}` (Task 1), `AppState`, `state::{AppError, Plain}`.
 - Produces:
-  - Tauri state `sources::Apple` (managed in `setup`); `sources::client(app: &AppHandle) -> anyhow::Result<Option<Arc<Client>>>` (None unless Apple Music is connected and not signed out); `sources::refresh(app: &AppHandle)`; `sources::start(app: &AppHandle)`.
+  - Tauri state `sources::Apple` (managed in `setup`); `sources::client(app: &AppHandle) -> anyhow::Result<Option<Arc<Client>>>` (None unless Apple Music is connected and not signed out; a Keychain read that fails counts as signed out); `sources::refresh(app: &AppHandle)`; `sources::start(app: &AppHandle)`.
   - Commands: `apple_status() -> AppleStatus`, `apple_connect()`, `apple_refresh()`, `apple_disconnect()`.
   - Event `"sources"` with `AppleStatus { account: Option<Account>, connecting: bool, refreshing: bool, problem: Option<Problem>, revision: u32 }` (camelCase); `revision` goes up whenever Apple Music content in the library changed.
   - `Player::track_ids(&self) -> Vec<i64>` (every song in the queue).
-  - `app/scripts/isolated-check.sh <picture> [command]` — the isolated check.
   - Debug-only knob `KARA_APPLE_LOGIN_CHECK=1`: at launch, opens the login window, and once the page's player has loaded prints `apple login check: the page is ready` to stderr and closes the window (no token is printed).
 
 - [ ] **Step 1: Write the failing test**
@@ -2364,7 +2385,7 @@ Expected: compile error — `parse_login` not found.
 
 - [ ] **Step 2: `Player::track_ids`**
 
-In `player.rs`, `impl Player`:
+Read `player.rs` at HEAD first (Phase 2 gave `Entry` a `by` field). In `impl Player`:
 
 ```rust
     /// Every song in the queue, played or not.
@@ -2432,13 +2453,8 @@ fn library(app: &AppHandle) -> anyhow::Result<State<'_, AppState>> {
 fn status(app: &AppHandle) -> anyhow::Result<AppleStatus> {
     let a = apple(app);
     let account = library(app)?.lib.lock().unwrap().account(ProviderId::Apple)?;
-    Ok(AppleStatus {
-        account,
-        connecting: a.connecting.load(SeqCst),
-        refreshing: a.refreshing.load(SeqCst),
-        problem: *a.problem.lock().unwrap(),
-        revision: a.revision.load(SeqCst),
-    })
+    let problem = *a.problem.lock().unwrap();
+    Ok(AppleStatus { account, connecting: a.connecting.load(SeqCst), refreshing: a.refreshing.load(SeqCst), problem, revision: a.revision.load(SeqCst) })
 }
 
 /// Tells the app Apple Music's status changed.
@@ -2454,9 +2470,10 @@ pub fn client(app: &AppHandle) -> anyhow::Result<Option<Arc<Client>>> {
     if !signed_in {
         return Ok(None);
     }
-    let mut client = apple(app).client.lock().unwrap();
+    let state = apple(app);
+    let mut client = state.client.lock().unwrap();
     if client.is_none() {
-        *client = keychain::load()?.map(|t| Arc::new(Client::new(t)));
+        *client = keychain::load().context(Problem::AppleSignedOut)?.map(|t| Arc::new(Client::new(t)));
     }
     Ok(client.clone())
 }
@@ -2524,10 +2541,12 @@ fn login_cookie(window: &WebviewWindow) -> Option<String> {
 }
 
 /// Asks the login page for the web player's tokens every second until the user has signed in (then connects and
-/// closes the window) or the window is closed. With KARA_APPLE_LOGIN_CHECK it only reports that the page is ready.
+/// closes the window) or closes it. A login that fails to connect isn't tried again until the page has another one.
+/// With KARA_APPLE_LOGIN_CHECK it only reports that the page is ready.
 fn watch_login(app: &AppHandle, window: &WebviewWindow) {
     let check = cfg!(debug_assertions) && std::env::var_os("KARA_APPLE_LOGIN_CHECK").is_some();
     let (tx, rx) = mpsc::channel();
+    let mut tried: Option<String> = None;
     while app.get_webview_window(LOGIN_WINDOW).is_some() {
         std::thread::sleep(Duration::from_secs(1));
         let tx = tx.clone();
@@ -2542,6 +2561,10 @@ fn watch_login(app: &AppHandle, window: &WebviewWindow) {
             break;
         }
         let Some(user) = user.or_else(|| login_cookie(window)) else { continue };
+        if tried.as_ref() == Some(&user) {
+            continue;
+        }
+        tried = Some(user.clone());
         match connect(app, developer, user) {
             Ok(()) => {
                 let _ = window.close();
@@ -2550,7 +2573,6 @@ fn watch_login(app: &AppHandle, window: &WebviewWindow) {
             Err(e) => {
                 *apple(app).problem.lock().unwrap() = problem(&e);
                 changed(app);
-                std::thread::sleep(Duration::from_secs(5));
             }
         }
     }
@@ -2558,10 +2580,10 @@ fn watch_login(app: &AppHandle, window: &WebviewWindow) {
 
 /// Checks the login with Apple Music, keeps it on this Mac, records the account and starts the first refresh.
 fn connect(app: &AppHandle, developer: String, user: String) -> anyhow::Result<()> {
-    let probe = Client::new(Tokens { developer, user: user.clone(), storefront: String::new() });
+    let probe = Client::new(Tokens { developer: developer.clone(), user: user.clone(), storefront: String::new() });
     let storefront = parse::storefront(&probe.get("/v1/me/storefront")?).context(Problem::AppleChanged)?;
     let name = probe.find("/v1/me/social-profile").ok().flatten().as_ref().and_then(parse::display_name);
-    let tokens = Tokens { developer: probe.tokens().developer, user, storefront };
+    let tokens = Tokens { developer, user, storefront };
     keychain::save(&tokens).context(Problem::LoginSave)?;
     *apple(app).client.lock().unwrap() = Some(Arc::new(Client::new(tokens)));
     library(app)?.lib.lock().unwrap().connect_account(ProviderId::Apple, name.as_deref())?;
@@ -2588,24 +2610,18 @@ pub fn refresh(app: &AppHandle) {
 }
 
 /// Syncs with Apple Music on its own library connection; a refused or missing login marks the account signed out,
-/// a renewed login is saved, and a disconnect that happened meanwhile is finished.
+/// and a disconnect that happened meanwhile is finished.
 fn run_refresh(app: &AppHandle) -> anyhow::Result<()> {
     let state = library(app)?;
     let lib = Library::open(&state.store.db_path())?;
     let keep = state.player.lock().unwrap().track_ids();
-    let result = match client(app)? {
-        Some(client) => {
-            let before = client.tokens();
-            let result = sync::sync(&lib, &client, &keep, &mut || {
-                apple(app).revision.fetch_add(1, SeqCst);
-                changed(app);
-            });
-            if client.tokens() != before {
-                keychain::save(&client.tokens()).context(Problem::LoginSave)?;
-            }
-            result
-        }
-        None => Err(Problem::AppleSignedOut.into()),
+    let result = match client(app) {
+        Ok(Some(client)) => sync::sync(&lib, &client, &keep, &mut || {
+            apple(app).revision.fetch_add(1, SeqCst);
+            changed(app);
+        }),
+        Ok(None) => Err(Problem::AppleSignedOut.into()),
+        Err(e) => Err(e),
     };
     if result.as_ref().err().and_then(problem) == Some(Problem::AppleSignedOut) {
         lib.set_signed_out(ProviderId::Apple)?;
@@ -2631,11 +2647,11 @@ pub fn start(app: &AppHandle) {
 }
 ```
 
-Probe before relying on them (read the real source under `~/.cargo/registry/src/*/tauri-2.12.0/src/webview/`): the exact paths of `NewWindowResponse` and of the cookie type returned by `cookies_for_url` (it has `name()` and `value()`), and that `WebviewWindow::eval_with_callback` exists with `Fn(String) + Send + 'static`. Adjust the imports, not the behavior. Keep `app/src-tauri/capabilities/default.json` unchanged (the login window must get no IPC).
+These Tauri 2.12 items were checked in `~/.cargo/registry/src/*/tauri-2.12.0/src/webview/`: `tauri::webview::NewWindowResponse`, `WebviewWindowBuilder::{incognito, on_new_window}`, `WebviewWindow::{eval_with_callback, cookies_for_url}` (the cookie has `name()` / `value()`). Keep `app/src-tauri/capabilities/default.json` unchanged (the login window must get no IPC).
 
 - [ ] **Step 4: Wire it up**
 
-In `lib.rs` `setup`, before `let _ = engine::open_library(app.handle());` add `app.manage(sources::Apple::default());`, and after it add `sources::start(app.handle());`. Add to `generate_handler!`:
+Read `lib.rs` at HEAD first (Phase 2 added `phones` state and commands). In `setup`, before `let _ = engine::open_library(app.handle());` add `app.manage(sources::Apple::default());`, and after it add `sources::start(app.handle());`. Add to `generate_handler!`:
 
 ```rust
             sources::apple_status,
@@ -2649,96 +2665,33 @@ In `lib.rs` `setup`, before `let _ = engine::open_library(app.handle());` add `a
 Run: `source "$HOME/.cargo/env" && cargo test -p kara-app sources && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
 Expected: PASS, no warnings.
 
-- [ ] **Step 6: The isolated check script**
+- [ ] **Step 6: Run the login window in the isolated check**
 
-If `app/scripts/isolated-check.sh` already exists (Phase 2 made it), use it unchanged and skip to Step 7. Otherwise, replace `app/scripts/window-id.swift` with:
-
-```swift
-// Prints the window number of the first normal on-screen window owned by one of the given processes (names or process ids).
-import CoreGraphics
-
-let owners = Set(CommandLine.arguments.dropFirst())
-let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-let owned = { (w: [String: Any]) in
-    owners.contains(w[kCGWindowOwnerName as String] as? String ?? "") || owners.contains(String(w[kCGWindowOwnerPID as String] as? Int ?? -1))
-}
-if let w = windows.first(where: { owned($0) && ($0[kCGWindowLayer as String] as? Int) == 0 }) {
-    print(w[kCGWindowNumber as String]!)
-}
-```
-
-and create `app/scripts/isolated-check.sh`:
-
-```zsh
-#!/bin/zsh
-# Builds the app with its page inside, runs that build on its own (scratch data, its own target folder and process), saves a
-# picture of its window to $1 (inside <work>/shots/), runs $2 (if given) while it is open, then stops only that process. Fails when
-# it didn't build, start or show a window, or logged a panic or an error. Never touches port 1420 or another running KaraAlwaysOK.
-set -u
-shot=${1:A}
-log=${shot:r}.log
-cd "${0:A:h}/.."
-work=${shot:h:h}
-mkdir -p "${shot:h}" "$work/data"
-rm -f "$shot" "${shot:r}.while-open.txt"
-fail() { echo "FAIL: $1 Output: $log"; exit 1; }
-
-npm run build >"$log" 2>&1 || fail "The page didn't build."
-source "$HOME/.cargo/env"
-CARGO_TARGET_DIR="$work/target" cargo build -p kara-app --features tauri/custom-protocol >>"$log" 2>&1 || fail "The app didn't build."
-KARA_DATA="$work/data" "$work/target/debug/kara-app" >>"$log" 2>&1 &
-app=$!
-trap 'kill $app 2>/dev/null; sleep 2; kill -9 $app 2>/dev/null' EXIT
-trap "exit 130" INT TERM
-
-id=""
-for _ in {1..60}; do
-  id=$(swift scripts/window-id.swift $app)
-  [[ -n $id ]] && break
-  kill -0 $app 2>/dev/null || fail "The app quit on its own."
-  sleep 1
-done
-[[ -n $id ]] || fail "No window within 60 s."
-sleep 2
-caffeinate -u -t 2
-screencapture -x -o -l "$id" "$shot"
-[[ -n ${2:-} ]] && eval "$2" >"${shot:r}.while-open.txt" 2>&1
-kill $app 2>/dev/null
-sleep 2
-kill -9 $app 2>/dev/null
-trap - EXIT INT TERM
-
-sed -n '/Finished/,$p' "$log" | grep -nE 'panicked|^error' && fail "Errors above."
-[[ -s $shot ]] || fail "No picture was saved (Screen Recording permission, or the display is asleep)."
-echo "OK. Picture: $shot"
-```
-
-Run `chmod +x app/scripts/isolated-check.sh`.
-
-- [ ] **Step 7: Run the login window in the isolated check**
-
-Run (Bash timeout 10 minutes; the first build in its own target folder is slow):
+Run (Bash timeout 10 minutes; Phase 2's script, used as it is):
 ```bash
 cd app && KARA_APPLE_LOGIN_CHECK=1 zsh scripts/isolated-check.sh ../.superpowers/sdd/2026-09-27-phase3-apple-music/shots/task-07.png "sleep 30" \
   && grep -q 'apple login check: the page is ready' ../.superpowers/sdd/2026-09-27-phase3-apple-music/shots/task-07.log
 ```
-Expected: `OK. Picture: …` and the grep succeeds — the incognito login window loaded music.apple.com's player and the app read it without anyone logging in. If the grep fails, read `task-07.log` (never paste token-like strings into the report). The report names the picture.
+Expected: `OK. Picture: …` and the grep succeeds — the incognito login window loaded music.apple.com and its player answered `MusicKit.getInstance()` before anyone logged in. Nobody logs in and Connect/Disconnect are never pressed here (the Keychain item is shared with the user's real login).
 
-- [ ] **Step 8: Commit**
+If the grep fails, read `task-07.log` (never paste token-like strings into the report) and check whether the page's `MusicKit` exists before sign-in. If it doesn't, change `watch_login` to wait for the `media-user-token` cookie (`login_cookie`) first and only then read `developerToken` from the page (the player is loaded after sign-in), make the knob report readiness once the page has finished loading instead, and say so in the report.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app/src-tauri/src/sources.rs app/src-tauri/src/lib.rs app/src-tauri/src/player.rs app/scripts/isolated-check.sh app/scripts/window-id.swift
+git add app/src-tauri/src/sources.rs app/src-tauri/src/lib.rs app/src-tauri/src/player.rs
 git commit -m "feat(app): Apple Music login window, kept login, background refresh and disconnect"
 ```
 
 ---
 
-### Task 8: The app — collections by source, artists merged in All, Imported only for Local
+### Task 8: The app — collections by source, artists merged in All, Imported only for Local; web artwork on the Mac and on phones
 
 **Files:**
 - Modify: `app/src-tauri/src/library.rs` (`CollectionCard.providers`, `card`, `cards`, `page`, `list_collections`, `open_collection`, tests)
 - Modify: `app/src-tauri/src/adding.rs` (`search_input`)
 - Modify: `app/src/lib/api.ts` (the changed commands' callers keep working)
+- Modify (read them first — Phase 2's code): `app/src/lib/art.ts` (Phase 2's `pictureUrl`), `app/src/lib/components/KaraokeBackground.svelte`, `app/src-tauri/src/phones/mod.rs` (`encode`'s `art_links`)
 
 **Interfaces:**
 - Consumes: Task 1's library methods (tests), `Library::collections(provider, kind)`.
@@ -2748,7 +2701,9 @@ git commit -m "feat(app): Apple Music login window, kept login, background refre
   - `library::page(lib: &Library, id: i64, all: bool) -> anyhow::Result<CollectionPage>`
   - Commands: `list_collections(kind: String, provider: Option<String>)`, `open_collection(id: i64, all: bool)`.
   - `adding::search_input` shows "Imported" (the user's word) only for Local's app-made playlist.
-  - `api.ts`: `CollectionCard.providers: Track["provider"][]`; `listCollections(kind: Kind, provider: "local" | "apple" | null = null)`; `openCollection(id: number, all = true)` — existing callers keep today's behavior.
+  - `api.ts`: `CollectionCard.providers: Track["provider"][]` and `CollectionCard.artworkPath: string | null`; `listCollections(kind: Kind, provider: "local" | "apple" | null = null)`; `openCollection(id: number, all = true)` — existing callers keep today's behavior.
+  - `art.ts`: one exported helper `artworkUrl(path: string): string` replacing Phase 2's `pictureUrl` — the phone server's `/art/` links and web addresses (`http(s)://`, Apple's artwork) as they are, files on this Mac through `convertFileSrc`. `artBackground` and `KaraokeBackground` use it.
+  - `phones::encode` rewrites only file paths to `/art/<file name>`; web artwork reaches phones as it is.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2765,7 +2720,7 @@ In `library.rs` tests, update the existing test's calls to `cards(&lib, Collecti
         let apple = lib.upsert_streaming_track(ProviderId::Apple, &song).unwrap();
         let artist = lib.upsert_collection(ProviderId::Apple, CollectionKind::Artist, "artist:juniper row", "Juniper Row", None).unwrap();
         lib.set_collection_tracks(artist, &[apple], None).unwrap();
-        let drive = StreamingCollection { kind: CollectionKind::Playlist, provider_ref: "p.1".into(), name: "Late Night Drive".into(), subtitle: None, catalog_ref: None, version: None };
+        let drive = StreamingCollection { kind: CollectionKind::Playlist, provider_ref: "p.1".into(), name: "Late Night Drive".into(), subtitle: None, artwork: None, catalog_ref: None, version: None };
         let pl = lib.upsert_streaming_collection(ProviderId::Apple, &drive).unwrap();
         lib.set_collection_tracks(pl, &[apple], None).unwrap();
 
@@ -2793,7 +2748,7 @@ In `adding.rs` tests add:
         kara_core::ingest::link_collections(&lib, local, None, None).unwrap();
         let song = StreamingTrack { provider_ref: "900002".into(), title: "Neon Tidewater".into(), artist: None, album: None, duration_ms: None, isrc: None, album_ref: None, artwork: None };
         let apple = lib.upsert_streaming_track(ProviderId::Apple, &song).unwrap();
-        let drive = StreamingCollection { kind: CollectionKind::Playlist, provider_ref: "p.1".into(), name: "Late Night Drive".into(), subtitle: None, catalog_ref: None, version: None };
+        let drive = StreamingCollection { kind: CollectionKind::Playlist, provider_ref: "p.1".into(), name: "Late Night Drive".into(), subtitle: None, artwork: None, catalog_ref: None, version: None };
         let pl = lib.upsert_streaming_collection(ProviderId::Apple, &drive).unwrap();
         lib.set_collection_tracks(pl, &[apple], None).unwrap();
         let found = |input: &str| match search_input(&lib, input, "Importadas").unwrap() {
@@ -2807,7 +2762,7 @@ In `adding.rs` tests add:
 
 - [ ] **Step 2: Run to see them fail**
 
-Run: `source "$HOME/.cargo/env" && cargo test -p kara-app library adding`
+Run: `source "$HOME/.cargo/env" && cargo test -p kara-app library && cargo test -p kara-app adding`
 Expected: compile errors (`cards` takes 2 arguments, `providers` missing); after fixing signatures, `an_apple_playlist_is_found…` fails because "Late Night Drive" matches "importadas".
 
 - [ ] **Step 3: Implement**
@@ -2894,23 +2849,53 @@ In `adding.rs` `search_input`: `all.extend(cards(lib, kind, None)?);` and the na
 
 (import `ProviderId`).
 
-In `app/src/lib/api.ts` add `providers: Track["provider"][];` to `CollectionCard` and change:
+In `app/src/lib/api.ts` add `providers: Track["provider"][];` and `artworkPath: string | null;` to `CollectionCard` and change:
 
 ```ts
 export const listCollections = (kind: Kind, provider: "local" | "apple" | null = null) => invoke<CollectionCard[]>("list_collections", { kind, provider });
 export const openCollection = (id: number, all = true) => invoke<CollectionPage>("open_collection", { id, all });
 ```
 
-- [ ] **Step 4: Run the tests and checks**
+- [ ] **Step 4: Web artwork on the Mac and on phones**
 
-Run: `source "$HOME/.cargo/env" && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cd app && npm run check && npx playwright test library playlists`
-Expected: all pass.
+Apple songs' and collections' artwork is a web address (`https://is1-ssl.mzstatic.com/…/600x600bb.jpg`). Read `art.ts`, `KaraokeBackground.svelte` and `phones/mod.rs` at HEAD first.
 
-- [ ] **Step 5: Commit**
+In `app/src-tauri/src/phones/mod.rs` tests add:
+
+```rust
+    #[test]
+    fn web_artwork_reaches_phones_as_it_is() {
+        let mut v = serde_json::json!({ "a": { "artworkPath": "https://is1-ssl.mzstatic.com/made/up/600x600bb.jpg" }, "b": [{ "artworkPath": "/Users/me/Library/art/ab12.jpg" }] });
+        art_links(&mut v);
+        assert_eq!(v, serde_json::json!({ "a": { "artworkPath": "https://is1-ssl.mzstatic.com/made/up/600x600bb.jpg" }, "b": [{ "artworkPath": "/art/ab12.jpg" }] }));
+    }
+```
+
+Run `cargo test -p kara-app web_artwork_reaches_phones` — it fails (the address becomes `/art/600x600bb.jpg`). In `art_links`, rewrite only paths that aren't web addresses:
+
+```rust
+                    Value::String(path) if k == "artworkPath" && !path.starts_with("https://") && !path.starts_with("http://") => {
+```
+
+In `app/src/lib/art.ts` replace Phase 2's `pictureUrl` with one exported helper and use it everywhere `pictureUrl` was used:
+
+```ts
+/** A picture's URL: the phone server's `/art/` links and web addresses as they are, a file on this Mac through the asset protocol. */
+export const artworkUrl = (path: string) => (/^(https?:\/\/|\/art\/)/.test(path) ? path : convertFileSrc(path));
+```
+
+In `KaraokeBackground.svelte` import `artworkUrl` from `$lib/art` and use `artworkUrl(track.artworkPath)` instead of `convertFileSrc(track.artworkPath)` (drop the unused import).
+
+- [ ] **Step 5: Run the tests and checks**
+
+Run: `source "$HOME/.cargo/env" && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cd app && npm run check && npm test && npx playwright test library playlists karaoke`
+Expected: all pass (Phase 2's phone tests included).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add app/src-tauri/src/library.rs app/src-tauri/src/adding.rs app/src/lib/api.ts
-git commit -m "feat(app): collections by source; artists merged in All; only Local has Imported"
+git add app/src-tauri/src/library.rs app/src-tauri/src/adding.rs app/src-tauri/src/phones app/src/lib/api.ts app/src/lib/art.ts app/src/lib/components/KaraokeBackground.svelte
+git commit -m "feat(app): collections by source; artists merged in All; only Local has Imported; web artwork on the Mac and phones"
 ```
 
 ---
@@ -2923,7 +2908,7 @@ git commit -m "feat(app): collections by source; artists merged in All; only Loc
 - Modify: `app/src-tauri/src/sources.rs` (motion and search commands), `app/src-tauri/src/player.rs` (`Player::renew`, `restart`), `app/src-tauri/src/lib.rs` (`mod matches;`, commands)
 
 **Interfaces:**
-- Consumes: `apple::{Client, parse, fake_client, reply}`, `sources::client` (Task 7), `matching::{search_once, YouTube}` (Task 6), `Library::{sources, add_match, select_source, track_album_ref, collection_catalog_ref, motion, set_motion}`.
+- Consumes: `apple::{Client, parse, fake_client, reply}`, `sources::client` (Task 7), `matching::{search_once, YouTube { store }}` (Task 6), read `player.rs` at HEAD first (Phase 2), `Library::{sources, add_match, select_source, track_album_ref, collection_catalog_ref, motion, set_motion}`.
 - Produces:
   - `apple::catalog::motion(lib: &Library, client: &Client, kind: CollectionKind, catalog_ref: &str) -> Result<Option<String>>` (kept 30 days; artists have none)
   - `apple::catalog::search(lib: &Library, client: &Client, query: &str) -> Result<Vec<i64>>` (up to 10 songs, saved as Apple songs)
@@ -2946,7 +2931,7 @@ mod tests {
     #[test]
     fn an_animated_cover_or_its_absence_is_looked_up_once() {
         let lib = Library::open_in_memory().unwrap();
-        let (c, asked) = fake_client(|url, _| {
+        let (c, asked) = fake_client(|url| {
             if url.contains("/albums/900001?") { reply(200, include_str!("samples/catalog-album-motion.json")) } else { reply(404, "") }
         });
         let url = motion(&lib, &c, CollectionKind::Album, "900001").unwrap();
@@ -2961,7 +2946,7 @@ mod tests {
     #[test]
     fn search_saves_the_songs_it_finds_so_they_can_be_queued_and_suggests_phrases() {
         let lib = Library::open_in_memory().unwrap();
-        let (c, asked) = fake_client(|url, _| {
+        let (c, asked) = fake_client(|url| {
             if url.contains("/search/suggestions?") { reply(200, include_str!("samples/catalog-suggestions.json")) } else { reply(200, include_str!("samples/catalog-search.json")) }
         });
         let ids = search(&lib, &c, "paper boats").unwrap();
@@ -3136,7 +3121,7 @@ pub async fn match_candidates(state: State<'_, AppState>, track_id: i64) -> Resu
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Vec<MatchCandidate>> {
         let lib = Library::open(&store.db_path())?;
         if lib.sources(track_id)?.is_empty() {
-            matching::search_once(&lib, track_id, &matching::YouTube { bin_dir: store.bin_dir() })?;
+            matching::search_once(&lib, track_id, &matching::YouTube { store: store.clone() })?;
         }
         Ok(lib.sources(track_id)?.into_iter().map(Into::into).collect())
     })
@@ -3165,11 +3150,7 @@ pub async fn choose_match_link(app: AppHandle, state: State<'_, AppState>, track
     let hit = SearchHit { url: url.to_string(), preview: found.unwrap_or(LinkPreview { title: url.to_string(), channel: None, duration_ms: None, thumbnail: None }) };
     {
         let lib = state.lib.lock().unwrap();
-        let existing = lib.sources(track_id).plain()?.into_iter().find(|s| s.uri == hit.url).map(|s| s.id);
-        let id = match existing {
-            Some(id) => id,
-            None => lib.add_match(track_id, &hit).plain()?,
-        };
+        let id = lib.add_match(track_id, &hit).plain()?;
         lib.select_source(track_id, id).plain()?;
     }
     crate::player::restart(&app, state.inner(), track_id)?;
@@ -3262,9 +3243,9 @@ git commit -m "feat(app): Change match, animated covers and Apple Music search c
 ### Task 10: Settings › Sources
 
 **Files:**
-- Modify: `app/src/lib/api.ts`, `app/src/lib/format.ts`; Create: `app/src/lib/format.test.ts`, `app/src/lib/state/sources.svelte.ts`
+- Modify: `app/src/lib/api.ts`, `app/src/lib/format.ts` (read it first: Phase 2 added `loudness()`); Create: `app/src/lib/state/sources.svelte.ts`
 - Modify: `app/src/lib/components/SettingsSheet.svelte`, `app/src/routes/+page.svelte`, `app/src/lib/i18n/*.ts`
-- Modify: `app/tests/fake-backend.ts`; Create: `app/tests/apple-music.spec.ts`
+- Modify: `app/tests/fake-backend.ts` (read it first: Phase 2 changed it); Create: `app/tests/apple-music.spec.ts`
 
 **Interfaces:**
 - Consumes: commands `apple_status`, `apple_connect`, `apple_refresh`, `apple_disconnect`, event `"sources"` (Task 7); `library.refresh()`, `toasts`, `say`, `t`.
@@ -3275,20 +3256,6 @@ git commit -m "feat(app): Change match, animated covers and Apple Music search c
   - Fake backend: `window.fake.appleConnected()`, `window.fake.appleSignedOut()`; Apple songs 201 "Neon Tidewater" (Juniper Row, Night Line) and 202 "Umbrella Weather" (Odd Hours Club, Odd Hours); account name "Mina".
 
 - [ ] **Step 1: Write the failing tests**
-
-`app/src/lib/format.test.ts`:
-
-```ts
-import { expect, it } from "vitest";
-import { ago } from "./format";
-
-it("says how long ago in the largest unit that fits", () => {
-  const now = Date.UTC(2026, 8, 27, 12);
-  expect(ago(now - 20_000, "en", now)).toBe("20 seconds ago");
-  expect(ago(now - 5 * 60_000, "en", now)).toBe("5 minutes ago");
-  expect(ago(now - 3 * 86_400_000, "en", now)).toBe("3 days ago");
-});
-```
 
 `app/tests/apple-music.spec.ts`:
 
@@ -3325,7 +3292,7 @@ test("a login that ran out says so, and Log in opens the login window again", as
   await page.evaluate(() => window.fake.appleConnected());
   await page.evaluate(() => window.fake.appleSignedOut());
   const toast = page.locator(".toasts");
-  await expect(toast).toContainText("Your Apple Music login has run out.");
+  await expect(toast).toContainText("Log in to Apple Music again");
   await toast.getByRole("button", { name: "Log in" }).click();
   expect(await calls(page, "apple_connect")).toHaveLength(1);
 });
@@ -3333,8 +3300,8 @@ test("a login that ran out says so, and Log in opens the login window again", as
 
 - [ ] **Step 2: Run to see them fail**
 
-Run: `cd app && npx vitest run src/lib/format.test.ts && npx playwright test apple-music`
-Expected: FAIL — `ago` isn't exported; the fake backend has no `apple_status` and Settings has no Sources section.
+Run: `cd app && npx playwright test apple-music`
+Expected: FAIL — the fake backend has no `apple_status` and Settings has no Sources section.
 
 - [ ] **Step 3: The fake backend**
 
@@ -3462,7 +3429,7 @@ class Sources {
 export const sources = new Sources();
 ```
 
-In `+page.svelte` import `sources` and add `void sources.init();` to `onMount`.
+In `+page.svelte` (read it first: Phase 2 added the mic pill and sheet) import `sources` and add `void sources.init();` to `onMount`.
 
 - [ ] **Step 5: The Sources section**
 
@@ -3662,12 +3629,12 @@ git commit -m "feat(app): Settings › Sources connects, refreshes and disconnec
 
 ---
 
-### Task 11: The provider switcher
+### Task 11: The provider switcher, and collections' own artwork
 
 **Files:**
 - Modify: `app/src/lib/state/library.svelte.ts`, `app/src/lib/state/sources.svelte.ts`, `app/src/lib/state/adding.svelte.ts`
 - Create: `app/src/lib/components/ProviderLogos.svelte`
-- Modify: `app/src/lib/components/Sidebar.svelte`, `CollectionView.svelte`, `SongRow.svelte`, `app/src/routes/+page.svelte`
+- Modify: `app/src/lib/components/Sidebar.svelte`, `CollectionView.svelte`, `SongRow.svelte`, `Cover.svelte`, `SearchResults.svelte`, `app/src/routes/+page.svelte`
 - Modify: `app/src/lib/i18n/*.ts`, `app/tests/fake-backend.ts`, `app/tests/apple-music.spec.ts`
 
 **Interfaces:**
@@ -3676,7 +3643,8 @@ git commit -m "feat(app): Settings › Sources connects, refreshes and disconnec
   - `library.svelte.ts`: `type Provider = "all" | "local" | "apple"`, `library.provider`, `library.setProvider(p)`; `library.show()` switches to All; `cardName` calls only Local's app-made playlist "Imported".
   - `ProviderLogos.svelte` `{ providers: Track["provider"][] }` — small logos with the source's name as tooltip.
   - `SongRow` prop `source?: boolean` — shows a streaming song's logo (used in your own playlists).
-  - Fake backend: `playlists` entries carry `provider`; Apple playlist 301 "Late Night Drive" (songs 201, 202) while connected; `collections(kind, provider)`.
+  - `Cover` prop `artwork?: string | null` — a collection's own picture (Apple playlists and albums) when set, else the Phase 1 song grid; every `Cover` of a card passes `artwork={card.artworkPath}`.
+  - Fake backend: `playlists` entries carry `provider` and `artworkPath`; Apple playlist 301 "Late Night Drive" (songs 201, 202, artwork `https://example.com/made-up/late-night-drive/600x600bb.jpg`) while connected; `collections(kind, provider)`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3701,6 +3669,7 @@ test("an Apple Music playlist keeps its own name and its songs queue like any ot
   await page.evaluate(() => window.fake.appleConnected());
   await page.locator("aside").getByRole("button", { name: /Late Night Drive/ }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Late Night Drive");
+  await expect(page.locator(".hero .cover .art").first()).toHaveCSS("background-image", /made-up\/late-night-drive/);
   await page.locator(".row", { hasText: "Neon Tidewater" }).click();
   expect(await calls(page, "queue_add")).toEqual([{ trackId: 201, next: false }]);
 });
@@ -3726,24 +3695,24 @@ In `app/tests/fake-backend.ts`:
 type Source = Track["provider"];
 ```
 
-Give `playlists` a type and a provider: `const playlists: { id: number; name: string; user: boolean; provider: Source; trackIds: number[] }[] = [ { id: 1, name: "Imported", user: false, provider: "local", trackIds: [1, 2, 3, 4, 5] }, { id: 2, name: "Friday Mix", user: true, provider: "local", trackIds: [1, 2, 3, 4] } ];` and in `create_playlist` push `{ id, name, user: true, provider: "local", trackIds }`. Next to `appleTracks` add:
+Give `playlists` a type, a provider and artwork: `const playlists: { id: number; name: string; user: boolean; provider: Source; artworkPath: string | null; trackIds: number[] }[] = [ { id: 1, name: "Imported", user: false, provider: "local", artworkPath: null, trackIds: [1, 2, 3, 4, 5] }, { id: 2, name: "Friday Mix", user: true, provider: "local", artworkPath: null, trackIds: [1, 2, 3, 4] } ];` (keep whatever else Phase 2 put there) and in `create_playlist` push `{ id, name, user: true, provider: "local", artworkPath: null, trackIds }`. Next to `appleTracks` add:
 
 ```ts
-const applePlaylists: typeof playlists = [{ id: 301, name: "Late Night Drive", user: false, provider: "apple", trackIds: [201, 202] }];
+const applePlaylists: typeof playlists = [{ id: 301, name: "Late Night Drive", user: false, provider: "apple", artworkPath: "https://example.com/made-up/late-night-drive/600x600bb.jpg", trackIds: [201, 202] }];
 ```
 
 Replace `collections` with:
 
 ```ts
 function collections(kind: Kind, provider: Source | null = null): { card: CollectionCard; tracks: Track[] }[] {
-  const make = (id: number, name: string, list: Track[], user: boolean, source: Source, subtitle: string | null = null) => ({
-    card: { id, provider: source, kind, name, subtitle, user, count: list.length, covers: list.slice(0, 4), providers: list.length ? [...new Set(list.map((t) => t.provider))] : [source] },
+  const make = (id: number, name: string, list: Track[], user: boolean, source: Source, subtitle: string | null = null, artworkPath: string | null = null) => ({
+    card: { id, provider: source, kind, name, subtitle, user, artworkPath, count: list.length, covers: list.slice(0, 4), providers: list.length ? [...new Set(list.map((t) => t.provider))] : [source] },
     tracks: list,
   });
   if (kind === "playlist") {
     return [...playlists, ...(apple.account ? applePlaylists : [])]
       .filter((p) => !provider || p.provider === provider)
-      .map((p) => make(p.id, p.name, p.trackIds.map((id) => tracks.get(id)!), p.user, p.provider));
+      .map((p) => make(p.id, p.name, p.trackIds.map((id) => tracks.get(id)!), p.user, p.provider, null, p.artworkPath));
   }
   const groups = new Map<string, Track[]>();
   for (const t of tracks.values()) {
@@ -3754,7 +3723,11 @@ function collections(kind: Kind, provider: Source | null = null): { card: Collec
 }
 ```
 
-and `list_collections: ({ kind, provider }) => collections(kind, provider ?? null).map((c) => c.card),`.
+and `list_collections: ({ kind, provider }) => collections(kind, provider ?? null).map((c) => c.card),`. `allCollections` must not hand `flatMap`'s index to `collections` as the provider:
+
+```ts
+const allCollections = () => (["playlist", "album", "artist"] as const).flatMap((k) => collections(k));
+```
 
 - [ ] **Step 3: Library state**
 
@@ -3876,6 +3849,28 @@ Styles (from the prototype's `.seg`):
 
 `+page.svelte`: the empty-library message shows only when `library.loaded && library.kind === "playlist" && library.provider !== "apple"`.
 
+`Cover.svelte` — a collection's own artwork first:
+
+```svelte
+<script lang="ts">
+  import type { Track } from "$lib/api";
+  import Artwork from "./Artwork.svelte";
+
+  let { covers, size, grid = false, round = false, artwork = null }: { covers: Track[]; size: number | string; grid?: boolean; round?: boolean; artwork?: string | null } = $props();
+  const px = $derived(typeof size === "number" ? `${size}px` : size);
+</script>
+
+{#if artwork}
+  <Artwork track={{ artSeed: 0, artworkPath: artwork }} {size} {round} />
+{:else if grid && covers.length >= 4}
+  <span class="grid" style:width={px} style:height={px}>{#each covers.slice(0, 4) as t (t.id)}<Artwork track={t} size="100%" square />{/each}</span>
+{:else}
+  <Artwork track={covers[0] ?? null} {size} {round} />
+{/if}
+```
+
+(keep its `<style>`). Pass `artwork={c.artworkPath}` / `artwork={page.card.artworkPath}` to the `Cover`s in `Sidebar.svelte`, `CollectionView.svelte` and `SearchResults.svelte`.
+
 - [ ] **Step 5: Text in six languages**
 
 Append:
@@ -3904,7 +3899,7 @@ git commit -m "feat(app): provider switcher — All, Local and Apple Music, with
 
 **Files:**
 - Create: `app/src/lib/components/MatchSheet.svelte`
-- Modify: `app/src/lib/api.ts`, `app/src/lib/state/ui.svelte.ts`, `app/src/lib/state/player.svelte.ts`, `app/src/lib/components/SongMenu.svelte`, `MoreMenu.svelte`, `app/src/routes/+page.svelte`, `app/src/lib/i18n/*.ts`
+- Modify: `app/src/lib/api.ts`, `app/src/lib/state/ui.svelte.ts`, `app/src/lib/state/player.svelte.ts`, `app/src/lib/components/SongMenu.svelte`, `MoreMenu.svelte`, `app/src/routes/+page.svelte`, `app/src/lib/i18n/*.ts` (read `ui.svelte.ts`, `player.svelte.ts` and `+page.svelte` first: Phase 2 changed them)
 - Modify: `app/tests/fake-backend.ts`, `app/tests/apple-music.spec.ts`
 
 **Interfaces:**
@@ -3999,7 +3994,7 @@ export const chooseMatch = (trackId: number, sourceId: number) => invoke<void>("
 export const chooseMatchLink = (trackId: number, url: string) => invoke<string>("choose_match_link", { trackId, url });
 ```
 
-`ui.svelte.ts`: `export type SheetState = { kind: "edit"; track: Track } | { kind: "settings" } | { kind: "match"; track: Track };`
+`ui.svelte.ts`: add `| { kind: "match"; track: Track }` to `SheetState` (keep Phase 2's `"mics"`).
 
 `player.svelte.ts` (import `SwapIcon`, `type AppError`):
 
@@ -4167,13 +4162,12 @@ git commit -m "feat(app): Change match sheet — pick another version or paste a
 
 **Files:**
 - Create: `app/src/lib/components/MotionArt.svelte`
-- Modify: `app/src/lib/art.ts`, `app/src/lib/api.ts`, `app/src/lib/components/CollectionView.svelte`, `KaraokeBackground.svelte`
+- Modify: `app/src/lib/api.ts`, `app/src/lib/components/CollectionView.svelte`, `KaraokeBackground.svelte`
 - Modify: `app/tests/fake-backend.ts`, `app/tests/apple-music.spec.ts`
 
 **Interfaces:**
-- Consumes: commands `track_motion`, `collection_motion` (Task 9).
+- Consumes: commands `track_motion`, `collection_motion` (Task 9); `artworkUrl` (Task 8).
 - Produces:
-  - `art.ts`: `artworkUrl(path: string): string` — web addresses as they are, files through `convertFileSrc`; `artBackground` and the karaoke background use it (Apple artwork is a web address).
   - `api.ts`: `trackMotion(trackId): Promise<string | null>`, `collectionMotion(collectionId): Promise<string | null>`.
   - `MotionArt.svelte` `{ src: string | null }` — a muted looping `<video>` over whatever is under it, shown only once it plays; not there at all under Reduce motion (follows the setting live).
 
@@ -4218,18 +4212,7 @@ export const trackMotion = (trackId: number) => invoke<string | null>("track_mot
 export const collectionMotion = (collectionId: number) => invoke<string | null>("collection_motion", { collectionId });
 ```
 
-- [ ] **Step 3: Web artwork**
-
-`art.ts`:
-
-```ts
-/** A URL the web view can load for stored artwork: web addresses as they are, files through the app. */
-export const artworkUrl = (path: string) => (/^https?:\/\//.test(path) ? path : convertFileSrc(path));
-```
-
-and in `artBackground` use `artworkUrl(t.artworkPath)` instead of `convertFileSrc(t.artworkPath)`.
-
-- [ ] **Step 4: `MotionArt`**
+- [ ] **Step 3: `MotionArt`**
 
 Create `app/src/lib/components/MotionArt.svelte`:
 
@@ -4264,7 +4247,7 @@ Create `app/src/lib/components/MotionArt.svelte`:
 
 Probe once in the isolated check's picture or with `npm run check` that Svelte sets `muted` as a property (WebKit only autoplays muted video); if it doesn't, bind it: `bind:muted={alwaysMuted}` with `const alwaysMuted = true`.
 
-- [ ] **Step 5: Collection header and karaoke background**
+- [ ] **Step 4: Collection header and karaoke background**
 
 `CollectionView.svelte` (import `collectionMotion`, `MotionArt`):
 
@@ -4280,7 +4263,7 @@ Probe once in the isolated check's picture or with `npm run check` that Svelte s
   });
 ```
 
-Put `<MotionArt src={motion} />` inside the cover `<div class="cover" …>` after `<Cover …/>`, and add `position: relative;` to `.cover`.
+Put `<MotionArt src={motion} />` inside the cover `<div class="cover" …>` after `<Cover …/>` (Task 11 gave it `artwork`), and add `position: relative;` to `.cover`.
 
 `KaraokeBackground.svelte`:
 
@@ -4313,12 +4296,12 @@ Put `<MotionArt src={motion} />` inside the cover `<div class="cover" …>` afte
 
 (keep its existing `<style>`; the karaoke view's `.shade` above it keeps the lyrics readable).
 
-- [ ] **Step 6: Run the checks**
+- [ ] **Step 5: Run the checks**
 
 Run: `cd app && npm run check && npm test && npx playwright test apple-music karaoke library`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/src app/tests
@@ -4330,7 +4313,7 @@ git commit -m "feat(app): animated covers on Apple Music collections and the kar
 ### Task 14: Apple Music in search
 
 **Files:**
-- Modify: `app/src/lib/api.ts`, `app/src/lib/search.ts`, `app/src/lib/search.test.ts`, `app/src/lib/suggest.ts`
+- Modify: `app/src/lib/api.ts`, `app/src/lib/search.ts`, `app/src/lib/search.test.ts`, `app/src/lib/state/sources.svelte.ts`
 - Modify: `app/src/lib/components/SearchBar.svelte`, `SearchResults.svelte`
 - Modify: `app/tests/fake-backend.ts`, `app/tests/apple-music.spec.ts`
 
@@ -4424,7 +4407,11 @@ export function withApple(view: SearchView, query: string, apple: Track[]): Sear
 }
 ```
 
-`suggest.ts`: `export const PHRASE_SOURCES: ((query: string) => Promise<string[]>)[] = [youtubeSuggestions, appleSuggestions];` (import `appleSuggestions`).
+`sources.svelte.ts` (import `appleSuggestions` from `$lib/api` and `PHRASE_SOURCES` from `$lib/suggest`): at the start of `init()` add Apple Music's phrases after YouTube's, asked only while Apple Music can search:
+
+```ts
+    PHRASE_SOURCES.push((query) => (this.searchable ? appleSuggestions(query) : Promise.resolve([])));
+```
 
 - [ ] **Step 4: Search bar and results**
 
@@ -4490,10 +4477,10 @@ git commit -m "feat(app): Apple Music songs and phrases in search"
 
 ---
 
-### Task 15: README, full check and the user's checklist
+### Task 15: README, full check and the user's checklist (on a copy of the library)
 
 **Files:**
-- Modify: `README.md`
+- Modify: `README.md` (read it first: Phase 2 added its phone section and the isolated check)
 
 - [ ] **Step 1: README**
 
@@ -4508,21 +4495,22 @@ the sidebar. The app refreshes them when it starts (at most every six hours) and
 reads your library — it never changes it and never plays Apple Music audio: when you sing one of its songs, the
 app finds the same song on YouTube (the official audio when there is one) and prepares that. Song menu ›
 Change match… picks another version or takes a pasted link. Animated album covers play where Apple has them.
+When the login runs out, Settings › Sources says "Log in to Apple Music again".
 
 The app uses the same web service and login as music.apple.com's own player (as Cider did). Apple doesn't offer
 this to other apps and it is against Apple Music's terms; this is a personal, non-commercial project, and each
-person uses their own account. The login is kept in your Mac's Keychain (item `world.aako.kara-always-oki`) and
-is only ever sent to Apple. Disconnect removes it along with Apple's playlists and albums; songs you've sung stay.
+person uses their own account. The login is kept in your Mac's Keychain (item `world.aako.kara-always-oki`, one
+for every data folder) and is only ever sent to Apple. Disconnect removes it along with Apple's playlists and
+albums; songs you've sung stay.
 ```
 
 In `## Development` add:
 
 ```markdown
-`app/scripts/isolated-check.sh <picture> [command]` builds and runs a separate copy of the app on scratch data
-(its own target folder and process; it never touches a running dev app). `KARA_APPLE_LOGIN_CHECK=1` (debug builds)
-opens the Apple Music login window at launch and prints `apple login check: the page is ready` once Apple's player
-has loaded, without logging in. With your account connected, `cargo test -p kara-core live_library_has_what_sync_reads
--- --ignored --nocapture` prints how many playlists, albums and songs the app can read (counts only).
+`KARA_APPLE_LOGIN_CHECK=1` (debug builds) opens the Apple Music login window at launch and prints
+`apple login check: the page is ready` once Apple's player has loaded, without logging in. With your account
+connected, `cargo test -p kara-core live_library_has_what_sync_reads -- --ignored --nocapture` prints how many
+playlists, albums and songs the app can read (counts only).
 ```
 
 - [ ] **Step 2: Full check**
@@ -4532,40 +4520,49 @@ Run:
 source "$HOME/.cargo/env" && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings
 cd app && npm run check && npm test && npm run check:i18n && npx playwright test
 ```
-Expected: everything passes, 0 warnings.
+Expected: everything passes, 0 warnings (Phase 2's tests included).
 
-- [ ] **Step 3: The isolated check**
+- [ ] **Step 3: The isolated checks**
 
-Run (Bash timeout 10 minutes):
+Run (Bash timeout 10 minutes each):
 ```bash
 cd app && zsh scripts/isolated-check.sh ../.superpowers/sdd/2026-09-27-phase3-apple-music/shots/task-15.png "sleep 5"
 ```
-Expected: `OK. Picture: …` — the picture shows the library (no Apple Music switcher on scratch data). Also run `grep -rnE 'eyJ[A-Za-z0-9_-]{20,}' ../.superpowers/sdd/2026-09-27-phase3-apple-music/shots || echo "no tokens in logs"` and expect `no tokens in logs`.
+Expected: `OK. Picture: …` — the library on scratch data (no Apple Music switcher). Then run Phase 2's own phone check exactly as its plan's Global Constraints give it (its `KARA_PHONE_CODE` / `KARA_PHONE_PORT` command and the `phone check OK` grep), with the picture at `../.superpowers/sdd/2026-09-27-phase3-apple-music/shots/task-15-phones.png` — Phase 3 must not have broken the phones. Finally `grep -rnE 'eyJ[A-Za-z0-9_-]{20,}' ../.superpowers/sdd/2026-09-27-phase3-apple-music/shots || echo "no tokens in logs"` must print `no tokens in logs`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add README.md
-git commit -m "docs: Apple Music, the isolated check and the login check"
+git commit -m "docs: Apple Music and the login check"
 ```
 
 - [ ] **Step 5: Hand over**
 
-Ask the user to restart their own dev app (`npm run tauri:dev` from `app/`, port 1420) on this branch, and give them the checklist below. Start nothing yourself.
+Give the user the checklist below. Start nothing yourself.
 
 ## User acceptance checklist (for the user, with their real Apple Music account; does not block any task)
 
+**Before you start — use a copy of your library.** This build upgrades the library it opens, and an upgraded library won't open in older builds (the `phase1b-app` or Phase 2 dev app) until Phase 3 is merged. So quit your dev app, copy the data folder, and run this branch's dev app on the copy:
+
+```
+cp -R ~/Library/Application\ Support/kara-always-oki ~/kara-phase3-data
+cd <the phase3-apple-music worktree>/app && KARA_DATA=~/kara-phase3-data npm run tauri:dev
+```
+
+The Apple Music login lives in your Keychain, not in the data folder, so it is shared with every build: connecting here connects them all, and Disconnect (step 12) removes it everywhere.
+
 1. **Connect.** Settings › Sources › Connect: a window opens on music.apple.com's sign-in; sign in (Apple ID, two-factor; Apple's own pop-up window opens and closes). The window closes by itself, a toast says "Connected to Apple Music as …" (or without a name), and the row shows "Refreshing…", then your name · "Refreshed now". macOS may ask whether kara-app may use "world.aako.kara-always-oki" in your Keychain — choose Always Allow (a rebuilt dev app may ask again).
-2. **Library.** The All · Local · Apple Music switcher appears. Apple Music › Playlists lists your playlists, including followed and Apple-made ones and Favorite Songs if you have it; compare the count with the Music app. Albums lists your albums; Artists lists their album artists. Note how long the first refresh took for your library size.
+2. **Library.** The All · Local · Apple Music switcher appears. Apple Music › Playlists lists your playlists, including followed and Apple-made ones and **Favorite Songs** (your liked songs) — check that it's there and full; compare the count with the Music app. Playlists show Apple's own cover pictures. Albums lists your albums; Artists lists their album artists. Note how long the first refresh took for your library size.
 3. **All.** Apple collections show the Apple logo; an artist you have both locally and on Apple Music shows once with songs from both; your own playlists can take Apple songs (Add to playlist) and show a small Apple logo on them.
 4. **Sing.** Tap ten Apple songs across styles and languages (include Japanese, Chinese and Korean titles, a live song and a remix): each plays within about 10–20 s, from the right version (official audio where it exists). Note any wrong pick.
 5. **Change match.** On a song, Song menu › Change match…: the versions found, the one in use checked; pick another — "Now singing from …", and the playing song starts over from that version, with its own lyric timing. Paste a YouTube link — it becomes the version in use. The player's "…" menu has the same Version › Change.
 6. **Nothing fits.** An obscure or self-uploaded song with no fitting version: "No singable version found…" with Change match….
 7. **Animated covers.** Open an album that has an animated cover on Apple Music (e.g. a recent major release): the header loops it; sing a song from it: the karaoke background loops it. Turn on Reduce motion: both go still.
-8. **Search.** Type a song you don't have: Apple Music phrases follow YouTube's in the suggestions; results show an Apple Music section whose songs queue and play.
-9. **Refresh.** In the Music app, add a song to a playlist and delete another playlist; press Refresh: the song appears, the playlist is gone, and a song you had sung from it is still found by search.
-10. **Relaunch.** Quit and relaunch within six hours: no refresh starts (the time stays). After six hours a relaunch refreshes.
-11. **Login runs out.** Quit the app, delete the `world.aako.kara-always-oki` item in Keychain Access, relaunch and press Refresh (or wait for the start refresh): "Your Apple Music login has run out…" with Log in; the synced playlists still work; Log in opens the window and fixes it.
-12. **Disconnect.** Settings › Sources › Disconnect asks first; afterwards Apple playlists and albums are gone, the switcher disappears, songs you've sung (and those in your own playlists) still play, and the Keychain item is gone.
-13. **Nothing leaks.** `sqlite3 ~/Library/Application\ Support/kara-always-oki/kara.db 'select * from provider_account'` shows no token; the terminal running `tauri:dev` never shows a string starting with `eyJ`.
+8. **Phones.** Start a phone session and join from your phone: an Apple song in the queue shows its cover on the phone too.
+9. **Search.** Type a song you don't have: Apple Music phrases follow YouTube's in the suggestions; results show an Apple Music section whose songs queue and play.
+10. **Refresh.** In the Music app, add a song to a playlist and delete another playlist; press Refresh: the song appears, the playlist is gone, and a song you had sung from it is still found by search.
+11. **Relaunch.** Quit and relaunch within six hours: no refresh starts (the time stays). After six hours a relaunch refreshes.
+12. **Login runs out, then Disconnect.** Quit the app, delete the `world.aako.kara-always-oki` item in Keychain Access, relaunch and press Refresh (or wait for the start refresh): "Log in to Apple Music again" with Log in; the synced playlists still work; Log in opens the window and fixes it. Then Settings › Sources › Disconnect asks first; afterwards Apple playlists and albums are gone, the switcher disappears, songs you've sung (and those in your own playlists) still play, and the Keychain item is gone. Connect again if you want to keep using it.
+13. **Nothing leaks.** `sqlite3 ~/kara-phase3-data/kara.db 'select * from provider_account'` shows no token; the terminal running `tauri:dev` never shows a string starting with `eyJ`.
 14. **If something looks off** (empty playlists, no animated covers, wrong counts), run `cargo test -p kara-core live_library_has_what_sync_reads -- --ignored --nocapture` and share its one line of counts.
