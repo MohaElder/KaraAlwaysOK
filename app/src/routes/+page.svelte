@@ -5,14 +5,17 @@
   import Empty from "$lib/components/Empty.svelte";
   import GettingReady from "$lib/components/GettingReady.svelte";
   import Tooltip from "$lib/components/Tooltip.svelte";
+  import Toasts from "$lib/components/Toasts.svelte";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
   import WarningIcon from "phosphor-svelte/lib/WarningIcon";
   import { t } from "$lib/i18n/index.svelte";
   import { engine } from "$lib/state/engine.svelte";
   import { library } from "$lib/state/library.svelte";
+  import { player } from "$lib/state/player.svelte";
 
   onMount(() => {
     engine.start();
+    player.init();
   });
 </script>
 
@@ -34,6 +37,7 @@
   </main>
 </div>
 <GettingReady />
+<Toasts />
 <Tooltip />
 
 <style>

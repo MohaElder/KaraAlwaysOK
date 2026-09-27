@@ -58,6 +58,11 @@ const en = {
   "wait.startingIn": "Starting in {n}s",
   "wait.soon": "Starting soon…",
   "wait.catchingUp": "Catching up…",
+  "collection.sing": "Sing",
+  "collection.shuffle": "Shuffle",
+  "toast.addedToQueue": "Added to queue",
+  "toast.playsNext": "“{title}” plays next",
+  "toast.notReady": "That part isn't ready yet",
 };
 
 export default en;

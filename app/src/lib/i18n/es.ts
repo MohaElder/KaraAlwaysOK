@@ -60,6 +60,11 @@ const es: Record<Key, string> = {
   "wait.startingIn": "Empieza en {n} s",
   "wait.soon": "Empieza enseguida…",
   "wait.catchingUp": "Poniéndose al día…",
+  "collection.sing": "Cantar",
+  "collection.shuffle": "Aleatorio",
+  "toast.addedToQueue": "Añadida a la cola",
+  "toast.playsNext": "«{title}» suena a continuación",
+  "toast.notReady": "Esa parte aún no está lista",
 };
 
 export default es;

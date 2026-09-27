@@ -60,6 +60,11 @@ const ja: Record<Key, string> = {
   "wait.startingIn": "{n} 秒後に開始",
   "wait.soon": "まもなく開始…",
   "wait.catchingUp": "追いついています…",
+  "collection.sing": "歌う",
+  "collection.shuffle": "シャッフル",
+  "toast.addedToQueue": "キューに追加しました",
+  "toast.playsNext": "「{title}」を次に再生します",
+  "toast.notReady": "その部分はまだ準備できていません",
 };
 
 export default ja;

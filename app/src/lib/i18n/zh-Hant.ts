@@ -60,6 +60,11 @@ const zhHant: Record<Key, string> = {
   "wait.startingIn": "{n} 秒後開始",
   "wait.soon": "即將開始…",
   "wait.catchingUp": "正在追趕…",
+  "collection.sing": "開唱",
+  "collection.shuffle": "隨機播放",
+  "toast.addedToQueue": "已加入佇列",
+  "toast.playsNext": "接下來播放「{title}」",
+  "toast.notReady": "那部分還沒準備好",
 };
 
 export default zhHant;

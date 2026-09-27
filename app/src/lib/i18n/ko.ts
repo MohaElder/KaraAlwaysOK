@@ -60,6 +60,11 @@ const ko: Record<Key, string> = {
   "wait.startingIn": "{n}초 후 시작",
   "wait.soon": "곧 시작…",
   "wait.catchingUp": "따라잡는 중…",
+  "collection.sing": "부르기",
+  "collection.shuffle": "셔플",
+  "toast.addedToQueue": "대기열에 추가했습니다",
+  "toast.playsNext": "‘{title}’이(가) 다음에 재생됩니다",
+  "toast.notReady": "그 부분은 아직 준비되지 않았습니다",
 };
 
 export default ko;

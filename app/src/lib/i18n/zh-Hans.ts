@@ -60,6 +60,11 @@ const zhHans: Record<Key, string> = {
   "wait.startingIn": "{n} 秒后开始",
   "wait.soon": "即将开始…",
   "wait.catchingUp": "正在追赶…",
+  "collection.sing": "开唱",
+  "collection.shuffle": "随机播放",
+  "toast.addedToQueue": "已加入队列",
+  "toast.playsNext": "接下来播放“{title}”",
+  "toast.notReady": "那部分还没准备好",
 };
 
 export default zhHans;

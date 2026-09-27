@@ -1055,6 +1055,19 @@ mod tests {
     }
 
     #[test]
+    fn asking_again_for_a_ready_song_reports_it_ready_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let a = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let (w, rx) = worker(&c, Silence);
+        w.play(vec![a]);
+        wait_for(&rx, &Event::Ready { track_id: a });
+        w.play(vec![a]);
+        wait_for(&rx, &Event::Ready { track_id: a });
+    }
+
+    #[test]
     fn worker_drops_a_song_when_you_switch_away() {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());

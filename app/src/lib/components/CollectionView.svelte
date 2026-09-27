@@ -10,6 +10,10 @@
   import PlaylistIcon from "phosphor-svelte/lib/PlaylistIcon";
   import VinylRecordIcon from "phosphor-svelte/lib/VinylRecordIcon";
   import UserIcon from "phosphor-svelte/lib/UserIcon";
+  import { player } from "$lib/state/player.svelte";
+  import { ui } from "$lib/state/ui.svelte";
+  import PlayIcon from "phosphor-svelte/lib/PlayIcon";
+  import ShuffleIcon from "phosphor-svelte/lib/ShuffleIcon";
 
   const kinds: Record<Kind, { label: Key; icon: Icon }> = {
     playlist: { label: "kind.playlist", icon: PlaylistIcon },
@@ -35,12 +39,15 @@
           <div class="cap hstack"><kind.icon size={14} />{t(kind.label)}</div>
           <h1>{cardName(page.card)}</h1>
           <p class="sub num">{#if page.card.subtitle}<span class="subtitle">{page.card.subtitle}</span> · {/if}{t("library.songs", { n: tracks.length })}{#if length} · {t("library.minutes", { n: length })}{/if}</p>
-          <div class="actions"></div>
+          <div class="actions">
+            <button class="btn accent lg" disabled={!tracks.length} onclick={() => player.playAll(tracks.map((x) => x.id), false)}><PlayIcon />{t("collection.sing")}</button>
+            <button class="btn soft lg" disabled={!tracks.length} onclick={() => player.playAll(tracks.map((x) => x.id), true)}><ShuffleIcon />{t("collection.shuffle")}</button>
+          </div>
         </div>
       </div>
       <div class="rows">
         {#each tracks as song (song.id)}
-          <SongRow track={song} />
+          <SongRow track={song} playing={player.track?.id === song.id} flash={ui.flash === song.id} onTap={() => player.enqueue(song.id)} onNext={() => player.enqueue(song.id, true)} />
         {:else}
           <p class="hstack muted none-yet"><PlaylistIcon />{t("library.emptyPlaylist")}</p>
         {/each}
