@@ -24,9 +24,9 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 
 **Library** — modeled on the Apple Music Mac app, styled after cosmos.so (quiet, image-led, grotesk type).
 - Sidebar, three layers:
-  1. Provider switcher: **All** · Apple Music · Spotify · Local. Default is All, which merges connected providers.
-  2. Tabs: **Playlists · Albums · Artists**.
-  3. List of collections; selecting one shows its songs in the main pane (cover, title, *Sing* / *Shuffle*, song rows with a small "Ready" / "Preparing 42%" status).
+  1. Provider switcher: icon buttons (All icon, Apple Music logo, Spotify logo, Local/folder icon) with the name as a tooltip. Default is All, which merges connected providers.
+  2. Tabs: **Playlists · Albums · Artists**, each with its icon beside the label.
+  3. List of collections; selecting one shows its songs in the main pane (cover, title, *Sing* / *Shuffle*, song rows showing only artwork, title, artist – album, and length). No per-song processing status in lists: preparation happens while you play.
 - In All, each collection shows small provider dots. Artists with the same name merge across providers.
 - A disconnected provider shows a *Connect* prompt in its view.
 
@@ -48,6 +48,8 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 **Karaoke view** — full screen, blurred artwork background, big lyrics with word-by-word fill, current line centered. Top-right: the mic pill. Collapse chevron returns to the library; music keeps playing.
 
 **Mic pill** — top-right in both library and karaoke view. Handheld-karaoke-mic icon + number of joined phones, or a **+** when none. Opens the connect window: QR code, join code, a short tutorial for the one-time browser warning (iPhone: *Show Details → visit this website*; Android: *Advanced → Proceed*), and the list of joined phones with a level meter, volume and Remove.
+
+**Icon-first rule** — use icons wherever an icon can carry the meaning, and show nothing that doesn't help the user act. Every label gets an icon beside it, except the core song info (song title, artist, album). Providers are shown by their logos. No status or detail that the user can't act on (e.g. no "Ready" / "Preparing" badges in song lists).
 
 **Copy rule** — no engineering vocabulary in the UI (no "stems", "FLAC", "LRCLIB", "chunks", IPs/ports).
 
