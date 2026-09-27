@@ -115,4 +115,53 @@ mod tests {
         assert_eq!(spec.len(), 16);
         assert_eq!(spec[0].len(), 33);
     }
+
+    // Reference bins for n_fft=16, hop=4, signal(40), generated with
+    // torch.stft(x, n_fft=16, hop_length=4, win_length=16,
+    // window=torch.hann_window(16, periodic=True), center=True,
+    // pad_mode="reflect", onesided=True, return_complex=True).
+    // Generator script pasted in the task-2 fix report.
+    #[test]
+    fn matches_torch_reference() {
+        let s = Stft::new(16, 4);
+        let x = signal(40);
+        assert_eq!(s.frames(x.len()), 11);
+        let spec = s.forward(&x);
+        assert_eq!(spec.len(), 11);
+        assert_eq!(spec[0].len(), 9);
+
+        // Frame 0: boundary frame, content depends on reflect padding.
+        let frame0 = [
+            Complex32::new(4.155554, 0.0),
+            Complex32::new(-1.653265, 0.0),
+            Complex32::new(-0.650103, 0.0),
+            Complex32::new(0.291102, 0.0),
+            Complex32::new(-0.125849, 0.0),
+            Complex32::new(0.096629, 0.0),
+            Complex32::new(-0.071493, 0.0),
+            Complex32::new(0.065534, 0.0),
+            Complex32::new(-0.060662, 0.0),
+        ];
+        // Frame 5: interior frame, unaffected by padding.
+        let frame5 = [
+            Complex32::new(-0.251363, 0.0),
+            Complex32::new(0.276157, 1.075579),
+            Complex32::new(-0.138527, -0.451060),
+            Complex32::new(-0.008315, -0.026128),
+            Complex32::new(-0.002083, -0.006975),
+            Complex32::new(-0.000796, -0.002777),
+            Complex32::new(-0.000396, -0.001265),
+            Complex32::new(-0.000252, -0.000514),
+            Complex32::new(-0.000214, 0.0),
+        ];
+
+        for (got, want) in spec[0].iter().zip(&frame0) {
+            assert!((got.re - want.re).abs() < 1e-4, "re: got {got:?} want {want:?}");
+            assert!((got.im - want.im).abs() < 1e-4, "im: got {got:?} want {want:?}");
+        }
+        for (got, want) in spec[5].iter().zip(&frame5) {
+            assert!((got.re - want.re).abs() < 1e-4, "re: got {got:?} want {want:?}");
+            assert!((got.im - want.im).abs() < 1e-4, "im: got {got:?} want {want:?}");
+        }
+    }
 }
