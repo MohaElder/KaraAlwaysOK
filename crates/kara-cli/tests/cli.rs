@@ -40,7 +40,7 @@ fn streaming_links_are_refused_with_a_plain_message() {
 fn only_writers_clean_up_and_a_second_writer_is_turned_away() {
     let dir = tempfile::tempdir().unwrap();
     let store = kara_core::store::Store::new(dir.path());
-    let part = store.audio_dir("h").join("source.flac.part");
+    let part = store.audio_dir("h").join("original.m4a.part");
     std::fs::create_dir_all(part.parent().unwrap()).unwrap();
     std::fs::write(&part, b"being written").unwrap();
     let _held = store.lock().unwrap();

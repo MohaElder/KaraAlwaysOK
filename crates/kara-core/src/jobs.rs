@@ -12,6 +12,7 @@ use crate::now_ms;
 use crate::separate::mdx::{self, MdxParams, Outcome, VocalModel};
 use crate::store::{write_atomic, DataLock, Store};
 use anyhow::{Context, Result};
+use std::path::Path;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
@@ -79,9 +80,10 @@ pub fn prepare(
     result
 }
 
-/// Marked ready in the library and every chunk file is still on disk.
+/// Marked ready in the library, with the original and every chunk file still on disk.
 fn is_ready(ctx: &Ctx, lib: &Library, hash: &str) -> Result<bool> {
-    Ok(lib.separation(hash, &ctx.model_id)?.is_some_and(|r| {
+    Ok(ctx.store.original_path(hash).is_some()
+        && lib.separation(hash, &ctx.model_id)?.is_some_and(|r| {
         r.status == SepStatus::Ready && cache::count_complete_chunks(&ctx.store, hash, &ctx.model_id) >= r.chunks_total
     }))
 }
@@ -229,34 +231,23 @@ fn prepare_inner(
     separate_stage(ctx, lib, track_id, &hash, &mix, model, cancel, emit)
 }
 
-/// The song in the standard format, plus its hash. Uses the stored copy when
-/// there is one; otherwise fetches and converts the original.
+/// The song in the standard format, plus its hash. Decodes the kept original
+/// when there is one; otherwise fetches the song and keeps a copy.
 fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, emit: &mut dyn FnMut(Event)) -> Result<(String, Stereo)> {
     if let Some(hash) = &source.audio_hash {
-        let p = ctx.store.source_path(hash);
-        if p.exists() {
-            return Ok((hash.clone(), audio::read_flac(&p).context("Couldn't read this song's audio.")?));
+        if let Some(p) = ctx.store.original_path(hash) {
+            return Ok((hash.clone(), audio::decode_file(&p).context("Couldn't read this song's audio.")?.audio));
         }
     }
     emit(Event::Stage { track_id: track.id, stage: Stage::Fetching });
     lib.set_source_status(source.id, SourceStatus::Fetching, None)?;
     let path = ingest::fetch_audio(lib, &ctx.store, track, source)?;
     emit(Event::Stage { track_id: track.id, stage: Stage::Standardizing });
-    let decoded = audio::decode_file(&path).context("Couldn't read this audio. The format may not be supported.");
+    let kept = decode_and_keep(ctx, &path);
     if source.kind == SourceKind::Link {
         let _ = std::fs::remove_file(&path);
     }
-    let decoded = decoded?;
-    anyhow::ensure!(!decoded.audio.is_empty(), "This audio is empty.");
-    let hash = audio::audio_hash(&decoded.audio);
-    let dst = ctx.store.source_path(&hash);
-    if !is_ready(ctx, lib, &hash)? && !dst.exists() {
-        let bytes = audio::encode_flac(&decoded.audio).context("Couldn't prepare this song's audio.")?;
-        write_atomic(&dst, &bytes).map_err(|e| {
-            let full = e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::StorageFull);
-            e.context(if full { "Couldn't save the audio. The disk is full." } else { "Couldn't save the audio." })
-        })?;
-    }
+    let (hash, decoded) = kept?;
     lib.set_source_audio(source.id, &hash, decoded.audio.duration_ms())?;
     if let Some(text) = decoded.tags.lyrics.as_deref().filter(|t| lyrics::is_synced(t)) {
         let lines = lyrics::parse_lrc(text, decoded.audio.duration_ms());
@@ -264,6 +255,22 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
         emit(Event::Lyrics { track_id: track.id });
     }
     Ok((hash, decoded.audio))
+}
+
+/// Decodes a fetched file and keeps a copy of it as the song's original.
+fn decode_and_keep(ctx: &Ctx, path: &Path) -> Result<(String, audio::Decoded)> {
+    let decoded = audio::decode_file(path).context("Couldn't read this audio. The format may not be supported.")?;
+    anyhow::ensure!(!decoded.audio.is_empty(), "This audio is empty.");
+    let hash = audio::audio_hash(&decoded.audio);
+    if ctx.store.original_path(&hash).is_none() {
+        let bytes = std::fs::read(path).context("Couldn't read this audio.")?;
+        let dst = ctx.store.original_dest(&hash, path.extension().and_then(|e| e.to_str()));
+        write_atomic(&dst, &bytes).map_err(|e| {
+            let full = e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::StorageFull);
+            e.context(if full { "Couldn't save the audio. The disk is full." } else { "Couldn't save the audio." })
+        })?;
+    }
+    Ok((hash, decoded))
 }
 
 /// Separates `mix` from its first missing chunk, saving each finished chunk
@@ -318,7 +325,7 @@ fn separate_stage(
             lib.upsert_separation(&row)?;
         }
         Outcome::Done => {
-            cache::finish(&ctx.store, lib, hash, &ctx.model_id)?;
+            cache::finish(lib, hash, &ctx.model_id)?;
         }
     }
     Ok(outcome)
@@ -503,7 +510,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
-        let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
+        let file = song(dir.path(), "a.wav");
+        let t = ingest::add_file(&lib, &file).unwrap().track_id;
         let (r, events) = run(&c, &lib, t, &AtomicBool::new(false));
         assert_eq!(r.unwrap(), Outcome::Done);
         assert_eq!(events.first(), Some(&Event::Stage { track_id: t, stage: Stage::Fetching }));
@@ -511,11 +519,12 @@ mod tests {
         assert_eq!(events.last(), Some(&Event::Ready { track_id: t }));
         let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
         assert_eq!(lib.separation(&hash, "test").unwrap().unwrap().status, SepStatus::Ready);
-        assert!(!c.store.source_path(&hash).exists());
         assert_eq!(lib.lyrics(t).unwrap().unwrap().source, LyricsSource::None);
-        // Second time: instant.
+        // Second time, even with the user's file moved away: instant, and it still plays.
+        std::fs::remove_file(&file).unwrap();
         let (_, again) = run(&c, &lib, t, &AtomicBool::new(false));
         assert_eq!(again, vec![Event::Ready { track_id: t }]);
+        assert!(cache::track_chunk_pcm(&c.store, &lib, "test", t, 2).is_ok());
     }
 
     #[test]
@@ -570,23 +579,27 @@ mod tests {
         let (_, events) = run(&c, &lib, t2, &AtomicBool::new(false));
         assert!(!events.iter().any(|e| matches!(e, Event::Progress { .. })));
         assert_eq!(events.last(), Some(&Event::Ready { track_id: t2 }));
-        let hash = lib.selected_source(t2).unwrap().unwrap().audio_hash.unwrap();
-        assert!(!c.store.source_path(&hash).exists());
+        assert_eq!(std::fs::read_dir(c.store.audio_root()).unwrap().count(), 1);
     }
 
     #[test]
-    fn a_ready_song_with_a_missing_chunk_file_is_separated_again() {
+    fn a_ready_song_missing_a_chunk_or_its_original_is_prepared_again() {
         let dir = tempfile::tempdir().unwrap();
         let c = ctx(dir.path());
         let lib = Library::open(&c.store.db_path()).unwrap();
         let t = ingest::add_file(&lib, &song(dir.path(), "a.wav")).unwrap().track_id;
         run(&c, &lib, t, &AtomicBool::new(false)).0.unwrap();
         let hash = lib.selected_source(t).unwrap().unwrap().audio_hash.unwrap();
-        let lost = c.store.chunk_path(&hash, "test", 2, crate::store::Stem::Inst);
+        let lost = c.store.chunk_path(&hash, "test", 2);
         std::fs::remove_file(&lost).unwrap();
         let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
         assert!(events.contains(&Event::Progress { track_id: t, chunks_done: 3, chunks_total: 3 }));
         assert!(lost.exists());
+
+        std::fs::remove_file(c.store.original_path(&hash).unwrap()).unwrap();
+        let (_, events) = run(&c, &lib, t, &AtomicBool::new(false));
+        assert!(events.contains(&Event::Stage { track_id: t, stage: Stage::Fetching }));
+        assert!(c.store.original_path(&hash).is_some());
     }
 
     #[test]

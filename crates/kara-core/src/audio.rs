@@ -1,5 +1,5 @@
 //! Everything becomes one standard format: 44.1 kHz stereo f32 in memory,
-//! 16-bit FLAC on disk. Also tag reading and content hashing.
+//! 24-bit FLAC for stored vocals. Also tag reading and content hashing.
 
 use anyhow::{anyhow, Context, Result};
 use rubato::{FftFixedIn, Resampler};
@@ -281,20 +281,19 @@ fn to_i16(x: f32) -> i16 {
     (x.clamp(-1.0, 1.0) * 32767.0).round() as i16
 }
 
-/// 16-bit stereo FLAC bytes.
+fn to_i24(x: f32) -> i32 {
+    (x.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32
+}
+
+/// 24-bit stereo FLAC bytes.
 pub fn encode_flac(a: &Stereo) -> Result<Vec<u8>> {
     use flacenc::component::BitRepr;
     use flacenc::error::Verify;
-    let samples: Vec<i32> = a
-        .left
-        .iter()
-        .zip(&a.right)
-        .flat_map(|(l, r)| [to_i16(*l) as i32, to_i16(*r) as i32])
-        .collect();
+    let samples: Vec<i32> = a.left.iter().zip(&a.right).flat_map(|(l, r)| [to_i24(*l), to_i24(*r)]).collect();
     let config = flacenc::config::Encoder::default()
         .into_verified()
         .map_err(|(_, e)| anyhow!("flac config: {e:?}"))?;
-    let source = flacenc::source::MemSource::from_samples(&samples, 2, 16, SAMPLE_RATE as usize);
+    let source = flacenc::source::MemSource::from_samples(&samples, 2, 24, SAMPLE_RATE as usize);
     let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
         .map_err(|e| anyhow!("flac encode: {e:?}"))?;
     let mut sink = flacenc::bitsink::ByteSink::new();
@@ -318,7 +317,7 @@ pub fn read_flac(path: &Path) -> Result<Stereo> {
     Ok(audio)
 }
 
-/// SHA-256 (hex) of the audio exactly as it is stored: interleaved 16-bit little-endian.
+/// SHA-256 (hex) of the audio as interleaved 16-bit little-endian samples.
 pub fn audio_hash(a: &Stereo) -> String {
     let mut h = Sha256::new();
     for (l, r) in a.left.iter().zip(&a.right) {
@@ -405,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn flac_roundtrip_is_within_one_lsb() {
+    fn flac_roundtrip_is_within_one_24_bit_step() {
         let dir = tempfile::tempdir().unwrap();
         let a = sine(44_100);
         let p = dir.path().join("x.flac");
@@ -414,7 +413,7 @@ mod tests {
         assert_eq!(b.len(), a.len());
         let max = a.left.iter().zip(&b.left).chain(a.right.iter().zip(&b.right))
             .fold(0f32, |m, (x, y)| m.max((x - y).abs()));
-        assert!(max <= 1.0 / 32767.0 + 1e-6, "max diff {max}");
+        assert!(max <= 1.0 / 8_388_607.0 + 1e-7, "max diff {max}");
     }
 
     #[test]

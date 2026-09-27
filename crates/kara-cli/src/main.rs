@@ -99,12 +99,12 @@ fn peak_footprint_mb() -> Option<f64> {
     (ret == 0).then(|| info.ri_lifetime_max_phys_footprint as f64 / (1024.0 * 1024.0))
 }
 
-fn write_wav(path: &Path, a: &Stereo) -> Result<()> {
+/// Writes interleaved stereo samples as a 16-bit WAV.
+fn write_wav(path: &Path, interleaved: &[f32]) -> Result<()> {
     let spec = hound::WavSpec { channels: 2, sample_rate: SAMPLE_RATE, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
     let mut w = hound::WavWriter::create(path, spec)?;
-    for (l, r) in a.left.iter().zip(&a.right) {
-        w.write_sample((l.clamp(-1.0, 1.0) * 32767.0) as i16)?;
-        w.write_sample((r.clamp(-1.0, 1.0) * 32767.0) as i16)?;
+    for x in interleaved {
+        w.write_sample((x.clamp(-1.0, 1.0) * 32767.0) as i16)?;
     }
     w.finalize()?;
     Ok(())
@@ -138,13 +138,14 @@ fn bench(store: &Store, input: &Path, model_path: &Path, compensate: f32, coreml
     let mut model = OnnxModel::load(&lib, model_path, coreml)?;
     let load_s = t1.elapsed().as_secs_f64();
     let params = MdxParams { n_fft: 7680, hop: 1024, dim_f: 3072, dim_t: 256, compensate };
-    let (mut vocals, mut inst) = (Stereo::default(), Stereo::default());
+    let (mut vocals, mut inst) = (Vec::new(), Vec::new());
+    let interleave = |a: &Stereo| a.left.iter().zip(&a.right).flat_map(|(l, r)| [*l, *r]).collect::<Vec<_>>();
     let mut first_chunk_s = None;
     let t2 = Instant::now();
     mdx::separate(&mut model, &params, &mix, CHUNK_LEN, 0, &AtomicBool::new(false), |c| {
         first_chunk_s.get_or_insert(t2.elapsed().as_secs_f64());
-        vocals.append(&c.vocals);
-        inst.append(&c.inst);
+        vocals.extend(interleave(&c.vocals));
+        inst.extend(interleave(&c.inst));
         Ok(())
     })?;
     let sep_s = t2.elapsed().as_secs_f64();
@@ -235,11 +236,11 @@ fn export(store: &Store, track_id: i64, out: &Path) -> Result<()> {
     if row.chunks_done == 0 {
         bail!("This song isn't prepared yet.");
     }
-    let (mut vocals, mut inst) = (Stereo::default(), Stereo::default());
+    let (mut vocals, mut inst) = (Vec::new(), Vec::new());
     for i in 0..row.chunks_done {
-        let (v, n) = cache::read_chunk(store, &hash, DEFAULT_MODEL.id, i)?;
-        vocals.append(&v);
-        inst.append(&n);
+        let pcm = cache::chunk_pcm(store, &lib, &hash, DEFAULT_MODEL.id, i)?;
+        vocals.extend(pcm.vocals);
+        inst.extend(pcm.inst);
     }
     std::fs::create_dir_all(out)?;
     write_wav(&out.join("vocals.wav"), &vocals)?;

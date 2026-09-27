@@ -1,10 +1,10 @@
 //! The separated-audio cache: chunk files on disk, marking songs ready, the
 //! disk budget (least recently played goes first) and cleanup after a crash.
 
-use crate::audio::{encode_flac, read_flac, Stereo};
+use crate::audio::{decode_range, encode_flac, read_flac, Stereo, SAMPLE_RATE};
 use crate::library::{Library, SepStatus, SourceKind};
 use crate::separate::mdx::ChunkOut;
-use crate::store::{write_atomic, DataLock, Stem, Store};
+use crate::store::{write_atomic, DataLock, Store};
 use anyhow::{Context, Result};
 use std::path::Path;
 
@@ -34,26 +34,27 @@ pub fn pick_evictions(entries: &[Entry], budget: u64) -> Vec<usize> {
     out
 }
 
-/// Writes the vocals file, then the instrumental file. A chunk counts as done
-/// only when both exist.
+/// Vocals are stored at half level so peaks up to twice full scale fit.
+const VOCALS_LEVEL: f32 = 0.5;
+
+/// Writes one chunk's vocals.
 pub fn write_chunk(store: &Store, hash: &str, model_id: &str, c: &ChunkOut) -> Result<()> {
-    let i = c.index as u32;
-    write_atomic(&store.chunk_path(hash, model_id, i, Stem::Vocals), &encode_flac(&c.vocals)?)?;
-    write_atomic(&store.chunk_path(hash, model_id, i, Stem::Inst), &encode_flac(&c.inst)?)?;
-    Ok(())
+    let scale = |x: &[f32]| x.iter().map(|s| s * VOCALS_LEVEL).collect();
+    let vocals = Stereo { left: scale(&c.vocals.left), right: scale(&c.vocals.right) };
+    write_atomic(&store.chunk_path(hash, model_id, c.index as u32), &encode_flac(&vocals)?)
 }
 
-pub fn read_chunk(store: &Store, hash: &str, model_id: &str, index: u32) -> Result<(Stereo, Stereo)> {
-    Ok((
-        read_flac(&store.chunk_path(hash, model_id, index, Stem::Vocals))?,
-        read_flac(&store.chunk_path(hash, model_id, index, Stem::Inst))?,
-    ))
+fn read_vocals(store: &Store, hash: &str, model_id: &str, index: u32) -> Result<Stereo> {
+    let mut v = read_flac(&store.chunk_path(hash, model_id, index))?;
+    v.left.iter_mut().chain(v.right.iter_mut()).for_each(|x| *x /= VOCALS_LEVEL);
+    Ok(v)
 }
 
 /// One chunk of both tracks as interleaved stereo f32 (L, R, L, R, …) at 44.1 kHz.
 /// A full chunk holds `CHUNK_LEN` frames; the last one holds the rest of the song.
 pub struct ChunkPcm {
     pub vocals: Vec<f32>,
+    /// The original minus the vocals.
     pub inst: Vec<f32>,
 }
 
@@ -61,22 +62,28 @@ fn interleave(a: &Stereo) -> Vec<f32> {
     a.left.iter().zip(&a.right).flat_map(|(l, r)| [*l, *r]).collect()
 }
 
-/// The decoded audio of one chunk, readable as soon as that chunk is written.
-pub fn chunk_pcm(store: &Store, hash: &str, model_id: &str, index: u32) -> Result<ChunkPcm> {
-    let (vocals, inst) = read_chunk(store, hash, model_id, index)?;
+/// One chunk's vocals and instrumental, readable as soon as that chunk is written.
+pub fn chunk_pcm(store: &Store, lib: &Library, hash: &str, model_id: &str, index: u32) -> Result<ChunkPcm> {
+    let row = lib.separation(hash, model_id)?.context("This song isn't prepared yet.")?;
+    let original = store.original_path(hash).context("This song isn't prepared yet.")?;
+    let vocals = read_vocals(store, hash, model_id, index)?;
+    let chunk_len = row.chunk_ms as usize * SAMPLE_RATE as usize / 1000;
+    let mix = decode_range(&original, index as usize * chunk_len, vocals.len())?;
+    let minus = |m: &[f32], v: &[f32]| m.iter().zip(v).map(|(m, v)| m - v).collect();
+    let inst = Stereo { left: minus(&mix.left, &vocals.left), right: minus(&mix.right, &vocals.right) };
     Ok(ChunkPcm { vocals: interleave(&vocals), inst: interleave(&inst) })
 }
 
 /// `chunk_pcm` for a track's selected audio.
 pub fn track_chunk_pcm(store: &Store, lib: &Library, model_id: &str, track_id: i64, index: u32) -> Result<ChunkPcm> {
     let hash = lib.selected_source(track_id)?.and_then(|s| s.audio_hash).context("This song isn't prepared yet.")?;
-    chunk_pcm(store, &hash, model_id, index).context("This part of the song isn't ready yet.")
+    chunk_pcm(store, lib, &hash, model_id, index).context("This part of the song isn't ready yet.")
 }
 
-/// Complete chunk pairs on disk, counting up from 0 and stopping at the first gap.
+/// Chunk files on disk, counting up from 0 and stopping at the first gap.
 pub fn count_complete_chunks(store: &Store, hash: &str, model_id: &str) -> u32 {
     let mut n = 0;
-    while store.chunk_path(hash, model_id, n, Stem::Vocals).exists() && store.chunk_path(hash, model_id, n, Stem::Inst).exists() {
+    while store.chunk_path(hash, model_id, n).exists() {
         n += 1;
     }
     n
@@ -94,26 +101,13 @@ fn dir_size(dir: &Path) -> i64 {
         .sum()
 }
 
-/// All chunks are on disk: mark ready, drop the now-redundant source.
-pub fn finish(store: &Store, lib: &Library, hash: &str, model_id: &str) -> Result<()> {
+/// All chunks are on disk: mark the song ready.
+pub fn finish(lib: &Library, hash: &str, model_id: &str) -> Result<()> {
     let mut row = lib.separation(hash, model_id)?.context("missing separation row")?;
     row.status = SepStatus::Ready;
     row.chunks_done = row.chunks_total;
     row.last_used_at = Some(crate::now_ms());
-    lib.upsert_separation(&row)?;
-    let _ = std::fs::remove_file(store.source_path(hash));
-    Ok(())
-}
-
-/// The original song, rebuilt from its two separated tracks.
-pub fn rebuild_mix(store: &Store, hash: &str, model_id: &str, chunks: u32) -> Result<Stereo> {
-    let mut mix = Stereo::default();
-    for i in 0..chunks {
-        let (v, inst) = read_chunk(store, hash, model_id, i)?;
-        mix.left.extend(v.left.iter().zip(&inst.left).map(|(a, b)| a + b));
-        mix.right.extend(v.right.iter().zip(&inst.right).map(|(a, b)| a + b));
-    }
-    Ok(mix)
+    lib.upsert_separation(&row)
 }
 
 pub fn budget(lib: &Library) -> Result<u64> {
@@ -184,7 +178,7 @@ pub fn startup_cleanup(store: &Store, lib: &Library, _lock: &DataLock) -> Result
         let done = count_complete_chunks(store, &row.audio_hash, &row.model_id);
         if done >= row.chunks_total {
             if row.status != SepStatus::Ready {
-                finish(store, lib, &row.audio_hash, &row.model_id)?;
+                finish(lib, &row.audio_hash, &row.model_id)?;
             }
             continue;
         }
@@ -212,10 +206,7 @@ mod tests {
     }
 
     fn chunk(index: usize, len: usize) -> ChunkOut {
-        let v: Vec<f32> = (0..len).map(|i| (i as f32 * 0.01).sin() * 0.3).collect();
-        let i: Vec<f32> = v.iter().map(|x| x * 0.5).collect();
-        let neg = |x: &Vec<f32>| x.iter().map(|s| -s).collect();
-        ChunkOut { index, vocals: Stereo { right: neg(&v), left: v }, inst: Stereo { right: neg(&i), left: i } }
+        ChunkOut { index, vocals: Stereo::silence(len), inst: Stereo::default() }
     }
 
     fn sep_row(hash: &str, total: u32, status: SepStatus, used: i64) -> SeparationRow {
@@ -237,43 +228,56 @@ mod tests {
     }
 
     #[test]
-    fn chunks_roundtrip_and_count_only_complete_pairs() {
+    fn complete_chunks_are_counted_up_to_the_first_gap() {
         let dir = tempfile::tempdir().unwrap();
         let s = Store::new(dir.path());
-        write_chunk(&s, "h", "m", &chunk(0, 1000)).unwrap();
-        write_chunk(&s, "h", "m", &chunk(1, 1000)).unwrap();
-        // A lone vocals file for chunk 2 (crash between the two writes) doesn't count.
-        std::fs::write(s.chunk_path("h", "m", 2, Stem::Vocals), b"x").unwrap();
-        assert_eq!(count_complete_chunks(&s, "h", "m"), 2);
-        let pcm = chunk_pcm(&s, "h", "m", 1).unwrap();
-        assert_eq!((pcm.vocals.len(), pcm.inst.len()), (2000, 2000));
-        assert!(pcm.vocals[2] > 0.0 && pcm.vocals[3] == -pcm.vocals[2]); // L, R, L, R, …
-    }
-
-    #[test]
-    fn rebuilt_mix_is_vocals_plus_instrumental() {
-        let dir = tempfile::tempdir().unwrap();
-        let s = Store::new(dir.path());
-        let c = chunk(0, 500);
-        write_chunk(&s, "h", "m", &c).unwrap();
-        let mix = rebuild_mix(&s, "h", "m", 1).unwrap();
-        for k in 0..500 {
-            assert!((mix.left[k] - (c.vocals.left[k] + c.inst.left[k])).abs() < 2.0 / 32767.0);
+        for i in [0, 1, 3] {
+            write_chunk(&s, "h", "m", &chunk(i, 100)).unwrap();
         }
+        assert_eq!(count_complete_chunks(&s, "h", "m"), 2);
     }
 
     #[test]
-    fn finish_marks_ready_records_size_and_deletes_source() {
+    fn pcm_is_the_vocals_and_the_original_minus_them_and_nothing_clips() {
         let dir = tempfile::tempdir().unwrap();
         let s = Store::new(dir.path());
         let lib = Library::open_in_memory().unwrap();
-        write_atomic(&s.source_path("h"), b"src").unwrap();
-        write_chunk(&s, "h", "m", &chunk(0, 1000)).unwrap();
-        lib.upsert_separation(&sep_row("h", 1, SepStatus::Running, 0)).unwrap();
-        finish(&s, &lib, "h", "m").unwrap();
-        let row = lib.separation("h", "m").unwrap().unwrap();
-        assert_eq!(row.status, SepStatus::Ready);
-        assert!(!s.source_path("h").exists());
+        // A loud 48 kHz original with its two channels in opposite phase.
+        let orig = s.original_dest("h", Some("wav"));
+        std::fs::create_dir_all(orig.parent().unwrap()).unwrap();
+        let spec = hound::WavSpec { channels: 2, sample_rate: 48_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+        let mut w = hound::WavWriter::create(&orig, spec).unwrap();
+        for i in 0..120_000 {
+            let x = ((i as f32 * 0.03).sin() * 0.99 * 32767.0) as i16;
+            w.write_sample(x).unwrap();
+            w.write_sample(-x).unwrap();
+        }
+        w.finalize().unwrap();
+        let mix = crate::audio::decode_file(&orig).unwrap().audio;
+        // Vocals louder than full scale and in opposite phase: the instrumental reaches about 2.5.
+        for (index, start) in (0..mix.len()).step_by(44_100).enumerate() {
+            let part = mix.slice(start, (start + 44_100).min(mix.len()));
+            let loud = |x: &Vec<f32>| x.iter().map(|s| -1.5 * s).collect();
+            let vocals = Stereo { left: loud(&part.left), right: loud(&part.right) };
+            write_chunk(&s, "h", "m", &ChunkOut { index, vocals, inst: Stereo::default() }).unwrap();
+        }
+        let row = SeparationRow { chunk_ms: 1_000, ..sep_row("h", 3, SepStatus::Running, 0) };
+        lib.upsert_separation(&row).unwrap();
+
+        let mut peak = 0f32;
+        for i in 0..3 {
+            let pcm = chunk_pcm(&s, &lib, "h", "m", i).unwrap();
+            let start = i as usize * 44_100;
+            let want = mix.slice(start, (start + 44_100).min(mix.len()));
+            assert_eq!((pcm.vocals.len(), pcm.inst.len()), (want.len() * 2, want.len() * 2));
+            for (k, (v, n)) in pcm.vocals.iter().zip(&pcm.inst).enumerate() {
+                let m = if k % 2 == 0 { want.left[k / 2] } else { want.right[k / 2] };
+                assert!((v + n - m).abs() <= 1.0 / 32767.0, "chunk {i} sample {k}");
+                assert!((v + 1.5 * m).abs() <= 1.0 / 32767.0, "vocals changed at chunk {i} sample {k}");
+                peak = peak.max(n.abs());
+            }
+        }
+        assert!(peak > 2.4, "instrumental peak {peak}");
     }
 
     #[test]
@@ -298,7 +302,7 @@ mod tests {
             write_chunk(&s, h, "m", &chunk(0, 10)).unwrap();
             lib.upsert_separation(&sep_row(h, 2, status, used)).unwrap();
         }
-        write_atomic(&s.source_path("partial"), b"src").unwrap();
+        write_atomic(&s.original_dest("partial", Some("m4a")), b"src").unwrap();
 
         let evicted = enforce_budget(&s, &lib, &["new".to_string(), "queued".to_string()]).unwrap();
 
@@ -336,11 +340,10 @@ mod tests {
         std::fs::create_dir_all(s.tmp_dir()).unwrap();
         std::fs::write(s.tmp_dir().join("half.m4a"), b"x").unwrap();
         let mut row = sep_row("h", 4, SepStatus::Running, 0);
-        row.chunks_done = 3; // DB claimed 3, but only 2 pairs made it to disk
+        row.chunks_done = 3; // DB claimed 3, but only 2 chunks made it to disk
         lib.upsert_separation(&row).unwrap();
         // A song whose chunks all landed but which crashed before `finish`.
         write_chunk(&s, "done", "m", &chunk(0, 100)).unwrap();
-        write_atomic(&s.source_path("done"), b"src").unwrap();
         lib.upsert_separation(&sep_row("done", 1, SepStatus::Running, 0)).unwrap();
 
         startup_cleanup(&s, &lib, &s.lock().unwrap()).unwrap();
@@ -350,6 +353,5 @@ mod tests {
         let row = lib.separation("h", "m").unwrap().unwrap();
         assert_eq!((row.chunks_done, row.status), (2, SepStatus::Queued));
         assert_eq!(lib.separation("done", "m").unwrap().unwrap().status, SepStatus::Ready);
-        assert!(!s.source_path("done").exists());
     }
 }

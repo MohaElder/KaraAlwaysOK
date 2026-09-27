@@ -4,21 +4,6 @@ use anyhow::{bail, Context, Result};
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Stem {
-    Vocals,
-    Inst,
-}
-
-impl Stem {
-    fn tag(self) -> &'static str {
-        match self {
-            Stem::Vocals => "vocals",
-            Stem::Inst => "inst",
-        }
-    }
-}
-
 /// Exclusive use of the data folder; released when dropped.
 pub struct DataLock {
     _file: File,
@@ -72,14 +57,25 @@ impl Store {
     pub fn audio_dir(&self, hash: &str) -> PathBuf {
         self.audio_root().join(hash)
     }
-    pub fn source_path(&self, hash: &str) -> PathBuf {
-        self.audio_dir(hash).join("source.flac")
+    /// The song's kept original file, `original.<ext>`, if there is one.
+    pub fn original_path(&self, hash: &str) -> Option<PathBuf> {
+        std::fs::read_dir(self.audio_dir(hash))
+            .ok()?
+            .filter_map(|e| Some(e.ok()?.path()))
+            .find(|p| p.file_stem().is_some_and(|s| s == "original") && p.extension().is_none_or(|x| x != "part"))
+    }
+    /// Where to keep a song's original file with extension `ext`.
+    pub fn original_dest(&self, hash: &str, ext: Option<&str>) -> PathBuf {
+        self.audio_dir(hash).join(match ext {
+            Some(ext) => format!("original.{ext}"),
+            None => "original".to_string(),
+        })
     }
     pub fn stems_dir(&self, hash: &str, model_id: &str) -> PathBuf {
         self.audio_dir(hash).join(model_id)
     }
-    pub fn chunk_path(&self, hash: &str, model_id: &str, index: u32, stem: Stem) -> PathBuf {
-        self.stems_dir(hash, model_id).join(format!("{index:04}.{}.flac", stem.tag()))
+    pub fn chunk_path(&self, hash: &str, model_id: &str, index: u32) -> PathBuf {
+        self.stems_dir(hash, model_id).join(format!("{index:04}.vocals.flac"))
     }
 }
 
@@ -103,9 +99,8 @@ mod tests {
     fn layout_matches_the_spec() {
         let s = Store::new("/data");
         assert_eq!(s.db_path(), Path::new("/data/kara.db"));
-        assert_eq!(s.source_path("abc"), Path::new("/data/audio/abc/source.flac"));
-        assert_eq!(s.chunk_path("abc", "m1", 7, Stem::Vocals), Path::new("/data/audio/abc/m1/0007.vocals.flac"));
-        assert_eq!(s.chunk_path("abc", "m1", 12, Stem::Inst), Path::new("/data/audio/abc/m1/0012.inst.flac"));
+        assert_eq!(s.original_dest("abc", Some("m4a")), Path::new("/data/audio/abc/original.m4a"));
+        assert_eq!(s.chunk_path("abc", "m1", 7), Path::new("/data/audio/abc/m1/0007.vocals.flac"));
         assert_eq!(s.bin_dir(), Path::new("/data/bin"));
     }
 
