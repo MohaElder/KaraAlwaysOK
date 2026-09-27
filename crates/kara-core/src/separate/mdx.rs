@@ -52,12 +52,14 @@ pub fn chunk_count(total: usize, chunk_len: usize) -> usize {
     total.div_ceil(chunk_len)
 }
 
-/// Packs two channels' spectra into the model input, dropping bins above `dim_f`.
+/// Packs two channels' spectra into the model input, dropping bins above
+/// `dim_f`. Bins 0..3 are left zero, matching UVR's own inference (it zeroes
+/// them right before running the model).
 fn pack(l: &[Vec<Complex32>], r: &[Vec<Complex32>], dim_f: usize) -> Array4<f32> {
     let mut a = Array4::<f32>::zeros((1, 4, dim_f, l.len()));
     for (c, spec) in [l, r].into_iter().enumerate() {
         for (t, frame) in spec.iter().enumerate() {
-            for f in 0..dim_f {
+            for f in 3..dim_f {
                 a[[0, c * 2, f, t]] = frame[f].re;
                 a[[0, c * 2 + 1, f, t]] = frame[f].im;
             }
@@ -210,14 +212,30 @@ mod tests {
         }
     }
 
+    /// What a whole-signal STFT round trip gives after zeroing bins 0..3, the
+    /// same zeroing `pack` applies. A passthrough model should reproduce this,
+    /// not the raw mix, since the lowest bins never reach the model.
+    fn low_bins_zeroed(x: &[f32], p: &MdxParams) -> Vec<f32> {
+        let stft = Stft::new(p.n_fft, p.hop);
+        let mut spec = stft.forward(x);
+        for frame in &mut spec {
+            frame[..3].fill(Complex32::new(0.0, 0.0));
+        }
+        stft.inverse(&spec, x.len())
+    }
+
     #[test]
     fn passthrough_output_lines_up_with_the_input() {
         let m = mix(2000);
-        let chunks = run(&mut Passthrough, &test_params(), &m, 300, 0);
+        let p = test_params();
+        let chunks = run(&mut Passthrough, &p, &m, 300, 0);
         let v = joined(&chunks, true);
+        let expected = low_bins_zeroed(&m.left, &p);
         assert_eq!(v.len(), m.len());
+        // Segment seams leave a small residual (< 4e-3 measured); a real
+        // alignment bug (e.g. an off-by-one trim offset) misses by ~0.35.
         for k in 100..1900 {
-            assert!((v.left[k] - m.left[k]).abs() < 1e-3, "sample {k}: {} vs {}", v.left[k], m.left[k]);
+            assert!((v.left[k] - expected[k]).abs() < 4e-3, "sample {k}: {} vs {}", v.left[k], expected[k]);
         }
     }
 
