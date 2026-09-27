@@ -238,11 +238,12 @@ class PhoneLink {
     if (this.mic) this.send({ t: "live", on: this.live, rate: this.mic.rate });
   }
 
-  /** Sends what the computer keeps for this phone's row; called after every join. */
+  /** Sends what the computer keeps for this phone's row, and the latest search again; called after every join. */
   private sendSettings() {
     this.send({ t: "voice", v: this.voice });
     this.send({ t: "effect", ...this.effect });
     this.sendLive();
+    if (this.query != null) this.search(this.query);
   }
 
   /** Seconds into the current song, as the computer last said, moving on while it plays. */
