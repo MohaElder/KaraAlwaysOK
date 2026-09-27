@@ -38,7 +38,7 @@ Reference prototype: `docs/prototype/experience.html` (also published as a priva
 - Files can be dropped anywhere in the window.
 - Added songs land in **Local › Imported**.
 
-**Preparing** — a short sheet: *Downloading / Reading the file → Preparing the audio → Finding the lyrics → Taking the vocals out*, then the karaoke view opens. Playback starts once the first ~6 s are separated; separation runs ahead of the playhead. If playback catches up, it pauses with "Catching up…" and resumes. You can't seek past what's ready.
+**Adding a song** — adding a link or file never auto-plays and never blocks the screen. Progress shows unobtrusively (a small progress toast and a loading row in Local › Imported): download → prepare the audio → find the lyrics. When done, a toast "Added to your library" with the song's thumbnail; tapping it opens Local › Imported at that song. Taking the vocals out happens when the song is played (playback starts once the first ~6 s are separated; separation runs ahead of the playhead; if playback catches up it pauses with "Catching up…"; you can't seek past what's ready). Link results offer Add to library (default), Add to queue, and Play next.
 
 **Player bar** — floating, like Apple Music's mini player: previous / play / next, artwork + title (click to open/close the karaoke view), a thin progress line whose lighter band shows how far ahead the song is prepared, the vocal slider, and a "…" menu.
 
