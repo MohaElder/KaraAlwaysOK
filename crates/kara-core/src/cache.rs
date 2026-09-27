@@ -45,7 +45,7 @@ pub fn write_chunk(store: &Store, hash: &str, model_id: &str, c: &ChunkOut) -> R
     write_atomic(&store.chunk_path(hash, model_id, c.index as u32), &encode_flac(&vocals)?)
 }
 
-fn read_vocals(store: &Store, hash: &str, model_id: &str, index: u32) -> Result<Stereo> {
+pub(crate) fn read_vocals(store: &Store, hash: &str, model_id: &str, index: u32) -> Result<Stereo> {
     let mut v = read_flac(&store.chunk_path(hash, model_id, index))?;
     v.left.iter_mut().chain(v.right.iter_mut()).for_each(|x| *x /= VOCALS_LEVEL);
     Ok(v)

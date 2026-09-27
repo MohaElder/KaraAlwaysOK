@@ -198,6 +198,7 @@ fn prepare(store: &Store, track_id: i64, coreml: bool) -> Result<()> {
             eprintln!("  {chunks_done}/{chunks_total} ready  ({:.1} s)", started.elapsed().as_secs_f64())
         }
         Event::Lyrics { .. } => eprintln!("Checked for lyrics.  ({:.1} s)", started.elapsed().as_secs_f64()),
+        Event::LyricOffset { .. } => eprintln!("Lined the lyrics up with the singing."),
         Event::Added { .. } => {}
         Event::Ready { .. } => eprintln!("Ready to sing.  ({:.1} s)", started.elapsed().as_secs_f64()),
         Event::Failed { .. } => {} // `result?` below reports this once, in main.

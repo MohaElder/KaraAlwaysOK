@@ -53,6 +53,7 @@ let nextKey = 0;
 let nextId = 100;
 let storage = { usedBytes: 1.5 * GB, limitBytes: 5 * GB };
 const paths = new Map<string, number>();
+const lyricOffsets = new Map<number, number>();
 const ready = new Set(tracks.keys());
 const groupIds = new Map<string, number>();
 
@@ -101,7 +102,7 @@ function collections(kind: Kind): { card: CollectionCard; tracks: Track[] }[] {
 const allCollections = () => (["playlist", "album", "artist"] as const).flatMap(collections);
 
 function snapshot(): PlayerSnapshot {
-  return { entries: queue.map((e) => ({ key: e.key, track: tracks.get(e.trackId)! })), current, ended, lyricOffsetMs: 0 };
+  return { entries: queue.map((e) => ({ key: e.key, track: tracks.get(e.trackId)! })), current, ended, lyricOffsetMs: current === null ? 0 : lyricOffsets.get(queue[current].trackId) ?? 0 };
 }
 
 /** Sends the new queue to the app, as the real backend does after every change. */
@@ -190,7 +191,10 @@ const commands: Record<string, (a: any) => unknown> = {
     need(tracks.get(queue[current!].trackId)).keySemitones = semitones;
     return changed();
   },
-  set_lyric_offset: changed,
+  set_lyric_offset: ({ ms }) => {
+    lyricOffsets.set(queue[current!].trackId, ms);
+    return changed();
+  },
   retry_prepare: () => null,
   playback_info: ({ trackId }) => {
     const { durationMs } = need(tracks.get(trackId));

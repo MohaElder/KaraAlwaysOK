@@ -41,9 +41,9 @@
   <div class="mrow">
     <TimerIcon size={18} /><span class="grow">{t("menu.lyricsTiming")}</span>
     <span class="stepper">
-      <button use:tip={t("menu.earlier")} disabled={offset <= -5000} onclick={() => player.setLyricOffset(offset - 100)}><MinusIcon size={13} /></button>
+      <button use:tip={t("menu.earlier")} onclick={() => player.setLyricOffset(offset - 100)}><MinusIcon size={13} /></button>
       <output>{t("menu.seconds", { n: signed(offset / 1000, 1) })}</output>
-      <button use:tip={t("menu.later")} disabled={offset >= 5000} onclick={() => player.setLyricOffset(offset + 100)}><PlusIcon size={13} /></button>
+      <button use:tip={t("menu.later")} onclick={() => player.setLyricOffset(offset + 100)}><PlusIcon size={13} /></button>
     </span>
   </div>
   <div class="msep"></div>

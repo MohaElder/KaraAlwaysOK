@@ -7,6 +7,7 @@ use crate::audio::{self, Stereo, SAMPLE_RATE};
 use crate::cache;
 use crate::ingest;
 use crate::library::{AudioSource, Library, LyricsSource, SepStatus, SeparationRow, SourceKind, SourceStatus, Track};
+use crate::lyric_sync;
 use crate::lyrics::{self, LyricsFetcher};
 use crate::now_ms;
 use crate::problem::Problem;
@@ -35,6 +36,8 @@ pub enum Event {
     Progress { track_id: i64, chunks_done: u32, chunks_total: u32 },
     /// Lyrics were saved, including "none found"; read them from the library.
     Lyrics { track_id: i64 },
+    /// The lyric timing was lined up with the singing.
+    LyricOffset { track_id: i64 },
     /// A newly added song's audio and lyrics are ready; it is separated when played.
     Added { track_id: i64 },
     Ready { track_id: i64 },
@@ -51,6 +54,8 @@ pub struct Ctx {
 
 /// "No lyrics" results are retried after a week.
 const LYRICS_RETRY_MS: i64 = 7 * 24 * 3600 * 1000;
+/// Lyrics are first lined up once this much of the song is separated.
+const EARLY_SYNC_MS: usize = 90_000;
 
 /// Prepares one song: fetches and standardizes its audio if needed, asks
 /// `lyrics` for a lookup, then separates vocals. Emits progress on `emit`,
@@ -354,11 +359,15 @@ fn separate_stage(
     lib.upsert_separation(&row)?;
     emit(Event::Progress { track_id, chunks_done: start, chunks_total: total });
 
+    let early_sync = (EARLY_SYNC_MS * SAMPLE_RATE as usize / 1000).div_ceil(ctx.chunk_len) as u32;
     let outcome = mdx::separate(model, &ctx.params, mix, ctx.chunk_len, start as usize, cancel, |chunk| {
         cache::write_chunk(&ctx.store, hash, &ctx.model_id, &chunk)?;
         row.chunks_done = chunk.index as u32 + 1;
         lib.upsert_separation(&row)?;
         emit(Event::Progress { track_id, chunks_done: row.chunks_done, chunks_total: total });
+        if row.chunks_done == early_sync && early_sync < total {
+            let _ = sync_lyrics(ctx, lib, track_id, hash, early_sync, emit);
+        }
         Ok(())
     });
     let outcome = match outcome {
@@ -377,9 +386,24 @@ fn separate_stage(
         }
         Outcome::Done => {
             cache::finish(lib, hash, &ctx.model_id)?;
+            let _ = sync_lyrics(ctx, lib, track_id, hash, total, emit);
         }
     }
     Ok(outcome)
+}
+
+/// Lines the song's lyrics up with the singing in its first `chunks` of vocals,
+/// unless the user set the timing, and reports a change.
+fn sync_lyrics(ctx: &Ctx, lib: &Library, track_id: i64, hash: &str, chunks: u32, emit: &mut dyn FnMut(Event)) -> Result<()> {
+    let Some(source) = lib.selected_source(track_id)?.filter(|s| !s.lyric_offset_manual) else { return Ok(()) };
+    let Some(lyrics) = lib.lyrics(track_id)?.filter(|l| !l.lines.is_empty()) else { return Ok(()) };
+    let sung = lyric_sync::singing(&lyric_sync::vocal_loudness(&ctx.store, hash, &ctx.model_id, chunks)?);
+    if let Some(ms) = lyric_sync::best_offset(&sung, &lyric_sync::lyric_activity(&lyrics.lines)) {
+        if lib.set_auto_lyric_offset(source.id, ms)? {
+            emit(Event::LyricOffset { track_id });
+        }
+    }
+    Ok(())
 }
 
 /// Adds songs one at a time on its own thread.
@@ -971,6 +995,45 @@ mod tests {
         let adder = Adder::spawn(c, Box::new(NoLyrics), tx).unwrap();
         adder.add(t);
         wait_for(&rx, &Event::Failed { track_id: t, message: "The file was moved or deleted.".into(), problem: Some(Problem::FileMoved) });
+    }
+
+    #[test]
+    fn lyrics_line_up_with_the_singing_unless_the_user_set_the_timing() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let lib = Library::open(&c.store.db_path()).unwrap();
+        let t = titled(&lib, "Paper Lanterns");
+        let s = lib.add_source(t, SourceKind::File, "/music/a.wav", None).unwrap();
+        lib.set_source_audio(s, "h", 120_000).unwrap();
+        let mut lines = Vec::new();
+        let mut at = 4_000;
+        for i in 0..60i64 {
+            let sung = 1_000 + (i * i * 37 % 23) * 100;
+            let next = at + sung + 400 + (i * i * 53 % 29) * 100;
+            lines.push(lyrics::Line { start_ms: at, end_ms: next, text: "la".into(), words: vec![], voice: None });
+            at = next;
+        }
+        lib.set_lyrics(t, LyricsSource::Lrclib, &lines, now_ms()).unwrap();
+        let sung = |ms: i64| lines.iter().any(|l| (l.start_ms + 1_500..l.end_ms + 1_500).contains(&ms));
+        for index in 0..12 {
+            let samples: Vec<f32> = (0..441_000usize)
+                .map(|i| {
+                    let ms = (index * 441_000 + i) as i64 * 1_000 / 44_100;
+                    (i as f32 * 0.03).sin() * if sung(ms) { 0.3 } else { 0.003 }
+                })
+                .collect();
+            let vocals = Stereo { left: samples.clone(), right: samples };
+            cache::write_chunk(&c.store, "h", "test", &mdx::ChunkOut { index, vocals }).unwrap();
+        }
+        let mut events = Vec::new();
+        sync_lyrics(&c, &lib, t, "h", 12, &mut |e| events.push(e)).unwrap();
+        assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 1_500);
+        assert_eq!(events, vec![Event::LyricOffset { track_id: t }]);
+
+        lib.set_lyric_offset(s, 200).unwrap();
+        sync_lyrics(&c, &lib, t, "h", 12, &mut |e| events.push(e)).unwrap();
+        assert_eq!(lib.selected_source(t).unwrap().unwrap().lyric_offset_ms, 200);
+        assert_eq!(events.len(), 1);
     }
 
     #[test]

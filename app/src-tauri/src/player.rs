@@ -265,7 +265,7 @@ pub fn set_lyric_offset(app: AppHandle, state: State<'_, AppState>, ms: i64) -> 
     update(&app, state.inner(), |p, lib| {
         let t = playing(p, lib)?;
         let src = lib.selected_source(t.id)?.context(Problem::NoAudio)?;
-        lib.set_lyric_offset(src.id, ms.clamp(-5000, 5000))
+        lib.set_lyric_offset(src.id, ms)
     })
 }
 

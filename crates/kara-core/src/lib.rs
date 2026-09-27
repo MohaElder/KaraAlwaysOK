@@ -7,6 +7,7 @@ pub mod fuzzy;
 pub mod ingest;
 pub mod jobs;
 pub mod library;
+pub mod lyric_sync;
 pub mod lyrics;
 pub mod problem;
 pub mod quiet;

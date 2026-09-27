@@ -91,6 +91,8 @@ pub struct AudioSource {
     pub label: Option<String>,
     pub audio_hash: Option<String>,
     pub lyric_offset_ms: i64,
+    /// The user set the lyric timing, so automatic sync leaves it alone.
+    pub lyric_offset_manual: bool,
     pub status: SourceStatus,
     pub error: Option<String>,
 }
@@ -114,7 +116,7 @@ pub struct LyricsRow {
 }
 
 const TRACK_COLS: &str = "t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.vocal_removal, t.key_semitones, t.instrumental, t.artwork_path, t.art_seed";
-const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, status, error";
+const SOURCE_COLS: &str = "id, track_id, kind, uri, label, audio_hash, lyric_offset_ms, lyric_offset_manual, status, error";
 const SEP_COLS: &str = "audio_hash, model_id, chunk_ms, chunks_total, chunks_done, status, last_used_at";
 const COLLECTION_COLS: &str = "id, provider, kind, name, subtitle, provider_ref LIKE 'user:%'";
 
@@ -143,8 +145,9 @@ fn source_row(r: &Row) -> rusqlite::Result<AudioSource> {
         label: r.get(4)?,
         audio_hash: r.get(5)?,
         lyric_offset_ms: r.get(6)?,
-        status: r.get(7)?,
-        error: r.get(8)?,
+        lyric_offset_manual: r.get(7)?,
+        status: r.get(8)?,
+        error: r.get(9)?,
     })
 }
 
@@ -194,6 +197,7 @@ const STEPS: &[Step] = &[
     |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN instrumental INTEGER NOT NULL DEFAULT 0")?),
     |tx| Ok(tx.execute_batch("ALTER TABLE track ADD COLUMN art_seed INTEGER NOT NULL DEFAULT 0; UPDATE track SET art_seed = abs(random()) % 360;")?),
     |tx| Ok(tx.execute_batch("DROP TRIGGER track_ai; DROP TRIGGER track_ad; DROP TRIGGER track_au; DROP TABLE track_fts;")?),
+    |tx| Ok(tx.execute_batch("ALTER TABLE audio_source ADD COLUMN lyric_offset_manual INTEGER NOT NULL DEFAULT 0")?),
 ];
 
 pub struct Library {
@@ -456,9 +460,19 @@ impl Library {
         Ok(())
     }
 
+    /// The user's lyric timing; automatic sync no longer changes it.
     pub fn set_lyric_offset(&self, source_id: i64, ms: i64) -> Result<()> {
-        self.conn.execute("UPDATE audio_source SET lyric_offset_ms = ?2 WHERE id = ?1", params![source_id, ms])?;
+        self.conn.execute("UPDATE audio_source SET lyric_offset_ms = ?2, lyric_offset_manual = 1 WHERE id = ?1", params![source_id, ms])?;
         Ok(())
+    }
+
+    /// Automatic lyric timing, unless the user set it; returns whether it changed.
+    pub fn set_auto_lyric_offset(&self, source_id: i64, ms: i64) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE audio_source SET lyric_offset_ms = ?2 WHERE id = ?1 AND lyric_offset_manual = 0 AND lyric_offset_ms != ?2",
+            params![source_id, ms],
+        )?;
+        Ok(n > 0)
     }
 
     // ---- separation ----
@@ -647,8 +661,12 @@ mod tests {
         assert_eq!(l.selected_source(t).unwrap().unwrap().error.as_deref(), Some("The file was moved or deleted."));
         l.reset_sources_for_hash("h1").unwrap();
         assert_eq!(l.sources_with_hash("h1").unwrap()[0].status, SourceStatus::Pending);
+        assert!(l.set_auto_lyric_offset(s1, 1_200).unwrap());
+        assert!(!l.set_auto_lyric_offset(s1, 1_200).unwrap());
         l.set_lyric_offset(s1, -300).unwrap();
-        assert_eq!(l.selected_source(t).unwrap().unwrap().lyric_offset_ms, -300);
+        assert!(!l.set_auto_lyric_offset(s1, 900).unwrap());
+        let sel = l.selected_source(t).unwrap().unwrap();
+        assert_eq!((sel.lyric_offset_ms, sel.lyric_offset_manual), (-300, true));
     }
 
     #[test]

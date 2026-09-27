@@ -86,6 +86,7 @@ export type EngineEvent =
   | { kind: "stage"; trackId: number; stage: "fetching" | "standardizing" | "findingLyrics" | "separating" }
   | { kind: "progress"; trackId: number; chunksDone: number; chunksTotal: number }
   | { kind: "lyrics"; trackId: number }
+  | { kind: "lyricOffset"; trackId: number }
   | { kind: "added"; trackId: number }
   | { kind: "ready"; trackId: number }
   | { kind: "failed"; trackId: number; message: string; problem: ProblemCode | null };
