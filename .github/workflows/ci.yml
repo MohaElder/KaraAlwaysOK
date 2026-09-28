@@ -10,7 +10,7 @@ jobs:
   check:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -18,11 +18,14 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
+
+      - name: Install ffmpeg (tests build sample audio files with it)
+        run: brew install ffmpeg
 
       - name: Install frontend dependencies
         run: npm ci
