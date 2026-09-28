@@ -156,10 +156,19 @@ class PlayerState {
   }
 
   toggle() {
+    if (this.active) this.pause();
+    else this.play();
+  }
+
+  play() {
     this.unlock();
-    this.wantPlay = !this.active;
-    if (this.wantPlay) this.streamer.play();
-    else this.streamer.pause();
+    this.wantPlay = true;
+    this.streamer.play();
+  }
+
+  pause() {
+    this.wantPlay = false;
+    this.streamer.pause();
   }
 
   async previous() {

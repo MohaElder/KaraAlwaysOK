@@ -46,7 +46,8 @@ pub(crate) enum FromPhone {
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Transport {
-    Toggle,
+    Play,
+    Pause,
     Previous,
     Next,
 }

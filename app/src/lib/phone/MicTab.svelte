@@ -59,7 +59,7 @@
   {/if}
   <div class="ptr">
     <button aria-label={t("player.previous")} disabled={!track} onclick={() => link.transport("previous")}><SkipBackIcon weight="fill" size={22} /></button>
-    <button aria-label={t(link.clock.playing ? "player.pause" : "player.play")} disabled={!track} onclick={() => link.transport("toggle")}>
+    <button aria-label={t(link.clock.playing ? "player.pause" : "player.play")} disabled={!track} onclick={() => link.transport(link.clock.playing ? "pause" : "play")}>
       {#key link.clock.playing}
         <span class="pp" in:fade>{#if link.clock.playing}<PauseIcon weight="fill" size={26} />{:else}<PlayIcon weight="fill" size={26} />{/if}</span>
       {/key}
@@ -150,7 +150,7 @@
   .psong { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s5); }
   .psong b, .psong .muted { display: block; }
   .psong b { font-weight: 600; font-size: 16px; }
-  .ptr { display: flex; flex: none; }
+  .ptr { display: flex; flex: none; gap: 2px; }
   .ptr button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; }
   .ptr button:active { transform: scale(calc(1 - .08 * var(--motion))); }
   .ptr button:disabled { opacity: .4; }

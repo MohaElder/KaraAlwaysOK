@@ -94,7 +94,7 @@ export const phonesClock = (key: number | null, positionMs: number, playing: boo
 export const onPhones = (cb: (v: PhonesView) => void) => listen<PhonesView>("phones", (e) => cb(e.payload));
 export const onPhoneLevels = (cb: (levels: PhoneLevel[]) => void) => listen<PhoneLevel[]>("phone-levels", (e) => cb(e.payload));
 export const onPhoneNews = (cb: (news: PhoneNews) => void) => listen<PhoneNews>("phone-news", (e) => cb(e.payload));
-export type Transport = "toggle" | "previous" | "next";
+export type Transport = "play" | "pause" | "previous" | "next";
 export const onTransport = (cb: (action: Transport) => void) => listen<Transport>("transport", (e) => cb(e.payload));
 export const onLibraryChanged = (cb: () => void) => listen("library", () => cb());
 

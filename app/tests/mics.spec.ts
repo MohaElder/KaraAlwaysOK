@@ -64,11 +64,16 @@ test("a guest's song starts when nothing is playing, and the Mac says who joined
   await expect(page.getByText("Ben added “Paper Boats”")).toBeVisible();
 });
 
-test("a phone's Play/Pause and Next run the Mac's player", async ({ page }) => {
+test("a phone's Play, Pause, Next and Previous run the Mac's player", async ({ page }) => {
   await sing(page, "Paper Boats");
   const bar = page.getByRole("region", { name: "Player" });
-  await page.evaluate(() => window.fake.transport("toggle"));
+  await page.evaluate(() => window.fake.transport("pause"));
   await expect(bar.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await page.evaluate(() => window.fake.transport("pause"));
+  await expect(bar.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await page.evaluate(() => window.fake.transport("play"));
+  await expect(bar.getByRole("button", { name: "Pause" })).toBeVisible();
   await page.evaluate(() => window.fake.transport("next"));
-  await expect.poll(() => calls(page, "skip")).toEqual([{ delta: 1 }]);
+  await page.evaluate(() => window.fake.transport("previous"));
+  await expect.poll(() => calls(page, "skip")).toEqual([{ delta: 1 }, { delta: -1 }]);
 });

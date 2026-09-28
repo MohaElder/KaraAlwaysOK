@@ -91,7 +91,6 @@ class PhoneLink {
   private query: string | null = null;
   private sentAt = new Map<string, number>();
   private later = new Map<string, ReturnType<typeof setTimeout>>();
-  private pressedAt = -Infinity;
 
   constructor() {
     keep(() => localStorage, "phone.id", this.id);
@@ -306,10 +305,11 @@ class PhoneLink {
     }
   }
 
-  /** Asks the computer to play or pause, or go to the previous or next song; a second tap right after is ignored. */
+  /** Asks the computer to play, pause, or go to the previous or next song; a second tap on the same button right after is ignored. */
   transport(action: Transport) {
-    if (performance.now() - this.pressedAt < REPEAT_MS) return;
-    this.pressedAt = performance.now();
+    const key = `transport:${action}`;
+    if (performance.now() - (this.sentAt.get(key) ?? -Infinity) < REPEAT_MS) return;
+    this.sentAt.set(key, performance.now());
     this.send({ t: "transport", action });
   }
 
