@@ -169,7 +169,7 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let tls = RustlsConfig::from_pem(cert_pem, key_pem).await.context(Problem::PhonesStart)?;
     let chosen = if cfg!(debug_assertions) { std::env::var("KARA_MIC_BUFFER_MS").ok().and_then(|v| v.parse::<f64>().ok()) } else { None };
-    let floor_ms = chosen.unwrap_or(20.0).clamp(10.0, 60.0);
+    let floor_ms = chosen.unwrap_or(10.0).clamp(10.0, 60.0);
     let (output, mixer) = tauri::async_runtime::spawn_blocking(output::start).await?.context(Problem::PhonesStart)?;
     let rate = mixer.lock().unwrap().rate();
     let server = axum_server::Handle::new();
