@@ -110,6 +110,12 @@ macOS's `afconvert` (AAC), so running the tests needs `ffmpeg` installed. The ap
 needs `ffmpeg` — it only downloads `yt-dlp` on its own, the first time you add
 a link that needs it.
 
+## Checks
+
+Every push to `main` and every pull request runs the CI workflow: the Rust tests and clippy, the
+type check, the language check, the unit tests and the browser tests. A release runs it first and
+stops if anything fails.
+
 ## Before the first release
 
 Do these once, after the app is built and the GitHub repo exists:
@@ -118,12 +124,7 @@ Do these once, after the app is built and the GitHub repo exists:
    and keep the private key and its password safe (never commit them).
 2. Add GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` (the private key's contents) and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-3. Add a CI workflow that gates every push and pull request on: the Rust unit tests
-   (`cargo test --workspace`) and `cargo clippy --workspace --all-targets -- -D warnings`;
-   the app's unit tests (`npm test`) and browser tests; the type check (`npm run check`,
-   which runs svelte-check and TypeScript); and the language check (every locale has
-   exactly the English keys). Make the release workflow require it.
-4. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
+3. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
    `latest.json`; publish it so the app's update check can find it.
 
 ## License

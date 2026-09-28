@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Build the page the app embeds
+        run: npm run build
+        working-directory: app
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Type check
+        run: npm run check
+        working-directory: app
+
+      - name: Language check
+        run: npm run check:i18n
+        working-directory: app
+
+      - name: Unit tests
+        run: npm test
+        working-directory: app
+
+      - name: Browser tests
+        run: npx playwright install chromium && npx playwright test
+        working-directory: app
