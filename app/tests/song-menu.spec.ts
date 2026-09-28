@@ -6,6 +6,7 @@ test("Play next and Add to queue line the song up", async ({ page }) => {
   await row(page, "Lemon Skies").click({ button: "right" });
   await page.getByRole("menu").getByRole("button", { name: "Play next" }).click();
   await expect(page.locator(".toasts")).toContainText("“Lemon Skies” plays next");
+  await expect(page.getByRole("menu")).toBeHidden();
   await row(page, "Quiet Hours").click({ button: "right" });
   await page.getByRole("menu").getByRole("button", { name: "Add to queue" }).click();
   await expect(page.locator(".toasts")).toContainText("Added to queue");

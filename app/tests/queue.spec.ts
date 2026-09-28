@@ -16,7 +16,7 @@ test("the queue shows what's up next, reorders by dragging and removes", async (
   const target = (await upNext.filter({ hasText: "Lemon Skies" }).boundingBox())!;
   await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 5 });
   await page.mouse.up();
-  expect(await calls(page, "queue_move")).toEqual([{ key: 3, to: 1 }]);
+  await expect.poll(() => calls(page, "queue_move")).toEqual([{ key: 3, to: 1 }]);
   await expect(upNext).toHaveText([/Kettle Duet/, /Lemon Skies/]);
 
   await upNext.filter({ hasText: "Lemon Skies" }).getByRole("button", { name: "Remove" }).click();
