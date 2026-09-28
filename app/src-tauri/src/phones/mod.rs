@@ -372,6 +372,10 @@ pub(crate) fn handle(app: &AppHandle, id: &str, msg: FromPhone) {
             });
             Ok(None)
         }
+        FromPhone::Transport { action } => {
+            let _ = app.emit("transport", action);
+            Ok(None)
+        }
         FromPhone::Join { .. } | FromPhone::Ping | FromPhone::Leave => Ok(None),
     };
     match reply {

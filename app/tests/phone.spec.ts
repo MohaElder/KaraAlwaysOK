@@ -131,6 +131,23 @@ test("the Mic tab shows the song, what's next and the lyrics in time with the co
   await expect(page.getByText("Waiting for a song")).toBeVisible();
 });
 
+test("Previous, Play/Pause and Next ask the computer, once per tap, and Play/Pause follows the song", async ({ page }) => {
+  await page.clock.install();
+  await joinAs(page);
+  const transport = async () => (await sent(page)).filter((m) => m.t === "transport").map((m) => m.action);
+  await server(page, { t: "clock", key: 1, positionMs: 0, playing: false });
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await server(page, { t: "clock", key: 1, positionMs: 0, playing: true });
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  await page.clock.fastForward(1_000);
+  await page.getByRole("button", { name: "Next" }).dblclick();
+  await page.clock.fastForward(1_000);
+  await page.getByRole("button", { name: "Previous" }).click();
+  expect(await transport()).toEqual(["toggle", "next", "previous"]);
+  await server(page, { t: "player", snapshot: { entries: [], current: null, ended: false, lyricOffsetMs: 0 } });
+  await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
+});
+
 test("Voice and Singer each open their own slider and send its value", async ({ page }) => {
   await joinAs(page);
   await page.getByRole("button", { name: "Voice" }).click();

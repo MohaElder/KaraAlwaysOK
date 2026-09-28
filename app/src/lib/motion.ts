@@ -26,6 +26,14 @@ export function slide(node: Element, { x = 0, y = 8 }: { x?: number; y?: number 
   return { duration: DURATION, easing: ease, css: (t, u) => `opacity:${t};transform:translate(${u * x}px,${u * y}px)` };
 }
 
+/** Opens or closes the element's height with a fade, so what's around it moves along; only the fade under reduced motion. */
+export function unfold(node: Element): TransitionConfig {
+  if (reducedMotion()) return fade(node);
+  const style = getComputedStyle(node);
+  const sizes = ["height", "padding-top", "padding-bottom", "margin-top", "margin-bottom"].map((p) => [p, parseFloat(style.getPropertyValue(p))] as const);
+  return { duration: DURATION, easing: ease, css: (t) => `opacity:${t};overflow:hidden;${sizes.map(([p, v]) => `${p}:${t * v}px`).join(";")}` };
+}
+
 /** A fade out that lifts the element out of the flow where it stands, so what replaces it doesn't jump. */
 export function fadeAway(node: HTMLElement): TransitionConfig {
   const { offsetTop: top, offsetLeft: left, offsetWidth: width } = node;

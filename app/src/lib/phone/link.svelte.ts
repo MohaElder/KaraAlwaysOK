@@ -1,4 +1,4 @@
-import { WEB_SOURCES, type LinkPreview, type Lyrics, type PlayerSnapshot, type ProblemCode, type SearchHit, type SearchOutcome, type WebSource } from "$lib/api";
+import { WEB_SOURCES, type LinkPreview, type Lyrics, type PlayerSnapshot, type ProblemCode, type SearchHit, type SearchOutcome, type Transport, type WebSource } from "$lib/api";
 import { previewFailed, withPreview, type SearchView } from "$lib/search";
 import { say } from "$lib/i18n/engine";
 import { t } from "$lib/i18n/index.svelte";
@@ -16,6 +16,7 @@ const WRONG_CODE = 4003;
 const RETRY_MS = 2_000;
 const GIVE_UP_MS = 120_000;
 const SILENT_MS = 3_000;
+const REPEAT_MS = 500;
 
 type FromMac =
   | { t: "joined" }
@@ -90,6 +91,7 @@ class PhoneLink {
   private query: string | null = null;
   private sentAt = new Map<string, number>();
   private later = new Map<string, ReturnType<typeof setTimeout>>();
+  private pressedAt = -Infinity;
 
   constructor() {
     keep(() => localStorage, "phone.id", this.id);
@@ -302,6 +304,13 @@ class PhoneLink {
       this.pasted = { kind: "link", url: o.url, host: o.host, preview: null, failed: false };
       this.send({ t: "preview", url: o.url });
     }
+  }
+
+  /** Asks the computer to play or pause, or go to the previous or next song; a second tap right after is ignored. */
+  transport(action: Transport) {
+    if (performance.now() - this.pressedAt < REPEAT_MS) return;
+    this.pressedAt = performance.now();
+    this.send({ t: "transport", action });
   }
 
   add(trackId: number, next: boolean) {

@@ -1,5 +1,5 @@
 import {
-  onEngine, onPlayer, phonesClock, playerState, playTracks, queueAdd, queueMove, queueRemove, retryPrepare, setKey, setLyricOffset, setSinger, skipSong, songEnded, trackLyrics,
+  onEngine, onPlayer, onTransport, phonesClock, playerState, playTracks, queueAdd, queueMove, queueRemove, retryPrepare, setKey, setLyricOffset, setSinger, skipSong, songEnded, trackLyrics,
   type EngineEvent, type Lyrics, type PlayerSnapshot,
 } from "$lib/api";
 import type { Label } from "$lib/audio/chunks";
@@ -86,7 +86,7 @@ class PlayerState {
   private wantPlay = false;
   private frame = 0;
 
-  /** Starts the streamer and follows the queue and the engine. */
+  /** Starts the streamer and follows the queue, the engine and the phones' Play/Pause, Previous and Next. */
   async init() {
     this.streamer = new Streamer(
       () => this.sync(),
@@ -95,6 +95,7 @@ class PlayerState {
     );
     await onPlayer((s) => this.apply(s));
     await onEngine((e) => this.onEngine(e));
+    await onTransport((action) => void this[action]());
     await this.refresh();
   }
 

@@ -63,3 +63,12 @@ test("a guest's song starts when nothing is playing, and the Mac says who joined
   await page.evaluate(() => window.fake.news({ kind: "added", name: "Ben", title: "Paper Boats" }));
   await expect(page.getByText("Ben added “Paper Boats”")).toBeVisible();
 });
+
+test("a phone's Play/Pause and Next run the Mac's player", async ({ page }) => {
+  await sing(page, "Paper Boats");
+  const bar = page.getByRole("region", { name: "Player" });
+  await page.evaluate(() => window.fake.transport("toggle"));
+  await expect(bar.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await page.evaluate(() => window.fake.transport("next"));
+  await expect.poll(() => calls(page, "skip")).toEqual([{ delta: 1 }]);
+});

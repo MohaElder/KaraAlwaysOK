@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use axum::Router;
 use axum_server::tls_rustls::RustlsConfig;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, TcpListener};
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -37,8 +37,18 @@ pub(crate) enum FromPhone {
     Live { on: bool, rate: u32 },
     Voice { v: u8 },
     Effect { kind: kara_core::mic::Effect, amount: u8 },
+    Transport { action: Transport },
     Ping,
     Leave,
+}
+
+/// A player button pressed on a phone, which the Mac window's player carries out.
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Transport {
+    Toggle,
+    Previous,
+    Next,
 }
 
 /// Serves on port 443 (8443 when taken) and sends plain requests on port 80 there; returns the HTTPS port and whether port 80 is

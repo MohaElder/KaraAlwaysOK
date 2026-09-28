@@ -4,14 +4,18 @@
   import { link, type EffectKind } from "./link.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { loudness } from "$lib/format";
-  import { slide } from "$lib/motion";
+  import { fade, slide, unfold } from "$lib/motion";
   import Artwork from "$lib/components/Artwork.svelte";
   import PhoneLyrics from "./PhoneLyrics.svelte";
   import MagicWandIcon from "phosphor-svelte/lib/MagicWandIcon";
   import MicrophoneSlashIcon from "phosphor-svelte/lib/MicrophoneSlashIcon";
   import MicrophoneStageIcon from "phosphor-svelte/lib/MicrophoneStageIcon";
   import MusicNotesIcon from "phosphor-svelte/lib/MusicNotesIcon";
+  import PauseIcon from "phosphor-svelte/lib/PauseIcon";
+  import PlayIcon from "phosphor-svelte/lib/PlayIcon";
   import ProhibitIcon from "phosphor-svelte/lib/ProhibitIcon";
+  import SkipBackIcon from "phosphor-svelte/lib/SkipBackIcon";
+  import SkipForwardIcon from "phosphor-svelte/lib/SkipForwardIcon";
   import SparkleIcon from "phosphor-svelte/lib/SparkleIcon";
   import SpeakerHighIcon from "phosphor-svelte/lib/SpeakerHighIcon";
   import UserSoundIcon from "phosphor-svelte/lib/UserSoundIcon";
@@ -53,6 +57,15 @@
     <span class="th"><MusicNotesIcon size={20} /></span>
     <div class="grow"><b>{t("phone.waitingSong")}</b><span class="muted">{t("phone.addFromSongs")}</span></div>
   {/if}
+  <div class="ptr">
+    <button aria-label={t("player.previous")} disabled={!track} onclick={() => link.transport("previous")}><SkipBackIcon weight="fill" size={22} /></button>
+    <button aria-label={t(link.clock.playing ? "player.pause" : "player.play")} disabled={!track} onclick={() => link.transport("toggle")}>
+      {#key link.clock.playing}
+        <span class="pp" in:fade>{#if link.clock.playing}<PauseIcon weight="fill" size={26} />{:else}<PlayIcon weight="fill" size={26} />{/if}</span>
+      {/key}
+    </button>
+    <button aria-label={t("player.next")} disabled={!track} onclick={() => link.transport("next")}><SkipForwardIcon weight="fill" size={22} /></button>
+  </div>
 </div>
 <div class="pnext">
   {#key upNext}{#if upNext}<span in:slide={{ y: 4 }}>{upNext}</span><span aria-hidden="true">{upNext}</span>{/if}{/key}
@@ -81,13 +94,14 @@
   <button class="pctl glass" aria-pressed={open === "effect"} onclick={() => (open = open === "effect" ? null : "effect")}><MagicWandIcon size={16} />{t("phone.effect")}</button>
 </div>
 {#if open === "voice"}
-  <label class="pslide glass" transition:slide={{ y: 8 }}>
+  <label class="pslide glass" transition:unfold>
     <SpeakerHighIcon size={18} />
     <input class="vs" type="range" min="0" max="100" value={link.voice} style:--v="{link.voice}%" aria-label={t("phone.voiceAria")} oninput={(e) => link.setVoice(+e.currentTarget.value)} />
     <output class="num">{link.voice}%</output>
   </label>
-{:else if open === "singer"}
-  <label class="pslide glass" transition:slide={{ y: 8 }}>
+{/if}
+{#if open === "singer"}
+  <label class="pslide glass" transition:unfold>
     <UserSoundIcon size={18} />
     <input
       class="vs"
@@ -105,8 +119,9 @@
       }}
     />
   </label>
-{:else if open === "effect"}
-  <div class="pfx glass" transition:slide={{ y: 8 }}>
+{/if}
+{#if open === "effect"}
+  <div class="pfx glass" transition:unfold>
     <div class="presets">
       {#each PRESETS as p (p.kind)}
         <button class="preset" aria-pressed={link.effect.kind === p.kind} onclick={() => link.setEffect(p.kind, link.effect.amount)}><p.icon size={16} />{t(p.label)}</button>
@@ -135,6 +150,11 @@
   .psong { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s5); }
   .psong b, .psong .muted { display: block; }
   .psong b { font-weight: 600; font-size: 16px; }
+  .ptr { display: flex; flex: none; }
+  .ptr button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; }
+  .ptr button:active { transform: scale(calc(1 - .08 * var(--motion))); }
+  .ptr button:disabled { opacity: .4; }
+  .pp { display: grid; }
   .th { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--raised); }
   .pnext { height: 18px; margin-top: var(--s3); overflow: hidden; white-space: nowrap; font-size: 13px; color: var(--muted); -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
   .pnext span { display: inline-block; padding-right: var(--s8); animation: ticker 14s linear infinite; }

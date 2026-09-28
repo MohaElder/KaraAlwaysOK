@@ -1,6 +1,6 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { CollectionCard, EngineEvent, Kind, LyricLine, Lyrics, PhoneLevel, PhoneNews, PhonesView, PlayerSnapshot, SearchOutcome, Track } from "$lib/api";
+import type { CollectionCard, EngineEvent, Kind, LyricLine, Lyrics, PhoneLevel, PhoneNews, PhonesView, PlayerSnapshot, SearchOutcome, Track, Transport } from "$lib/api";
 
 declare global {
   interface Window {
@@ -90,6 +90,10 @@ const fake = {
   /** Something a phone did that the Mac toasts. */
   news(news: PhoneNews) {
     return emit("phone-news", news);
+  },
+  /** A phone's Play/Pause, Previous or Next, as the app forwards it. */
+  transport(action: Transport) {
+    return emit("transport", action);
   },
   /** The session ends on its own (the Mac woke); opening again gives the same view. */
   sessionEnded() {

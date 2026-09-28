@@ -50,12 +50,15 @@
 
 <style>
   .lrow { display: flex; align-items: center; gap: var(--s4); max-width: 760px; padding: var(--s2); border-radius: var(--r-lg); cursor: pointer; transition: background-color var(--t) var(--ease); }
-  .lrow:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+  @media (hover: hover) {
+    .lrow:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+    .lrow:hover .lplus { opacity: 1; }
+  }
   .lrow b { display: block; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
   .lthumb { position: relative; width: 160px; aspect-ratio: 16 / 9; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--raised); overflow: hidden; }
   .lthumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .lthumb .bone { width: 100%; height: 100%; margin: 0; border-radius: 0; }
   .ldur { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--bezel) 75%, transparent); color: var(--thumb); font: 500 11px var(--mono); }
   .lplus { position: relative; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--bezel) 55%, transparent); color: var(--thumb); opacity: 0; transition: opacity var(--t) var(--ease); }
-  .lrow:hover .lplus, .lrow:focus-visible .lplus { opacity: 1; }
+  .lrow:focus-visible .lplus { opacity: 1; }
 </style>
