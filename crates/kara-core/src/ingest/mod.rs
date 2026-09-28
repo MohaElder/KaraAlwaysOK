@@ -8,6 +8,7 @@ pub mod ytdlp;
 
 use crate::audio;
 use crate::library::{AudioSource, CollectionKind, Library, NewTrack, ProviderId, SourceKind, Track};
+use crate::lyrics::LyricsFetcher;
 use crate::problem::Problem;
 use crate::store::{write_atomic, Store};
 use anyhow::{bail, Context, Result};
@@ -153,9 +154,10 @@ fn download_file(url: &Url, dir: &Path) -> Result<PathBuf> {
 
 /// Gets the source's original audio onto disk and returns its path. Links are
 /// downloaded into `store.tmp_dir()` (the caller deletes them after decoding); a link's
-/// first download also fills in the song's info.
+/// first download also fills in the song's info, unless the user edited it: its music fields, else the guess
+/// `names` knows, else the cleaned video title and channel.
 /// Error messages are shown to the user as-is.
-pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSource) -> Result<PathBuf> {
+pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSource, names: Option<&dyn LyricsFetcher>) -> Result<PathBuf> {
     match source.kind {
         SourceKind::File => Ok(PathBuf::from(&source.uri)),
         SourceKind::Link => {
@@ -168,13 +170,17 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                     let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir(), || ytdlp::update(&bin_dir))
                         .context(Problem::Download)?;
                     if source.audio_hash.is_none() {
-                        lib.update_track_meta(track.id, &f.title, f.artist.as_deref(), f.album.as_deref())?;
+                        let picked = names.and_then(|n| n.pick_name(&f.guesses, f.duration_s));
+                        if !lib.track(track.id)?.info_edited {
+                            let (title, artist) = picked.map_or((f.title.clone(), f.artist.clone()), |(t, a)| (t, Some(a)));
+                            lib.update_track_meta(track.id, &title, artist.as_deref(), f.album.as_deref())?;
+                            link_collections(lib, track.id, artist.as_deref(), f.album.as_deref())?;
+                        }
                         let mut texts = vec![f.title.as_str(), f.album.as_deref().unwrap_or_default()];
                         texts.extend(f.tags.iter().map(String::as_str));
                         if looks_instrumental(&texts) {
                             lib.mark_instrumental(track.id)?;
                         }
-                        link_collections(lib, track.id, f.artist.as_deref(), f.album.as_deref())?;
                     }
                     if let Some(url) = f.thumbnail.as_deref().filter(|_| track.artwork_path.is_none()) {
                         let _ = download_artwork(lib, store, track.id, url);
@@ -267,19 +273,64 @@ mod tests {
         assert_eq!(lib.collection_tracks(lib.collections(None, CollectionKind::Playlist).unwrap()[0].id).unwrap().len(), 1);
     }
 
-    #[test]
-    fn downloading_a_link_again_keeps_the_songs_info() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::new(dir.path());
+    /// A store whose yt-dlp prints `json` for every download.
+    fn store_with_fake_ytdlp(dir: &Path, json: &str) -> Store {
+        let store = Store::new(dir);
         let exe = store.bin_dir().join("yt-dlp-fake/yt-dlp_macos");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-        std::fs::write(&exe, "#!/bin/sh\necho '{\"filepath\":\"/made/up.m4a\",\"title\":\"Made Up Song\",\"uploader\":\"Made Up Channel\"}'\n").unwrap();
+        std::fs::write(&exe, format!("#!/bin/sh\necho '{json}'\n")).unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::write(store.bin_dir().join("yt-dlp.current"), "fake").unwrap();
+        store
+    }
+
+    /// A catalog that knows one made-up (title, singer) pair, and that the user edits the song while it is asked.
+    struct Knows<'a>(Option<(&'static str, &'static str)>, Option<(&'a Library, i64)>);
+    impl LyricsFetcher for Knows<'_> {
+        fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<crate::lyrics::Found>> {
+            Ok(None)
+        }
+        fn pick_name(&self, guesses: &[(String, String)], _: u64) -> Option<(String, String)> {
+            if let Some((lib, t)) = self.1 {
+                edit_info(lib, t, "Kept Title", None, None).unwrap();
+                lib.mark_info_edited(t).unwrap();
+            }
+            let (t, a) = self.0?;
+            guesses.iter().find(|g| g.0 == t && g.1 == a).cloned()
+        }
+    }
+
+    #[test]
+    fn a_link_song_is_named_by_its_music_fields_else_the_guess_a_catalog_knows_else_as_before() {
+        let names = |json: &str, knows: Option<(&'static str, &'static str)>, edited: bool| {
+            let dir = tempfile::tempdir().unwrap();
+            let store = store_with_fake_ytdlp(dir.path(), json);
+            let lib = Library::open_in_memory().unwrap();
+            let t = add_link(&lib, &link::parse_link("https://youtu.be/abc").unwrap()).unwrap().track_id;
+            let knows = Knows(knows, edited.then_some((&lib, t)));
+            fetch_audio(&lib, &store, &lib.track(t).unwrap(), &lib.selected_source(t).unwrap().unwrap(), Some(&knows)).unwrap();
+            let t = lib.track(t).unwrap();
+            (t.title, t.artist.unwrap_or_default())
+        };
+        let video = r#"{"filepath":"/made/up.m4a","title":"Paper Boats | Juniper Row","uploader":"Made Up Fan Channel","duration":200.5}"#;
+        let boats = ("Paper Boats".to_string(), "Juniper Row".to_string());
+        assert_eq!(names(video, Some(("Paper Boats", "Juniper Row")), false), boats);
+        assert_eq!(names(video, None, false), ("Paper Boats | Juniper Row".into(), "Made Up Fan Channel".into()));
+        assert_eq!(names(video, Some(("Paper Boats", "Juniper Row")), true), ("Kept Title".into(), String::new()));
+        let art_track = r#"{"filepath":"/made/up.m4a","title":"Made Up Video","uploader":"Made Up Fan Channel","track":"Paper Boats","artist":"Juniper Row"}"#;
+        assert_eq!(names(art_track, Some(("Made Up Video", "Made Up Fan Channel")), false), boats);
+        let no_artist = r#"{"filepath":"/made/up.m4a","title":"Made Up Clip | Juniper Row","uploader":"Made Up Fan Channel","track":"Paper Boats"}"#;
+        assert_eq!(names(no_artist, Some(("Paper Boats", "Juniper Row")), false), boats);
+    }
+
+    #[test]
+    fn downloading_a_link_again_keeps_the_songs_info() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_with_fake_ytdlp(dir.path(), r#"{"filepath":"/made/up.m4a","title":"Made Up Song","uploader":"Made Up Channel"}"#);
         let lib = Library::open_in_memory().unwrap();
         let ing = add_link(&lib, &link::parse_link("https://youtu.be/abc").unwrap()).unwrap();
-        let fetch = || fetch_audio(&lib, &store, &lib.track(ing.track_id).unwrap(), &lib.selected_source(ing.track_id).unwrap().unwrap()).unwrap();
+        let fetch = || fetch_audio(&lib, &store, &lib.track(ing.track_id).unwrap(), &lib.selected_source(ing.track_id).unwrap().unwrap(), None).unwrap();
         fetch();
         assert_eq!(lib.track(ing.track_id).unwrap().title, "Made Up Song");
         lib.set_source_audio(ing.source_id, "h", 1_000).unwrap();

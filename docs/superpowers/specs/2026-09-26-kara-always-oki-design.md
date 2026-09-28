@@ -313,6 +313,7 @@ Each phase gets its own implementation plan.
 ## 9. Out of scope (for now)
 
 - **Per-app AirPlay** (send only KaraAlwaysOK's audio to an AirPlay speaker, with lyrics shifted for AirPlay's ~2 s delay; phone mics stay on the Mac's speakers). Parked 2026-09-27: needs either the web view's media AirPlay (untested for a live mix) or moving output to Apple's native player. System-wide AirPlay from Control Center already works.
+- **Smarter song names and singers** (to explore, added 2026-09-27): read the real song name and singer from messy video titles (e.g. 【4K60FPS】…現場版) better than today's title cleaning and title/artist swap retry, on the Mac, free and private. Ideas: the metadata yt-dlp already returns (track/artist on YouTube Music uploads, "Provided to YouTube by" descriptions), scoring candidates against LRCLIB and MusicBrainz, and Apple's on-device Foundation Models (macOS 26) with structured output to pick the name and singer. A cloud model (Jev) was considered and dropped: it can't run locally.
 
 - Lyric timing from audio (Whisper) when no synced lyrics exist.
 - Recording or exporting performances.

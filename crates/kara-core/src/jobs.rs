@@ -118,7 +118,7 @@ fn add_inner(ctx: &Ctx, lib: &Library, fetcher: &dyn LyricsFetcher, track_id: i6
         None => false,
     };
     if !separated {
-        load_or_fetch(ctx, lib, &track, &source, emit)?;
+        load_or_fetch(ctx, lib, &track, &source, Some(fetcher), emit)?;
     }
     emit(Event::Stage { track_id, stage: Stage::FindingLyrics });
     if refresh_lyrics(lib, track_id, fetcher, emit).unwrap_or(false) {
@@ -311,7 +311,7 @@ fn prepare_inner(
         }
     }
 
-    let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, emit)?;
+    let (hash, mix) = load_or_fetch(ctx, lib, &track, &source, None, emit)?;
     lyrics.request(track_id);
     if is_ready(ctx, lib, &hash)? {
         return use_separated(ctx, lib, &hash);
@@ -323,8 +323,8 @@ fn prepare_inner(
 }
 
 /// The song in the standard format, plus its hash. Decodes the kept original
-/// when there is one; if it's missing or damaged (deleted), fetches the song and keeps a copy.
-fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, emit: &mut dyn FnMut(Event)) -> Result<(String, Stereo)> {
+/// when there is one; if it's missing or damaged (deleted), fetches the song, naming a link song with `names`, and keeps a copy.
+fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, names: Option<&dyn LyricsFetcher>, emit: &mut dyn FnMut(Event)) -> Result<(String, Stereo)> {
     if let Some(hash) = &source.audio_hash {
         if let Some(p) = ctx.store.original_path(hash) {
             match audio::decode_file(&p) {
@@ -336,7 +336,7 @@ fn load_or_fetch(ctx: &Ctx, lib: &Library, track: &Track, source: &AudioSource, 
     }
     emit(Event::Stage { track_id: track.id, stage: Stage::Fetching });
     lib.set_source_status(source.id, SourceStatus::Fetching, None)?;
-    let path = ingest::fetch_audio(lib, &ctx.store, track, source)?;
+    let path = ingest::fetch_audio(lib, &ctx.store, track, source, names)?;
     emit(Event::Stage { track_id: track.id, stage: Stage::Standardizing });
     let kept = decode_and_keep(ctx, &path);
     if source.kind == SourceKind::Link {

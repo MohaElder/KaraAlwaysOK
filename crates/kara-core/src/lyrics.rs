@@ -1,6 +1,7 @@
 //! Synced lyrics: types, LRC parsing, word timing and lookup.
 
 use crate::fuzzy::{fold, Fuzzy};
+use crate::ingest::ytdlp::clean_meta;
 use crate::library::LyricsSource;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -150,9 +151,14 @@ impl From<&str> for Found {
 pub trait LyricsFetcher {
     /// Without an artist, matches by title and duration.
     fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<Found>>;
+
+    /// The first of `guesses` (title, singer) that a music catalog lists near this length; None when none is or it can't tell.
+    fn pick_name(&self, _guesses: &[(String, String)], _duration_s: u64) -> Option<(String, String)> {
+        None
+    }
 }
 
-/// lrclib.net — free, no key.
+/// lrclib.net — free, no key — with MusicBrainz for song names it doesn't know.
 pub struct Lrclib {
     client: reqwest::blocking::Client,
 }
@@ -160,7 +166,7 @@ pub struct Lrclib {
 impl Lrclib {
     pub fn new() -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent(concat!("kara-always-oki/", env!("CARGO_PKG_VERSION")))
+            .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(8))
             .build()?;
         Ok(Self { client })
@@ -176,11 +182,70 @@ impl Lrclib {
         }
         resp.error_for_status()?.json().map_err(transient)
     }
+
+    /// MusicBrainz recordings named like `title` by a singer named like `artist`, one request per `MUSICBRAINZ_PACE`;
+    /// none while it is busy.
+    fn recordings(&self, title: &str, artist: &str) -> Result<Vec<Hit>> {
+        let quoted = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+        let query = format!("recording:{} AND artist:{}", quoted(title), quoted(artist));
+        let mut last = MUSICBRAINZ_LAST.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(at) = *last {
+            std::thread::sleep(MUSICBRAINZ_PACE.saturating_sub(at.elapsed()));
+        }
+        let resp = self.client.get("https://musicbrainz.org/ws/2/recording").query(&[("query", query.as_str()), ("fmt", "json"), ("limit", "10")]).send();
+        *last = Some(Instant::now());
+        let resp = resp?;
+        if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Ok(Vec::new());
+        }
+        let found: Recordings = resp.error_for_status()?.json()?;
+        Ok(found.recordings.into_iter().map(Hit::from).collect())
+    }
 }
 
 impl LyricsFetcher for Lrclib {
     fn fetch(&self, title: &str, artist: Option<&str>, duration_s: u64) -> Result<Option<Found>> {
         lookup(|q| self.search(q), title, artist, duration_s)
+    }
+
+    /// Asks LRCLIB first, then MusicBrainz.
+    fn pick_name(&self, guesses: &[(String, String)], duration_s: u64) -> Option<(String, String)> {
+        let lrclib = |title: &str, artist: &str| self.search(&[("track_name", title), ("artist_name", artist)]);
+        pick(guesses, duration_s, lrclib).ok().flatten().or_else(|| pick(guesses, duration_s, |t, a| self.recordings(t, a)).ok().flatten())
+    }
+}
+
+/// User-Agent for LRCLIB and MusicBrainz requests.
+const USER_AGENT: &str = concat!("kara-always-oki/", env!("CARGO_PKG_VERSION"), " ( https://github.com/GITHUB-OWNER/kara-always-oki )");
+/// Time between MusicBrainz requests.
+const MUSICBRAINZ_PACE: Duration = Duration::from_millis(1_100);
+/// When MusicBrainz was last asked.
+static MUSICBRAINZ_LAST: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+
+#[derive(Deserialize)]
+struct Recordings {
+    recordings: Vec<Recording>,
+}
+
+#[derive(Deserialize)]
+struct Recording {
+    title: String,
+    length: Option<f64>,
+    #[serde(rename = "artist-credit", default)]
+    artist_credit: Vec<Credit>,
+}
+
+#[derive(Deserialize)]
+struct Credit {
+    name: String,
+    #[serde(default)]
+    joinphrase: String,
+}
+
+impl From<Recording> for Hit {
+    fn from(r: Recording) -> Self {
+        let artist_name = r.artist_credit.iter().map(|c| format!("{}{}", c.name, c.joinphrase)).collect();
+        Hit { track_name: r.title, artist_name, duration: r.length.map(|ms| ms / 1000.0), synced_lyrics: None }
     }
 }
 
@@ -224,7 +289,7 @@ const VERSIONS: &[&str] = &["version", "edit", "mix", "remix", "acoustic", "demo
 /// Words that name a version only next to a version word or tag, as in "Radio Edit".
 const VERSION_MODIFIERS: &[&str] = &["single", "radio", "mono", "stereo"];
 /// Endings channels add to a singer's name.
-const ARTIST_SUFFIXES: &[&str] = &["- topic", "- 主題", "vevo", "官方", "official"];
+const ARTIST_SUFFIXES: &[&str] = &["- topic", "- 主題", "vevo", "官方频道", "官方頻道", "官方", "official"];
 
 /// Runs `f`, asking again after a short pause while the service is busy or unreachable and `deadline` allows.
 fn retrying<T>(deadline: Instant, mut f: impl FnMut() -> Result<T>) -> Result<T> {
@@ -244,38 +309,48 @@ fn lookup(search: impl Fn(&[(&str, &str)]) -> Result<Vec<Hit>>, title: &str, art
     let artists: Vec<String> = hint.iter().map(String::as_str).chain(artist).flat_map(clean_artist).collect();
     if let Some(a) = artists.first() {
         let hits = retrying(deadline, || search(&[("track_name", &title), ("artist_name", a)]))?;
-        if let Some(lyrics) = best_match(hits, &title, &artists, duration_s) {
+        if let Some(lyrics) = best_lyrics(hits, &title, &artists, duration_s) {
             return Ok(Some(lyrics));
         }
     }
-    Ok(best_match(retrying(deadline, || search(&[("q", &title)]))?, &title, &artists, duration_s))
+    Ok(best_lyrics(retrying(deadline, || search(&[("q", &title)]))?, &title, &artists, duration_s))
 }
 
-/// The synced lyrics and names of the hit that best matches the song, scored by title, singer and closeness of length
+/// The hit that best matches the song, scored by title, singer and closeness of length
 /// in whole seconds; among equals, the one with more timed lines, then the service's first. Hits without a length are skipped.
 /// A hit by a like singer may have a close title and be up to a minute off; by another singer it needs
 /// the same title and nearly the same length.
-fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<Found> {
+fn best_match(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<Hit> {
     let title_key = key(title);
     hits.into_iter()
         .rev()
         .filter_map(|h| {
-            let lyrics = h.synced_lyrics.filter(|s| is_synced(s))?;
             let off = if duration_s == 0 { 0.0 } else { (h.duration? - duration_s as f64).abs() };
             let (their_title, _) = clean_title(&h.track_name, Some(&h.artist_name));
             let same_title = key(&their_title) == title_key;
-            let singer = clean_artist(&h.artist_name).iter().flat_map(|a| artists.iter().map(move |b| singer_likeness(a, b))).max().unwrap_or(0);
+            let singer = singer_of(&h.artist_name, artists);
             let fits = if singer > 0 {
                 off <= LIKE_SINGER_OFF_S && (same_title || (similar(title, &their_title) && similar(&their_title, title)))
             } else {
                 same_title && off <= if artists.is_empty() { UNKNOWN_SINGER_OFF_S } else { OTHER_SINGER_OFF_S }
             };
             let score = if same_title { 2.0 } else { 1.0 } + f64::from(singer) + 1.0 - off.round() / LIKE_SINGER_OFF_S;
-            let timed_lines = lyrics.lines().filter(|l| is_synced(l)).count();
-            fits.then_some((score, timed_lines, Found { lyrics, title: h.track_name, artist: h.artist_name }))
+            let timed_lines = h.synced_lyrics.as_deref().unwrap_or_default().lines().filter(|l| is_synced(l)).count();
+            fits.then_some((score, timed_lines, h))
         })
         .max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
-        .map(|(.., found)| found)
+        .map(|(.., hit)| hit)
+}
+
+/// The synced lyrics and names of the hit with synced lyrics that best matches the song (see `best_match`).
+fn best_lyrics(hits: Vec<Hit>, title: &str, artists: &[String], duration_s: u64) -> Option<Found> {
+    let synced = hits.into_iter().filter(|h| h.synced_lyrics.as_deref().is_some_and(is_synced)).collect();
+    best_match(synced, title, artists, duration_s).map(|h| Found { lyrics: h.synced_lyrics.unwrap_or_default(), title: h.track_name, artist: h.artist_name })
+}
+
+/// How alike a hit's singer is to the closest of `artists` (see `singer_likeness`).
+fn singer_of(their_artist: &str, artists: &[String]) -> u8 {
+    clean_artist(their_artist).iter().flat_map(|a| artists.iter().map(move |b| singer_likeness(a, b))).max().unwrap_or(0)
 }
 
 /// How alike two singers' names are: 2 the same; 1 close — a Latin name of 3–4 letters only as a whole word
@@ -410,6 +485,67 @@ pub fn clean_artist(artist: &str) -> Vec<String> {
         name = rest;
     }
     std::iter::once(name).chain(parts.into_iter().map(|(_, p)| p).filter(|p| !noisy(p))).filter(|n| !n.is_empty()).map(String::from).collect()
+}
+
+/// Marks that split a video title into names.
+const SEPARATORS: &[&str] = &[" - ", " / ", "–", "—", "|", "：", "《", "》", "「", "」", "『", "』", "“", "”"];
+/// Marks that split a video title into names except inside a Latin word or number, as in "Anti-Hero" or "AB/CD".
+const WORD_SEPARATORS: [char; 3] = ['-', '/', ':'];
+/// At most this many name guesses are checked per song.
+const MAX_GUESSES: usize = 6;
+
+/// `name` without a featured singer (" feat. …", " ft. …", " featuring …").
+fn before_feat(name: &str) -> &str {
+    let lower = name.to_ascii_lowercase();
+    let cut = [" feat. ", " feat ", " ft. ", " featuring "].iter().filter_map(|m| lower.find(m)).min();
+    cut.map_or(name, |i| &name[..i]).trim()
+}
+
+/// Likely (title, singer) pairs for a video, most likely first: today's names (`clean_meta`), then the title's parts
+/// between separators paired both ways, then each part with the channel.
+pub fn name_guesses(title: &str, channel: Option<&str>) -> Vec<(String, String)> {
+    let mut pairs = vec![clean_meta(title, channel)];
+    let channel = channel.and_then(|c| clean_artist(c).into_iter().next());
+    let mut text = brackets(title).0;
+    for s in SEPARATORS {
+        text = text.replace(s, "\n");
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let latin = |i: Option<usize>| i.and_then(|i| chars.get(i)).is_some_and(char::is_ascii_alphanumeric);
+    let text: String = chars.iter().enumerate().map(|(i, &c)| if WORD_SEPARATORS.contains(&c) && !(latin(i.checked_sub(1)) && latin(Some(i + 1))) { '\n' } else { c }).collect();
+    let parts: Vec<String> = text.split('\n').map(before_feat).filter(|p| !p.is_empty() && !noisy(p)).map(|p| clean_title(p, None).0).collect();
+    for (i, a) in parts.iter().enumerate() {
+        for b in &parts[i + 1..] {
+            pairs.push((b.clone(), Some(a.clone())));
+            pairs.push((a.clone(), Some(b.clone())));
+        }
+    }
+    pairs.extend(parts.iter().map(|p| (p.clone(), channel.clone())));
+    let mut seen = std::collections::HashSet::new();
+    pairs
+        .into_iter()
+        .filter_map(|(t, a)| Some((t, before_feat(&a?).to_string())))
+        .filter(|(t, a)| !key(t).is_empty() && !key(a).is_empty() && key(t) != key(a) && seen.insert((key(t), key(a))))
+        .take(MAX_GUESSES)
+        .collect()
+}
+
+/// The first guess whose `search` finds a recording by a like singer, with a like title, near the song's length (see `best_match`);
+/// swapped when the swapped guess is one too and more recordings match it.
+fn pick(guesses: &[(String, String)], duration_s: u64, search: impl Fn(&str, &str) -> Result<Vec<Hit>>) -> Result<Option<(String, String)>> {
+    let matches = |title: &str, artist: &str| -> Result<usize> {
+        let artists = clean_artist(artist);
+        let hits = search(title, artist)?.into_iter().filter_map(|h| best_match(vec![h], title, &artists, duration_s));
+        Ok(hits.filter(|h| singer_of(&h.artist_name, &artists) > 0).count())
+    };
+    for (title, artist) in guesses {
+        let n = matches(title, artist)?;
+        if n > 0 {
+            let swapped = guesses.iter().any(|(t, a)| t == artist && a == title) && matches(artist, title)? > n;
+            return Ok(Some(if swapped { (artist.clone(), title.clone()) } else { (title.clone(), artist.clone()) }));
+        }
+    }
+    Ok(None)
 }
 
 /// A lyrics service that answers every search with the same made-up (title, singer, length in seconds) candidates.
@@ -568,7 +704,7 @@ mod tests {
 
     #[test]
     fn best_match_prefers_the_singer_then_the_closest_length_and_skips_weak_ones() {
-        let best_match = |hits, title, artists: &[String], duration_s| best_match(hits, title, artists, duration_s).map(|f| f.lyrics);
+        let best_match = |hits, title, artists: &[String], duration_s| best_lyrics(hits, title, artists, duration_s).map(|f| f.lyrics);
         let lin = vec!["林小雨".to_string()];
         let night = vec![
             hit("夜車", "Someone Else", 240.0, Some("[00:01.00]other singer")),
@@ -612,6 +748,63 @@ mod tests {
 
         let other_script = vec![hit("夜車", "Lin Xiaoyu - Topic", 240.0, Some("[00:01.00]same length")), hit("夜車", "Someone Else", 262.0, Some("[00:01.00]other length"))];
         assert_eq!(best_match(other_script, "夜車", &lin, 240).as_deref(), Some("[00:01.00]same length"));
+    }
+
+    #[test]
+    fn guesses_names_from_a_video_title_and_its_channel_starting_with_todays() {
+        let pairs = |title, channel| name_guesses(title, channel).into_iter().map(|(t, a)| format!("{t} / {a}")).collect::<Vec<_>>();
+        assert_eq!(
+            pairs("【4K60FPS】林小雨《夜车》经典现场！好听到哭", Some("Made Up Uploader")),
+            [
+                "【4K60FPS】林小雨《夜车》经典现场！好听到哭 / Made Up Uploader",
+                "夜车 / 林小雨",
+                "林小雨 / 夜车",
+                "经典现场！好听到哭 / 林小雨",
+                "林小雨 / 经典现场！好听到哭",
+                "经典现场！好听到哭 / 夜车",
+            ]
+        );
+        assert_eq!(pairs("Juniper Row feat. Kiko - Paper Boats (Official Video)", Some("JuniperRowVEVO")), ["Paper Boats / Juniper Row", "Juniper Row / Paper Boats"]);
+        assert_eq!(pairs("Kiko-Ray - Paper-Boats (Official Video)", Some("KikoRayVEVO")), ["Paper-Boats / Kiko-Ray", "Kiko-Ray / Paper-Boats"]);
+        assert_eq!(pairs("AB/CD - Paper Boats", Some("abcdVEVO")), ["Paper Boats / AB/CD", "AB/CD / Paper Boats"]);
+        assert!(pairs("【71】夜车（林小雨2003巡回live演唱会）— 林小雨 【动态鼓谱】", None).contains(&"夜车 / 林小雨".to_string()));
+        assert_eq!(
+            pairs("林小雨-夜车", Some("夜车粉丝官方频道（虫）")),
+            ["林小雨-夜车 / 夜车粉丝官方频道（虫）", "夜车 / 林小雨", "林小雨 / 夜车", "林小雨 / 夜车粉丝", "夜车 / 夜车粉丝"]
+        );
+        assert!(pairs("Paper Boats", None).is_empty());
+    }
+
+    #[test]
+    fn picks_the_first_guess_a_catalog_lists_by_a_like_singer_near_the_songs_length() {
+        let guesses = |v: &[(&str, &str)]| v.iter().map(|&(t, a)| (t.to_string(), a.to_string())).collect::<Vec<_>>();
+        let catalog = |title: &str, _: &str| -> Result<Vec<Hit>> {
+            Ok(match title {
+                "夜车" => vec![hit("夜車", "林小雨", 240.0, None)],
+                "Paper Boats" => vec![hit("Paper Boats", "Someone Else", 240.0, None)],
+                _ => vec![],
+            })
+        };
+        let named = pick(&guesses(&[("林小雨", "夜车"), ("夜车", "林小雨")]), 250, catalog).unwrap();
+        assert_eq!(named, Some(("夜车".into(), "林小雨".into())));
+        assert_eq!(pick(&guesses(&[("夜车", "林小雨")]), 400, catalog).unwrap(), None);
+        assert_eq!(pick(&guesses(&[("Paper Boats", "Juniper Row")]), 240, catalog).unwrap(), None);
+        assert!(pick(&guesses(&[("夜车", "林小雨")]), 240, |_, _| Err(anyhow::anyhow!("offline"))).is_err());
+        let swapped_too = |title: &str, _: &str| -> Result<Vec<Hit>> {
+            Ok(match title {
+                "Juniper Row" => vec![hit("Juniper Row", "Paper Boats", 240.0, None)],
+                _ => vec![hit("Paper Boats", "Juniper Row", 240.0, None), hit("Paper Boats", "Juniper Row", 241.0, None)],
+            })
+        };
+        let both_ways = guesses(&[("Juniper Row", "Paper Boats"), ("Paper Boats", "Juniper Row")]);
+        assert_eq!(pick(&both_ways, 240, swapped_too).unwrap(), Some(("Paper Boats".into(), "Juniper Row".into())));
+
+        let json = r#"{"recordings":[{"title":"Paper Boats","length":241000,"artist-credit":[{"name":"Juniper Row","joinphrase":" & "},{"name":"Kiko"}]},
+                                     {"title":"Paper Boats","artist-credit":[{"name":"Juniper Row"}]}]}"#;
+        let musicbrainz = |_: &str, _: &str| -> Result<Vec<Hit>> { Ok(serde_json::from_str::<Recordings>(json)?.recordings.into_iter().map(Hit::from).collect()) };
+        let hits = musicbrainz("", "").unwrap();
+        assert_eq!((hits[0].artist_name.as_str(), hits[0].duration, hits[1].duration), ("Juniper Row & Kiko", Some(241.0), None));
+        assert_eq!(pick(&guesses(&[("Paper Boats", "Juniper Row")]), 250, musicbrainz).unwrap(), Some(("Paper Boats".into(), "Juniper Row".into())));
     }
 
     #[test]
@@ -669,5 +862,14 @@ mod tests {
         let renamed = renamed.map(|f| (f.title, f.artist));
         println!("swapped: {src:?}, {} lines, now {renamed:?}", lines.len());
         assert!(renamed.is_some());
+    }
+
+    #[test]
+    #[ignore = "network"]
+    fn live_names_come_from_lrclib_or_else_musicbrainz() {
+        let l = Lrclib::new().unwrap();
+        let li = Some(("李香兰".to_string(), "张学友".to_string()));
+        assert_eq!(l.pick_name(&name_guesses("张学友-李香兰", Some("叶斐（虫）")), 441), li);
+        assert_eq!(l.pick_name(&name_guesses("【4K60FPS】张学友《李香兰》经典神级现场！好歌如酒如痴如醉", Some("音乐私藏馆")), 462), li);
     }
 }
