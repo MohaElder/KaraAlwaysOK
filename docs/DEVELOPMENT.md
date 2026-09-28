@@ -90,4 +90,4 @@ Push a plain `vX.Y.Z` tag. The Release workflow (`.github/workflows/release.yml`
 
 The build needs the repo secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the update signing key and its password; both are set). If the key ever has to be replaced, make a new one with `npx tauri signer generate -w ~/.tauri/kara-always-oki.key`, update both secrets, and put the new public key in `app/src-tauri/tauri.conf.json`. Never commit the private key. Installs made with the old key won't accept updates signed with the new one.
 
-The app isn't signed with an Apple Developer ID yet; the workflow passes the `APPLE_*` secrets through, so adding them later turns signing and notarization on.
+The app isn't signed with an Apple Developer ID yet. To turn on signing and notarization later, add the `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` secrets and pass them to the tauri-action step in `.github/workflows/release.yml` (passing them while they're empty breaks the build).
