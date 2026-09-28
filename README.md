@@ -114,18 +114,16 @@ a link that needs it.
 
 Do these once, after the app is built and the GitHub repo exists:
 
-1. Make the update signing key: run `cargo tauri signer generate -w ~/.tauri/kara-always-oki.key`
+1. Make the update signing key: run `npx tauri signer generate -w ~/.tauri/kara-always-oki.key`
    and keep the private key and its password safe (never commit them).
 2. Add GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` (the private key's contents) and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-3. Put the public key in `plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json`
-   (replacing `REPLACE-WITH-UPDATER-PUBLIC-KEY`).
-4. Add a CI workflow that gates every push and pull request on: the Rust unit tests
+3. Add a CI workflow that gates every push and pull request on: the Rust unit tests
    (`cargo test --workspace`) and `cargo clippy --workspace --all-targets -- -D warnings`;
    the app's unit tests (`npm test`) and browser tests; the type check (`npm run check`,
    which runs svelte-check and TypeScript); and the language check (every locale has
    exactly the English keys). Make the release workflow require it.
-5. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
+4. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
    `latest.json`; publish it so the app's update check can find it.
 
 ## License
