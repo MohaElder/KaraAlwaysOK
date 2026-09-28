@@ -422,7 +422,7 @@ fn set_gain(app: &AppHandle, id: &str, change: impl FnOnce(&mut Guest)) {
 
 /// Adds a phone's 16-bit little-endian samples to its buffer.
 pub(crate) fn hear(mixer: &Mutex<Mixer>, id: &str, bytes: &[u8]) {
-    let samples: Vec<f32> = bytes.chunks_exact(2).map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32_768.0).collect();
+    let samples: Vec<f32> = bytes.as_chunks::<2>().0.iter().map(|b| f32::from(i16::from_le_bytes(*b)) / 32_768.0).collect();
     mixer.lock().unwrap().push(id, &samples);
 }
 
