@@ -216,7 +216,7 @@ impl LyricsFetcher for Lrclib {
 }
 
 /// User-Agent for LRCLIB and MusicBrainz requests.
-const USER_AGENT: &str = concat!("kara-always-oki/", env!("CARGO_PKG_VERSION"), " ( https://github.com/GITHUB-OWNER/kara-always-oki )");
+const USER_AGENT: &str = concat!("kara-always-oki/", env!("CARGO_PKG_VERSION"), " ( https://github.com/MohaElder/kara-always-oki )");
 /// Time between MusicBrainz requests.
 const MUSICBRAINZ_PACE: Duration = Duration::from_millis(1_100);
 /// When MusicBrainz was last asked.

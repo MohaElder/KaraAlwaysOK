@@ -38,7 +38,7 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": ["https://github.com/GITHUB-OWNER/kara-always-oki/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/MohaElder/kara-always-oki/releases/latest/download/latest.json"],
       "pubkey": "REPLACE-WITH-UPDATER-PUBLIC-KEY"
     }
   }
