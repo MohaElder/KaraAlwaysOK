@@ -1,6 +1,7 @@
 //! yt-dlp: installed on first use (checksum-verified), then used to pull audio from pages.
 
 use crate::assets::install_verified;
+use crate::lyrics::name_guesses;
 use crate::store::write_atomic;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -134,6 +135,9 @@ pub struct Fetched {
     pub album: Option<String>,
     pub tags: Vec<String>,
     pub thumbnail: Option<String>,
+    /// Likely (title, singer) pairs when the video's music fields don't name both.
+    pub guesses: Vec<(String, String)>,
+    pub duration_s: u64,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +150,7 @@ struct Info {
     album: Option<String>,
     tags: Option<Vec<String>>,
     thumbnail: Option<String>,
+    duration: Option<f64>,
 }
 
 /// Downloads the best audio we can decode (M4A, else MP3, else whatever is best).
@@ -166,7 +171,7 @@ fn download_once(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
         .args(["--no-playlist", "--no-progress", "-f", "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio"])
         .arg("-o")
         .arg(out_dir.join("%(id)s.%(ext)s"))
-        .args(["--print", "after_move:%(.{filepath,title,uploader,artist,track,album,tags,thumbnail})j"])
+        .args(["--print", "after_move:%(.{filepath,title,uploader,artist,track,album,tags,thumbnail,duration})j"])
         .arg(url)
         .output()
         .context("run yt-dlp")?;
@@ -176,11 +181,14 @@ fn download_once(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
     }
     let line = String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or("").to_string();
     let info: Info = serde_json::from_str(&line).context("read yt-dlp output")?;
+    let video = info.title.as_deref().unwrap_or("Unknown song");
+    let guesses = if info.track.is_some() && info.artist.is_some() { Vec::new() } else { name_guesses(video, info.uploader.as_deref()) };
     let (title, artist) = match info.track {
         Some(track) => (track, info.artist.or(info.uploader)),
-        None => clean_meta(info.title.as_deref().unwrap_or("Unknown song"), info.uploader.as_deref()),
+        None => clean_meta(video, info.uploader.as_deref()),
     };
-    Ok(Fetched { path: info.filepath, title, artist, album: info.album, tags: info.tags.unwrap_or_default(), thumbnail: info.thumbnail })
+    let duration_s = info.duration.unwrap_or(0.0).round() as u64;
+    Ok(Fetched { path: info.filepath, title, artist, album: info.album, tags: info.tags.unwrap_or_default(), thumbnail: info.thumbnail, guesses, duration_s })
 }
 
 #[cfg(test)]

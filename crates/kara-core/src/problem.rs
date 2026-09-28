@@ -85,7 +85,7 @@ pub fn problem(e: &anyhow::Error) -> Option<Problem> {
 mod tests {
     use std::path::Path;
 
-    const SENTENCE_STARTS: &[&str] = &["\"Couldn", "\"Can't", "\"This ", "\"The ", "\"That", "\"Another", "\"Songs", "\"Links", "\"KaraAlwaysOK"];
+    const SENTENCE_STARTS: &[&str] = &["\"Couldn", "\"Can't", "\"This ", "\"The ", "\"That", "\"Another", "\"Songs", "\"Links", "\"KaraAlwaysOK "];
 
     fn visit(dir: &Path, f: &mut dyn FnMut(&Path, &str)) {
         for entry in std::fs::read_dir(dir).unwrap() {
