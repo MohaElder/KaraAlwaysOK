@@ -156,8 +156,8 @@
   .ptr button:disabled { opacity: .4; }
   .pp { display: grid; }
   .th { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--raised); }
-  .pnext { height: 18px; margin-top: var(--s3); overflow: hidden; white-space: nowrap; font-size: 13px; color: var(--muted); -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
-  .pnext span { display: inline-block; padding-right: var(--s8); animation: ticker 14s linear infinite; }
+  .pnext { line-height: 1.5; margin-top: var(--s3); overflow: hidden; white-space: nowrap; font-size: 13px; color: var(--muted); -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+  .pnext span { display: inline-block; vertical-align: top; padding-right: var(--s8); animation: ticker 14s linear infinite; }
   @keyframes ticker { to { transform: translateX(-100%); } }
   @media (prefers-reduced-motion: reduce) { .pnext span { animation: none; } }
   .plyr { min-height: 120px; margin-top: var(--s4); }
