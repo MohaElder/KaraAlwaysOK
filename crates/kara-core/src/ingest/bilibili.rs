@@ -1,7 +1,7 @@
 //! Bilibili's own web search and search suggestions, called directly.
 
-use super::preview::{LinkPreview, SearchHit, SEARCH_RESULTS};
-use super::youtube::{clock_ms, SUGGESTIONS};
+use super::preview::{LinkPreview, SearchHit, SEARCH_RESULTS, SUGGESTIONS};
+use super::youtube::clock_ms;
 use anyhow::{bail, Result};
 use reqwest::header::REFERER;
 use serde_json::Value;

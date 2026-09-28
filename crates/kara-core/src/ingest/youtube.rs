@@ -1,6 +1,6 @@
 //! YouTube's own web search and search suggestions, called directly.
 
-use super::preview::{LinkPreview, SearchHit, SEARCH_RESULTS};
+use super::preview::{LinkPreview, SearchHit, SEARCH_RESULTS, SUGGESTIONS};
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -11,8 +11,6 @@ use std::time::Duration;
 const CLIENT_VERSION: &str = "2.20260708.00.00";
 /// The search filter for videos only (yt-dlp's `YoutubeSearchIE._SEARCH_PARAMS`).
 const VIDEOS_ONLY: &str = "EgIQAfABAQ==";
-/// How many suggestions `suggestions` gives.
-pub(super) const SUGGESTIONS: usize = 8;
 
 /// One client for every call, so later ones reuse the open connection.
 fn client() -> &'static reqwest::blocking::Client {

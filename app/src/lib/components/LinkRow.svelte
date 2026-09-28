@@ -10,10 +10,13 @@
   import ArrowBendDownRightIcon from "phosphor-svelte/lib/ArrowBendDownRightIcon";
   import YoutubeLogoIcon from "phosphor-svelte/lib/YoutubeLogoIcon";
   import SoundcloudLogoIcon from "phosphor-svelte/lib/SoundcloudLogoIcon";
+  import TelevisionSimpleIcon from "phosphor-svelte/lib/TelevisionSimpleIcon";
   import GlobeIcon from "phosphor-svelte/lib/GlobeIcon";
 
   let { preview, host, onAdd }: { preview: LinkPreview | null; host?: string; onAdd: (then: Then) => void } = $props();
-  const Site = $derived(host?.includes("youtu") ? YoutubeLogoIcon : host?.includes("soundcloud") ? SoundcloudLogoIcon : GlobeIcon);
+  const Site = $derived(
+    host?.includes("youtu") ? YoutubeLogoIcon : host?.includes("soundcloud") ? SoundcloudLogoIcon : host?.includes("bilibili") || host?.includes("b23") ? TelevisionSimpleIcon : GlobeIcon,
+  );
 </script>
 
 {#if !preview}
