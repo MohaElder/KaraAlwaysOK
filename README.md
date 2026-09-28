@@ -48,7 +48,8 @@ stay on your network. The first time, the phone warns that the page isn't truste
 Show Details, then visit this website; on Android tap Advanced, then Proceed. macOS may ask once to
 allow incoming connections for KaraAlwaysOK. Keep phones away from the speakers; a mic that starts
 to howl is turned down on its own. Up to four phones at once. Each guest can add an effect to their
-own voice (Karaoke mix or Auto-tune) with a strength slider. Mics play through the Mac's current
+own voice (Karaoke mix or Auto-tune) with a strength slider, and play, pause or skip songs from
+their phone. Mics play through the Mac's current
 speakers; Bluetooth speakers and headphones add a noticeable delay.
 
 For development (debug builds): `KARA_PHONE_CODE=1234` starts a phone session at launch with that
@@ -57,7 +58,7 @@ code and `KARA_PHONE_PORT=8543` serves phones on that port only (leaving 443 and
 then talks to that app like a few phones and prints `phone check OK`. `app/scripts/isolated-check.sh`
 builds and runs a separate copy of the app on a scratch library with both set (it never stops your
 running app or uses port 1420). `KARA_MIC_BUFFER_MS` (10–60, default 10) sets the shortest mic delay
-buffer. Auto-tune adds about 10 ms to a voice, up to about 25 ms for low voices.
+buffer. Auto-tune adds about 6 ms to most voices, up to about 15 ms for the lowest.
 
 ## Use
 
