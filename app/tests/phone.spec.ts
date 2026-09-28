@@ -169,14 +169,14 @@ test("Songs lists every song, searches as you type, and queues with Play next or
   const box = page.getByPlaceholder("Search songs");
   await box.fill("lem");
   await expect(page.locator(".prow")).toHaveText([/Lemon Skies/]);
-  await page.getByRole("button", { name: "Play next" }).dblclick();
+  await page.locator(".prow", { hasText: "Lemon Skies" }).getByRole("button", { name: "Play next" }).dblclick();
   expect((await sent(page)).filter((m) => m.t === "add")).toEqual([{ t: "add", trackId: 3, next: true }]);
   await expect(page.locator(".pib.done")).toHaveCount(1);
   await server(page, { t: "results", q: "old", outcome: { kind: "text", tracks: [], collections: [] } });
   await expect(page.locator(".prow")).toHaveText([/Lemon Skies/]);
   await box.fill("https://youtu.be/abc");
-  await expect(page.getByText("Song from youtu.be")).toBeVisible();
-  await page.getByRole("button", { name: /Add .* to the queue/ }).click();
+  await expect(page.getByText("Made-up Song")).toBeVisible();
+  await page.getByRole("button", { name: "Add to queue", exact: true }).click();
   expect(await sent(page)).toContainEqual({ t: "addLink", url: "https://youtu.be/abc", next: false });
   await box.fill("https://open.spotify.com/track/x");
   await expect(page.getByText("spotify.com links can't be downloaded")).toBeVisible();
@@ -196,4 +196,20 @@ test("Queue shows who added songs, reorders by dragging and removes", async ({ p
   expect(await sent(page)).toContainEqual({ t: "move", key: 3, to: 1 });
   await rows.filter({ hasText: "Lemon Skies" }).getByRole("button", { name: "Remove" }).click();
   expect(await sent(page)).toContainEqual({ t: "remove", key: 2 });
+});
+
+test("Songs also finds videos on YouTube and Bilibili, which queue like a pasted link", async ({ page }) => {
+  await joinAs(page);
+  await page.getByRole("button", { name: "Songs", exact: true }).click();
+  const box = page.getByPlaceholder("Search songs");
+  await box.fill("clip");
+  await expect(page.locator(".cap")).toHaveText(["YouTube", "Bilibili"]);
+  await expect(page.getByText("Someone Sings · 3:05")).toBeVisible();
+  await expect(page.getByText("Made-up Cover")).toBeVisible();
+  await expect(page.getByText("Nothing matches “clip”")).toBeHidden();
+  await page.locator(".lrow", { hasText: "Made-up Clip" }).getByRole("button", { name: "Play next" }).click();
+  expect(await sent(page)).toEqual(expect.arrayContaining([{ t: "web", source: "youtube", q: "clip" }, { t: "web", source: "bilibili", q: "clip" }]));
+  expect(await sent(page)).toContainEqual({ t: "addLink", url: "https://www.youtube.com/watch?v=made-up", next: true });
+  await box.fill("zzqx");
+  await expect(page.getByText("Nothing matches “zzqx”")).toBeVisible();
 });

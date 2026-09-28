@@ -1,4 +1,5 @@
-import type { Lyrics, PlayerSnapshot, ProblemCode, SearchOutcome } from "$lib/api";
+import { WEB_SOURCES, type LinkPreview, type Lyrics, type PlayerSnapshot, type ProblemCode, type SearchHit, type SearchOutcome, type WebSource } from "$lib/api";
+import { previewFailed, withPreview, type SearchView } from "$lib/search";
 import { say } from "$lib/i18n/engine";
 import { t } from "$lib/i18n/index.svelte";
 import { toasts } from "$lib/state/toasts.svelte";
@@ -23,6 +24,8 @@ type FromMac =
   | { t: "lyrics"; trackId: number; lyrics: Lyrics }
   | { t: "lyricsChanged"; trackId: number }
   | { t: "results"; q: string; outcome: SearchOutcome }
+  | { t: "web"; source: WebSource; q: string; hits: SearchHit[] }
+  | { t: "preview"; url: string; preview: LinkPreview | null }
   | { t: "level"; v: number }
   | { t: "refused"; problem: ProblemCode | null };
 
@@ -69,6 +72,9 @@ class PhoneLink {
   voice = $state(Number(recall(() => localStorage, "phone.voice") ?? 80));
   effect = $state(savedEffect());
   results = $state<{ q: string; outcome: SearchOutcome } | null>(null);
+  /** Each site's videos for the words `q`, null while still to find. */
+  web = $state<{ q: string; hits: Record<WebSource, SearchHit[] | null> } | null>(null);
+  pasted = $state<SearchView>({ kind: "none" });
   current = $derived(this.entryAt(0));
   next = $derived(this.entryAt(1));
 
@@ -187,8 +193,13 @@ class PhoneLink {
         this.wantLyrics();
       }
     } else if (m.t === "results") {
-      if (m.q === this.query) this.results = m;
-    } else if (m.t === "level") this.level = m.v;
+      if (m.q !== this.query) return;
+      this.results = m;
+      this.showLink(m.outcome);
+    } else if (m.t === "web") {
+      if (this.web && m.q === this.web.q) this.web.hits[m.source] = m.hits;
+    } else if (m.t === "preview") this.pasted = m.preview ? withPreview(this.pasted, m.url, m.preview) : previewFailed(this.pasted, m.url);
+    else if (m.t === "level") this.level = m.v;
     else if (m.t === "refused") toasts.show(say(m), { icon: WarningIcon });
   }
 
@@ -244,6 +255,8 @@ class PhoneLink {
     this.send({ t: "effect", ...this.effect });
     this.sendLive();
     if (this.query != null) this.search(this.query);
+    if (this.web) this.searchWeb(this.web.q);
+    if (this.pasted.kind === "link" && !this.pasted.preview && !this.pasted.failed) this.send({ t: "preview", url: this.pasted.url });
   }
 
   /** Seconds into the current song, as the computer last said, moving on while it plays. */
@@ -274,6 +287,21 @@ class PhoneLink {
   search(q: string) {
     this.query = q;
     this.send({ t: "search", q, imported: t("library.imported") });
+  }
+
+  /** Asks the computer for each site's videos for `q` that it doesn't have yet; only answers for the latest words are kept. */
+  searchWeb(q: string) {
+    if (this.web?.q !== q) this.web = { q, hits: { youtube: null, bilibili: null } };
+    for (const source of WEB_SOURCES) if (this.web?.hits[source] === null) this.send({ t: "web", source, q });
+  }
+
+  /** Asks what a pasted link points to, unless it is the link already shown; words clear it. */
+  private showLink(o: SearchOutcome) {
+    if (o.kind !== "link") this.pasted = { kind: "none" };
+    else if (this.pasted.kind !== "link" || this.pasted.url !== o.url) {
+      this.pasted = { kind: "link", url: o.url, host: o.host, preview: null, failed: false };
+      this.send({ t: "preview", url: o.url });
+    }
   }
 
   add(trackId: number, next: boolean) {

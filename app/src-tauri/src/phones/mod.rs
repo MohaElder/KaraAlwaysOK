@@ -5,12 +5,13 @@ mod output;
 mod room;
 mod server;
 
-use crate::adding::{self, SearchOutcome};
+use crate::adding::{self, SearchOutcome, WebSource};
 use crate::library::{self, Lyrics};
 use crate::player::{self, PlayerSnapshot};
 use crate::state::{AppError, AppState, Plain};
 use anyhow::Context;
 use axum_server::tls_rustls::RustlsConfig;
+use kara_core::ingest::preview::{LinkPreview, SearchHit};
 use kara_core::jobs::Event;
 use kara_core::library::{CollectionKind, Library};
 use kara_core::mic::{voice_gain, Level, Mixer, NewVoice, MOST_PHONES};
@@ -22,7 +23,7 @@ use serde::Serialize;
 use serde_json::Value;
 use server::FromPhone;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -32,6 +33,7 @@ use tokio::sync::mpsc::UnboundedSender;
 static NEXT: AtomicU64 = AtomicU64::new(1);
 const MAX_QUERY: usize = 200;
 const MAX_LINKS: usize = 3;
+const MAX_LOOKUPS: usize = 6;
 
 /// The phone session while there is one; `opening` keeps two opens from starting two servers.
 #[derive(Default)]
@@ -50,6 +52,8 @@ struct Session {
     shown: Option<PhonesView>,
     clock: Clock,
     links: Vec<PendingLink>,
+    /// One entry per web lookup running for a phone, by its id.
+    lookups: Vec<String>,
     mixer: Arc<Mutex<Mixer>>,
     /// The mix's output rate and jitter buffer floor, fixed for the session.
     rate: u32,
@@ -141,6 +145,8 @@ pub(crate) enum ToPhone<'a> {
     Lyrics { track_id: i64, lyrics: &'a Lyrics },
     LyricsChanged { track_id: i64 },
     Results { q: &'a str, outcome: &'a SearchOutcome },
+    Web { source: WebSource, q: &'a str, hits: &'a [SearchHit] },
+    Preview { url: &'a str, preview: Option<&'a LinkPreview> },
     Refused { problem: Option<Problem> },
     Level { v: f32 },
 }
@@ -178,6 +184,7 @@ async fn start(app: &AppHandle, code: &str) -> anyhow::Result<Session> {
         shown: None,
         clock: Clock::new(None, 0, false),
         links: Vec::new(),
+        lookups: Vec::new(),
         mixer,
         rate,
         floor_ms,
@@ -330,6 +337,21 @@ pub(crate) fn handle(app: &AppHandle, id: &str, msg: FromPhone) {
             let found = phone_search(&app.state::<AppState>().lib.lock().unwrap(), &q, &imported);
             found.plain().map(|outcome| Some(encode(&ToPhone::Results { q: &q, outcome: &outcome })))
         }
+        FromPhone::Web { source, q } => {
+            let q = short(&q);
+            let none = encode(&ToPhone::Web { source, q: &q, hits: &[] });
+            later(app, id, none, move |bin_dir, answer| answer(encode(&ToPhone::Web { source, q: &q, hits: &adding::find_on_web(bin_dir, source, &q) })));
+            Ok(None)
+        }
+        FromPhone::Preview { url } => {
+            let none = encode(&ToPhone::Preview { url: &url, preview: None });
+            later(app, id, none.clone(), move |bin_dir, answer| {
+                if adding::preview_link(bin_dir, &url, |p| answer(encode(&ToPhone::Preview { url: &url, preview: Some(&p) }))).is_err() {
+                    answer(none);
+                }
+            });
+            Ok(None)
+        }
         FromPhone::Lyrics { track_id } => library::track_lyrics(app.state(), track_id).map(|lyrics| Some(encode(&ToPhone::Lyrics { track_id, lyrics: &lyrics }))),
         FromPhone::Live { on, rate } => {
             live(app, id, on, rate);
@@ -402,6 +424,26 @@ pub(crate) fn hear(mixer: &Mutex<Mixer>, id: &str, bytes: &[u8]) {
 pub fn phone_volume(app: AppHandle, id: String, volume: u8) {
     set_gain(&app, &id, |g| g.volume = volume.min(100));
     changed(&app);
+}
+
+/// Runs a slow web lookup for phone `id` away from its connection, handing `work` the tools folder and a way to answer the
+/// phone; a phone with `MAX_LOOKUPS` already running is answered `busy` at once.
+fn later(app: &AppHandle, id: &str, busy: String, work: impl FnOnce(&Path, &dyn Fn(String)) + Send + 'static) {
+    let started = with(app, |s| {
+        let free = s.lookups.iter().filter(|g| *g == id).count() < MAX_LOOKUPS;
+        if free {
+            s.lookups.push(id.to_string());
+        }
+        free
+    });
+    if started != Some(true) {
+        return tell(app, id, busy);
+    }
+    let (app, id, bin_dir) = (app.clone(), id.to_string(), app.state::<AppState>().store.bin_dir());
+    tauri::async_runtime::spawn_blocking(move || {
+        work(&bin_dir, &|text| tell(&app, &id, text));
+        with(&app, |s| s.lookups.iter().position(|g| *g == id).map(|i| s.lookups.remove(i)));
+    });
 }
 
 /// The first `MAX_QUERY` characters of `s`.

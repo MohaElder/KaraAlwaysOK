@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { WEB_SOURCES, type Kind, type WebSource } from "$lib/api";
-  import type { Icon } from "$lib/icons";
+  import { WEB_SOURCES, type Kind } from "$lib/api";
+  import { SITE_ICONS, type Icon } from "$lib/icons";
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { ui } from "$lib/state/ui.svelte";
   import { player } from "$lib/state/player.svelte";
@@ -16,8 +16,6 @@
   import VinylRecordIcon from "phosphor-svelte/lib/VinylRecordIcon";
   import UserIcon from "phosphor-svelte/lib/UserIcon";
   import MagnifyingGlassMinusIcon from "phosphor-svelte/lib/MagnifyingGlassMinusIcon";
-  import YoutubeLogoIcon from "phosphor-svelte/lib/YoutubeLogoIcon";
-  import TelevisionSimpleIcon from "phosphor-svelte/lib/TelevisionSimpleIcon";
 
   let { onOpen, onAdd }: { onOpen: (kind: Kind, id: number) => void; onAdd: (url: string, then: Then, title: string) => void } = $props();
   const GROUPS: { kind: Kind; label: Key; icon: Icon }[] = [
@@ -25,7 +23,6 @@
     { kind: "album", label: "kind.albums", icon: VinylRecordIcon },
     { kind: "artist", label: "kind.artists", icon: UserIcon },
   ];
-  const SITE_ICONS: Record<WebSource, Icon> = { youtube: YoutubeLogoIcon, bilibili: TelevisionSimpleIcon };
   const view = $derived(ui.search.kind === "text" ? ui.search : null);
   const tracks = $derived(view ? view.tracks.filter((x) => !library.hidden.has(`track:${x.id}`)) : []);
   const groups = $derived(view ? GROUPS.map((g) => ({ ...g, cards: view.collections.filter((c) => c.kind === g.kind) })).filter((g) => g.cards.length) : []);

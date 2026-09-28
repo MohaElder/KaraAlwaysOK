@@ -1,4 +1,4 @@
-import type { LyricLine, Lyrics, PlayerSnapshot, SearchOutcome, Track } from "$lib/api";
+import type { LyricLine, Lyrics, PlayerSnapshot, SearchHit, SearchOutcome, Track, WebSource } from "$lib/api";
 
 declare global {
   interface Window {
@@ -27,6 +27,11 @@ const lyrics: Record<number, Lyrics> = {
     line("f", ["I", 3000, 3500], ["did,", 3500, 4000], ["of", 4000, 4500], ["course", 4500, 5000]),
     line("both", ["Tea", 5000, 5500], ["for", 5500, 6000], ["two", 6000, 7000]),
   ] },
+};
+
+const videos: Record<WebSource, SearchHit> = {
+  youtube: { url: "https://www.youtube.com/watch?v=made-up", title: "Made-up Clip", channel: "Someone Sings", durationMs: 185_000, thumbnail: null },
+  bilibili: { url: "https://www.bilibili.com/video/BV1madeup", title: "Made-up Cover", channel: "Someone Else", durationMs: 200_000, thumbnail: null },
 };
 
 function search(q: string): SearchOutcome {
@@ -114,6 +119,8 @@ class FakeSocket {
   /** The computer's answers. */
   reply(m: Record<string, unknown>) {
     if (m.t === "search") return this.deliver({ t: "results", q: m.q, outcome: search(String(m.q)) });
+    if (m.t === "web") return this.deliver({ t: "web", source: m.source, q: m.q, hits: m.q === "zzqx" ? [] : [videos[m.source as WebSource]] });
+    if (m.t === "preview") return this.deliver({ t: "preview", url: m.url, preview: { title: "Made-up Song", channel: "Someone Else", durationMs: 200_000, thumbnail: null } });
     if (m.t === "lyrics") return this.deliver({ t: "lyrics", trackId: m.trackId, lyrics: lyrics[Number(m.trackId)] ?? { source: "none", lines: [] } });
     if (m.t !== "join") return;
     if (m.code !== "4827") return this.shut(4003);

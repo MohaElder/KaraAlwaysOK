@@ -7,7 +7,7 @@ use kara_core::ingest::link::{self, LinkVerdict};
 use kara_core::ingest::preview::{self, LinkPreview, SearchHit};
 use kara_core::ingest::{bilibili, youtube, ytdlp};
 use kara_core::library::{CollectionKind, Library, Track};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -46,46 +46,60 @@ pub fn search(state: State<'_, AppState>, input: String, imported: String) -> Re
     search_input(&state.lib.lock().unwrap(), &input, &imported).plain()
 }
 
+/// What a link points to, passed to `send`: the site's quick preview when it has one, then the full details. Only links
+/// that can be added are looked up.
+pub fn preview_link(bin_dir: &Path, url: &str, mut send: impl FnMut(LinkPreview)) -> anyhow::Result<()> {
+    let url = link::parse_link(url).context(kara_core::problem::Problem::NotALink)?;
+    if let Some(problem) = link::rejection(&url) {
+        return Err(anyhow::Error::new(problem));
+    }
+    if link::verdict(&url) == LinkVerdict::AudioFile {
+        send(preview::file_preview(&url));
+        return Ok(());
+    }
+    let quick = preview::oembed(&url).ok().flatten();
+    if let Some(p) = &quick {
+        send(p.clone());
+    }
+    match ytdlp::ensure(bin_dir).and_then(|bin| preview::probe(&bin, &url)) {
+        Ok(full) => {
+            send(full);
+            Ok(())
+        }
+        Err(_) if quick.is_some() => Ok(()),
+        Err(e) => Err(coded(e, kara_core::problem::Problem::NoSongAtLink)),
+    }
+}
+
 /// Streams what a pasted link points to: the site's quick preview when it has one, then the full details.
 #[tauri::command]
 pub async fn link_preview(state: State<'_, AppState>, url: String, on_update: Channel<LinkPreview>) -> Result<(), AppError> {
     let bin_dir = state.store.bin_dir();
-    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
-        let url = link::parse_link(&url).context(kara_core::problem::Problem::NotALink)?;
-        if link::verdict(&url) == LinkVerdict::AudioFile {
-            let _ = on_update.send(preview::file_preview(&url));
-            return Ok(());
-        }
-        let quick = preview::oembed(&url).ok().flatten();
-        if let Some(p) = &quick {
-            let _ = on_update.send(p.clone());
-        }
-        match ytdlp::ensure(&bin_dir).and_then(|bin| preview::probe(&bin, &url)) {
-            Ok(full) => {
-                let _ = on_update.send(full);
-                Ok(())
-            }
-            Err(_) if quick.is_some() => Ok(()),
-            Err(e) => Err(coded(e, kara_core::problem::Problem::NoSongAtLink)),
-        }
-    })
-    .await
-    .map_err(AppError::from)?
-    .plain()
+    tauri::async_runtime::spawn_blocking(move || preview_link(&bin_dir, &url, |p| drop(on_update.send(p)))).await.map_err(AppError::from)?.plain()
 }
 
-/// The top YouTube videos for the search bar's words, from YouTube's web search, else yt-dlp's.
+/// A site the search bar also finds videos on.
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum WebSource {
+    Youtube,
+    Bilibili,
+}
+
+/// The top videos on `source` for `query`; none when the site can't be reached. YouTube's web search falls back to yt-dlp's.
+pub fn find_on_web(bin_dir: &Path, source: WebSource, query: &str) -> Vec<SearchHit> {
+    match source {
+        WebSource::Youtube => youtube::search(query).or_else(|_| ytdlp::ensure(bin_dir).and_then(|bin| preview::search(&bin, query))),
+        WebSource::Bilibili => bilibili::search(query),
+    }
+    .unwrap_or_default()
+}
+
+/// The top YouTube videos for the search bar's words.
 #[tauri::command]
 pub async fn youtube_search(state: State<'_, AppState>, query: String) -> Result<Vec<SearchHit>, AppError> {
     let bin_dir = state.store.bin_dir();
-    tauri::async_runtime::spawn_blocking(move || {
-        youtube::search(&query)
-            .or_else(|_| ytdlp::ensure(&bin_dir).and_then(|bin| preview::search(&bin, &query)))
-            .map_err(|e| coded(e, kara_core::problem::Problem::NoSongAtLink))
-    })
-    .await
-    .map_err(AppError::from)?
-    .plain()
+    tauri::async_runtime::spawn_blocking(move || find_on_web(&bin_dir, WebSource::Youtube, &query)).await.map_err(AppError::from)
 }
 
 /// YouTube's suggestions for the search bar's words; none when YouTube can't be reached.
@@ -94,10 +108,11 @@ pub async fn youtube_suggestions(query: String) -> Result<Vec<String>, AppError>
     tauri::async_runtime::spawn_blocking(move || youtube::suggestions(&query).unwrap_or_default()).await.map_err(AppError::from)
 }
 
-/// The top Bilibili videos for the search bar's words; none when Bilibili can't be reached.
+/// The top Bilibili videos for the search bar's words.
 #[tauri::command]
-pub async fn bilibili_search(query: String) -> Result<Vec<SearchHit>, AppError> {
-    tauri::async_runtime::spawn_blocking(move || bilibili::search(&query).unwrap_or_default()).await.map_err(AppError::from)
+pub async fn bilibili_search(state: State<'_, AppState>, query: String) -> Result<Vec<SearchHit>, AppError> {
+    let bin_dir = state.store.bin_dir();
+    tauri::async_runtime::spawn_blocking(move || find_on_web(&bin_dir, WebSource::Bilibili, &query)).await.map_err(AppError::from)
 }
 
 /// Bilibili's suggestions for the search bar's words; none when Bilibili can't be reached.
@@ -170,5 +185,14 @@ mod tests {
         assert_eq!((link["kind"].as_str(), link["host"].as_str()), (Some("link"), Some("youtu.be")));
         let refused = json("https://open.spotify.com/track/x");
         assert_eq!((refused["kind"].as_str(), refused["streaming"].as_bool(), refused["host"].as_str()), (Some("rejected"), Some(true), Some("spotify.com")));
+    }
+
+    #[test]
+    fn only_links_that_can_be_added_are_looked_up() {
+        use kara_core::problem::{problem, Problem};
+        for (url, why) in [("http://127.0.0.1:8080/admin", Problem::LinkUnsupported), ("https://open.spotify.com/track/x", Problem::LinkStreaming)] {
+            let e = preview_link(Path::new("/nonexistent"), url, |_| panic!("{url} was looked up")).unwrap_err();
+            assert_eq!(problem(&e), Some(why), "{url}");
+        }
     }
 }

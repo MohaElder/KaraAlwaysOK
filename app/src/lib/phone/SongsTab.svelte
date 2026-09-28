@@ -1,8 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { link } from "./link.svelte";
+  import type { Then } from "$lib/state/adding.svelte";
   import { t } from "$lib/i18n/index.svelte";
+  import { WEB_SOURCES } from "$lib/api";
+  import { SITE_ICONS } from "$lib/icons";
   import Artwork from "$lib/components/Artwork.svelte";
+  import LinkRow from "$lib/components/LinkRow.svelte";
   import ArrowBendDownRightIcon from "phosphor-svelte/lib/ArrowBendDownRightIcon";
   import CheckIcon from "phosphor-svelte/lib/CheckIcon";
   import LinkIcon from "phosphor-svelte/lib/LinkIcon";
@@ -15,14 +19,23 @@
   let query = $state(link.results?.q ?? "");
   let done = $state<string | null>(null);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let webTimer: ReturnType<typeof setTimeout> | undefined;
   const found = $derived(link.results?.outcome ?? null);
+  const words = $derived(query.trim().length >= 2 && !/^https?:\/\//i.test(query.trim()));
+  const web = $derived(link.web?.q === query.trim() ? link.web.hits : null);
+  const nothing = $derived(found?.kind === "text" && !!query.trim() && !found.tracks.length && (!words || WEB_SOURCES.every((s) => web?.[s]?.length === 0)));
 
   onMount(() => link.search(query));
 
   function typed() {
     clearTimeout(timer);
+    clearTimeout(webTimer);
     timer = setTimeout(() => link.search(query), 200);
+    if (words) webTimer = setTimeout(() => link.searchWeb(query.trim()), 280);
   }
+
+  /** Queues a link: at the end for "" or "queue", next for "next". */
+  const addLink = (url: string) => (then: Then) => link.addLink(url, then === "next");
 
   /** Queues with `add`, showing a check on the tapped button for a moment; taps while it shows are ignored. */
   function queued(key: string, add: () => void) {
@@ -57,19 +70,33 @@
         <span class="grow"><b class="ell">{track.title}</b><small class="ell">{track.artist ?? ""}</small></span>
         {@render buttons(`song:${track.id}`, track.title, (next) => link.add(track.id, next))}
       </div>
-    {:else}
-      {#if query.trim()}
-        <div class="pempty"><MagnifyingGlassMinusIcon size={32} /><b>{t("search.noMatchTitle", { query: query.trim() })}</b><span>{t("search.noMatchBody")}</span></div>
-      {/if}
     {/each}
-  {:else if found?.kind === "link"}
+    {#if nothing}
+      <div class="pempty"><MagnifyingGlassMinusIcon size={32} /><b>{t("search.noMatchTitle", { query: query.trim() })}</b><span>{t("search.noMatchBody")}</span></div>
+    {/if}
+    {#if words}
+      {#each WEB_SOURCES as source (source)}
+        {@const Site = SITE_ICONS[source]}
+        {#if web?.[source]?.length !== 0}
+          <p class="cap hstack"><Site size={14} />{t(`search.${source}`)}</p>
+          {#each web?.[source] ?? [null, null, null] as hit, i (hit?.url ?? i)}
+            <LinkRow preview={hit} onAdd={(then) => hit && addLink(hit.url)(then)} />
+          {/each}
+        {/if}
+      {/each}
+    {/if}
+  {:else if found?.kind === "link" && link.pasted.kind === "link"}
     {@const url = found.url}
     <p class="cap hstack"><LinkIcon size={14} />{t("search.fromLink")}</p>
-    <div class="prow">
-      <span class="th"><LinkIcon size={20} /></span>
-      <span class="grow"><b class="ell">{t("adding.fromHost", { host: found.host })}</b></span>
-      {@render buttons(`link:${url}`, found.host, (next) => link.addLink(url, next))}
-    </div>
+    {#if link.pasted.failed}
+      <div class="prow">
+        <span class="th"><LinkIcon size={20} /></span>
+        <span class="grow"><b class="ell">{t("adding.fromHost", { host: found.host })}</b></span>
+        {@render buttons(`link:${url}`, found.host, (next) => link.addLink(url, next))}
+      </div>
+    {:else}
+      <LinkRow preview={link.pasted.preview} host={found.host} onAdd={addLink(url)} />
+    {/if}
   {:else if found?.kind === "rejected"}
     <div class="pempty">
       <WarningIcon size={32} />
@@ -93,6 +120,8 @@
   .th { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--raised); }
   .pib { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--raised); }
   .pib.done { color: var(--ready); }
+  .plist :global(.lthumb) { width: 96px; }
+  .plist :global(.lrow .ib) { width: 44px; height: 44px; }
   .pempty { display: grid; justify-items: center; gap: var(--s2); padding: var(--s7) 0; text-align: center; color: var(--muted); }
   .pempty b { color: var(--text); font-size: 16px; }
 </style>

@@ -31,6 +31,8 @@ pub(crate) enum FromPhone {
     Move { key: u64, to: usize },
     Remove { key: u64 },
     Search { q: String, imported: String },
+    Web { source: crate::adding::WebSource, q: String },
+    Preview { url: String },
     Lyrics { track_id: i64 },
     Live { on: bool, rate: u32 },
     Voice { v: u8 },
