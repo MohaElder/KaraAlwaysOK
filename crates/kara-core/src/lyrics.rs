@@ -1,6 +1,7 @@
 //! Synced lyrics: types, LRC parsing, word timing and lookup.
 
 use crate::fuzzy::{fold, Fuzzy};
+use crate::ingest::ytdlp::clean_meta;
 use crate::library::LyricsSource;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -165,7 +166,7 @@ pub struct Lrclib {
 impl Lrclib {
     pub fn new() -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent(concat!("kara-always-oki/", env!("CARGO_PKG_VERSION")))
+            .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(8))
             .build()?;
         Ok(Self { client })
@@ -182,22 +183,22 @@ impl Lrclib {
         resp.error_for_status()?.json().map_err(transient)
     }
 
-    /// MusicBrainz recordings named like `title` by a singer named like `artist`, at most one request a second.
+    /// MusicBrainz recordings named like `title` by a singer named like `artist`, one request per `MUSICBRAINZ_PACE`;
+    /// none while it is busy.
     fn recordings(&self, title: &str, artist: &str) -> Result<Vec<Hit>> {
         let quoted = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
         let query = format!("recording:{} AND artist:{}", quoted(title), quoted(artist));
         let mut last = MUSICBRAINZ_LAST.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(at) = *last {
-            std::thread::sleep(Duration::from_secs(1).saturating_sub(at.elapsed()));
+            std::thread::sleep(MUSICBRAINZ_PACE.saturating_sub(at.elapsed()));
         }
-        let resp = self
-            .client
-            .get("https://musicbrainz.org/ws/2/recording")
-            .header(reqwest::header::USER_AGENT, MUSICBRAINZ_AGENT)
-            .query(&[("query", query.as_str()), ("fmt", "json"), ("limit", "10")])
-            .send();
+        let resp = self.client.get("https://musicbrainz.org/ws/2/recording").query(&[("query", query.as_str()), ("fmt", "json"), ("limit", "10")]).send();
         *last = Some(Instant::now());
-        let found: Recordings = resp?.error_for_status()?.json()?;
+        let resp = resp?;
+        if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Ok(Vec::new());
+        }
+        let found: Recordings = resp.error_for_status()?.json()?;
         Ok(found.recordings.into_iter().map(Hit::from).collect())
     }
 }
@@ -214,8 +215,10 @@ impl LyricsFetcher for Lrclib {
     }
 }
 
-/// MusicBrainz asks every app to name itself and a way to reach its makers.
-const MUSICBRAINZ_AGENT: &str = concat!("KaraAlwaysOK/", env!("CARGO_PKG_VERSION"), " ( https://github.com/GITHUB-OWNER/kara-always-oki )");
+/// User-Agent for LRCLIB and MusicBrainz requests.
+const USER_AGENT: &str = concat!("kara-always-oki/", env!("CARGO_PKG_VERSION"), " ( https://github.com/GITHUB-OWNER/kara-always-oki )");
+/// Time between MusicBrainz requests.
+const MUSICBRAINZ_PACE: Duration = Duration::from_millis(1_100);
 /// When MusicBrainz was last asked.
 static MUSICBRAINZ_LAST: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
 
@@ -485,7 +488,9 @@ pub fn clean_artist(artist: &str) -> Vec<String> {
 }
 
 /// Marks that split a video title into names.
-const SEPARATORS: &[&str] = &[" - ", "-", "–", "—", "|", "/", ":", "：", "《", "》", "「", "」", "『", "』", "“", "”"];
+const SEPARATORS: &[&str] = &[" - ", " / ", "–", "—", "|", "：", "《", "》", "「", "」", "『", "』", "“", "”"];
+/// Marks that split a video title into names except inside a Latin word or number, as in "Anti-Hero" or "AB/CD".
+const WORD_SEPARATORS: [char; 3] = ['-', '/', ':'];
 /// At most this many name guesses are checked per song.
 const MAX_GUESSES: usize = 6;
 
@@ -496,17 +501,19 @@ fn before_feat(name: &str) -> &str {
     cut.map_or(name, |i| &name[..i]).trim()
 }
 
-/// Likely (title, singer) pairs for a video, most likely first: the cleaned title with the singer it names (else the channel),
-/// then the title's parts between separators paired both ways, then each part with the channel.
+/// Likely (title, singer) pairs for a video, most likely first: today's names (`clean_meta`), then the title's parts
+/// between separators paired both ways, then each part with the channel.
 pub fn name_guesses(title: &str, channel: Option<&str>) -> Vec<(String, String)> {
+    let mut pairs = vec![clean_meta(title, channel)];
     let channel = channel.and_then(|c| clean_artist(c).into_iter().next());
-    let (cleaned, named) = clean_title(title, channel.as_deref());
     let mut text = brackets(title).0;
     for s in SEPARATORS {
         text = text.replace(s, "\n");
     }
+    let chars: Vec<char> = text.chars().collect();
+    let latin = |i: Option<usize>| i.and_then(|i| chars.get(i)).is_some_and(char::is_ascii_alphanumeric);
+    let text: String = chars.iter().enumerate().map(|(i, &c)| if WORD_SEPARATORS.contains(&c) && !(latin(i.checked_sub(1)) && latin(Some(i + 1))) { '\n' } else { c }).collect();
     let parts: Vec<String> = text.split('\n').map(before_feat).filter(|p| !p.is_empty() && !noisy(p)).map(|p| clean_title(p, None).0).collect();
-    let mut pairs = vec![(cleaned, named.or(channel.clone()))];
     for (i, a) in parts.iter().enumerate() {
         for b in &parts[i + 1..] {
             pairs.push((b.clone(), Some(a.clone())));
@@ -523,12 +530,19 @@ pub fn name_guesses(title: &str, channel: Option<&str>) -> Vec<(String, String)>
         .collect()
 }
 
-/// The first guess whose `search` finds a recording by a like singer, with a like title, near the song's length (see `best_match`).
+/// The first guess whose `search` finds a recording by a like singer, with a like title, near the song's length (see `best_match`);
+/// swapped when the swapped guess is one too and more recordings match it.
 fn pick(guesses: &[(String, String)], duration_s: u64, search: impl Fn(&str, &str) -> Result<Vec<Hit>>) -> Result<Option<(String, String)>> {
-    for (title, artist) in guesses {
+    let matches = |title: &str, artist: &str| -> Result<usize> {
         let artists = clean_artist(artist);
-        if best_match(search(title, artist)?, title, &artists, duration_s).is_some_and(|h| singer_of(&h.artist_name, &artists) > 0) {
-            return Ok(Some((title.clone(), artist.clone())));
+        let hits = search(title, artist)?.into_iter().filter_map(|h| best_match(vec![h], title, &artists, duration_s));
+        Ok(hits.filter(|h| singer_of(&h.artist_name, &artists) > 0).count())
+    };
+    for (title, artist) in guesses {
+        let n = matches(title, artist)?;
+        if n > 0 {
+            let swapped = guesses.iter().any(|(t, a)| t == artist && a == title) && matches(artist, title)? > n;
+            return Ok(Some(if swapped { (artist.clone(), title.clone()) } else { (title.clone(), artist.clone()) }));
         }
     }
     Ok(None)
@@ -737,12 +751,12 @@ mod tests {
     }
 
     #[test]
-    fn guesses_names_from_a_video_title_and_its_channel() {
-        let pairs = |v: Vec<(String, String)>| v.into_iter().map(|(t, a)| format!("{t} / {a}")).collect::<Vec<_>>();
+    fn guesses_names_from_a_video_title_and_its_channel_starting_with_todays() {
+        let pairs = |title, channel| name_guesses(title, channel).into_iter().map(|(t, a)| format!("{t} / {a}")).collect::<Vec<_>>();
         assert_eq!(
-            pairs(name_guesses("【4K60FPS】林小雨《夜车》经典现场！好听到哭", Some("Made Up Uploader"))),
+            pairs("【4K60FPS】林小雨《夜车》经典现场！好听到哭", Some("Made Up Uploader")),
             [
-                "林小雨《夜车》经典现场！好听到哭 / Made Up Uploader",
+                "【4K60FPS】林小雨《夜车》经典现场！好听到哭 / Made Up Uploader",
                 "夜车 / 林小雨",
                 "林小雨 / 夜车",
                 "经典现场！好听到哭 / 林小雨",
@@ -750,13 +764,15 @@ mod tests {
                 "经典现场！好听到哭 / 夜车",
             ]
         );
+        assert_eq!(pairs("Juniper Row feat. Kiko - Paper Boats (Official Video)", Some("JuniperRowVEVO")), ["Paper Boats / Juniper Row", "Juniper Row / Paper Boats"]);
+        assert_eq!(pairs("Kiko-Ray - Paper-Boats (Official Video)", Some("KikoRayVEVO")), ["Paper-Boats / Kiko-Ray", "Kiko-Ray / Paper-Boats"]);
+        assert_eq!(pairs("AB/CD - Paper Boats", Some("abcdVEVO")), ["Paper Boats / AB/CD", "AB/CD / Paper Boats"]);
+        assert!(pairs("【71】夜车（林小雨2003巡回live演唱会）— 林小雨 【动态鼓谱】", None).contains(&"夜车 / 林小雨".to_string()));
         assert_eq!(
-            pairs(name_guesses("Juniper Row feat. Kiko - Paper Boats (Official Video)", Some("JuniperRowVEVO"))),
-            ["Paper Boats / Juniper Row", "Juniper Row / Paper Boats"]
+            pairs("林小雨-夜车", Some("夜车粉丝官方频道（虫）")),
+            ["林小雨-夜车 / 夜车粉丝官方频道（虫）", "夜车 / 林小雨", "林小雨 / 夜车", "林小雨 / 夜车粉丝", "夜车 / 夜车粉丝"]
         );
-        assert!(pairs(name_guesses("【71】夜车（林小雨2003巡回live演唱会）— 林小雨 【动态鼓谱】", None)).contains(&"夜车 / 林小雨".to_string()));
-        assert_eq!(pairs(name_guesses("林小雨-夜车", Some("夜车粉丝官方频道（虫）"))), ["林小雨-夜车 / 夜车粉丝", "夜车 / 林小雨", "林小雨 / 夜车", "林小雨 / 夜车粉丝", "夜车 / 夜车粉丝"]);
-        assert_eq!(name_guesses("Paper Boats", None), []);
+        assert!(pairs("Paper Boats", None).is_empty());
     }
 
     #[test]
@@ -774,6 +790,14 @@ mod tests {
         assert_eq!(pick(&guesses(&[("夜车", "林小雨")]), 400, catalog).unwrap(), None);
         assert_eq!(pick(&guesses(&[("Paper Boats", "Juniper Row")]), 240, catalog).unwrap(), None);
         assert!(pick(&guesses(&[("夜车", "林小雨")]), 240, |_, _| Err(anyhow::anyhow!("offline"))).is_err());
+        let swapped_too = |title: &str, _: &str| -> Result<Vec<Hit>> {
+            Ok(match title {
+                "Juniper Row" => vec![hit("Juniper Row", "Paper Boats", 240.0, None)],
+                _ => vec![hit("Paper Boats", "Juniper Row", 240.0, None), hit("Paper Boats", "Juniper Row", 241.0, None)],
+            })
+        };
+        let both_ways = guesses(&[("Juniper Row", "Paper Boats"), ("Paper Boats", "Juniper Row")]);
+        assert_eq!(pick(&both_ways, 240, swapped_too).unwrap(), Some(("Paper Boats".into(), "Juniper Row".into())));
 
         let json = r#"{"recordings":[{"title":"Paper Boats","length":241000,"artist-credit":[{"name":"Juniper Row","joinphrase":" & "},{"name":"Kiko"}]},
                                      {"title":"Paper Boats","artist-credit":[{"name":"Juniper Row"}]}]}"#;

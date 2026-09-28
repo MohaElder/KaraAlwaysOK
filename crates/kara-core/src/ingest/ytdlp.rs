@@ -5,6 +5,7 @@ use crate::lyrics::name_guesses;
 use crate::store::write_atomic;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -182,7 +183,13 @@ fn download_once(bin: &Path, url: &str, out_dir: &Path) -> Result<Fetched> {
     let line = String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or("").to_string();
     let info: Info = serde_json::from_str(&line).context("read yt-dlp output")?;
     let video = info.title.as_deref().unwrap_or("Unknown song");
-    let guesses = if info.track.is_some() && info.artist.is_some() { Vec::new() } else { name_guesses(video, info.uploader.as_deref()) };
+    let mut guesses = match (&info.track, &info.artist) {
+        (Some(_), Some(_)) => Vec::new(),
+        (Some(track), None) => name_guesses(video, info.uploader.as_deref()).into_iter().map(|(_, singer)| (track.clone(), singer)).collect(),
+        _ => name_guesses(video, info.uploader.as_deref()),
+    };
+    let mut seen = HashSet::new();
+    guesses.retain(|g| seen.insert(g.clone()));
     let (title, artist) = match info.track {
         Some(track) => (track, info.artist.or(info.uploader)),
         None => clean_meta(video, info.uploader.as_deref()),

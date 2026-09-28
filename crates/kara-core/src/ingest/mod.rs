@@ -168,8 +168,8 @@ pub fn fetch_audio(lib: &Library, store: &Store, track: &Track, source: &AudioSo
                     let f = ytdlp::download(&bin, url.as_str(), &store.tmp_dir(), || ytdlp::update(&bin_dir))
                         .context(Problem::Download)?;
                     if source.audio_hash.is_none() {
-                        if !track.info_edited {
-                            let picked = names.and_then(|n| n.pick_name(&f.guesses, f.duration_s));
+                        let picked = names.and_then(|n| n.pick_name(&f.guesses, f.duration_s));
+                        if !lib.track(track.id)?.info_edited {
                             let (title, artist) = picked.map_or((f.title.clone(), f.artist.clone()), |(t, a)| (t, Some(a)));
                             lib.update_track_meta(track.id, &title, artist.as_deref(), f.album.as_deref())?;
                             link_collections(lib, track.id, artist.as_deref(), f.album.as_deref())?;
@@ -283,13 +283,17 @@ mod tests {
         store
     }
 
-    /// A catalog that knows one made-up (title, singer) pair.
-    struct Knows(Option<(&'static str, &'static str)>);
-    impl LyricsFetcher for Knows {
+    /// A catalog that knows one made-up (title, singer) pair, and that the user edits the song while it is asked.
+    struct Knows<'a>(Option<(&'static str, &'static str)>, Option<(&'a Library, i64)>);
+    impl LyricsFetcher for Knows<'_> {
         fn fetch(&self, _: &str, _: Option<&str>, _: u64) -> Result<Option<crate::lyrics::Found>> {
             Ok(None)
         }
         fn pick_name(&self, guesses: &[(String, String)], _: u64) -> Option<(String, String)> {
+            if let Some((lib, t)) = self.1 {
+                edit_info(lib, t, "Kept Title", None, None).unwrap();
+                lib.mark_info_edited(t).unwrap();
+            }
             let (t, a) = self.0?;
             guesses.iter().find(|g| g.0 == t && g.1 == a).cloned()
         }
@@ -297,26 +301,25 @@ mod tests {
 
     #[test]
     fn a_link_song_is_named_by_its_music_fields_else_the_guess_a_catalog_knows_else_as_before() {
-        let names = |json: &str, knows: Knows, edited: bool| {
+        let names = |json: &str, knows: Option<(&'static str, &'static str)>, edited: bool| {
             let dir = tempfile::tempdir().unwrap();
             let store = store_with_fake_ytdlp(dir.path(), json);
             let lib = Library::open_in_memory().unwrap();
             let t = add_link(&lib, &link::parse_link("https://youtu.be/abc").unwrap()).unwrap().track_id;
-            if edited {
-                edit_info(&lib, t, "Kept Title", None, None).unwrap();
-                lib.mark_info_edited(t).unwrap();
-            }
+            let knows = Knows(knows, edited.then_some((&lib, t)));
             fetch_audio(&lib, &store, &lib.track(t).unwrap(), &lib.selected_source(t).unwrap().unwrap(), Some(&knows)).unwrap();
             let t = lib.track(t).unwrap();
             (t.title, t.artist.unwrap_or_default())
         };
         let video = r#"{"filepath":"/made/up.m4a","title":"Paper Boats | Juniper Row","uploader":"Made Up Fan Channel","duration":200.5}"#;
         let boats = ("Paper Boats".to_string(), "Juniper Row".to_string());
-        assert_eq!(names(video, Knows(Some(("Paper Boats", "Juniper Row"))), false), boats);
-        assert_eq!(names(video, Knows(None), false), ("Paper Boats | Juniper Row".into(), "Made Up Fan Channel".into()));
-        assert_eq!(names(video, Knows(Some(("Paper Boats", "Juniper Row"))), true), ("Kept Title".into(), String::new()));
+        assert_eq!(names(video, Some(("Paper Boats", "Juniper Row")), false), boats);
+        assert_eq!(names(video, None, false), ("Paper Boats | Juniper Row".into(), "Made Up Fan Channel".into()));
+        assert_eq!(names(video, Some(("Paper Boats", "Juniper Row")), true), ("Kept Title".into(), String::new()));
         let art_track = r#"{"filepath":"/made/up.m4a","title":"Made Up Video","uploader":"Made Up Fan Channel","track":"Paper Boats","artist":"Juniper Row"}"#;
-        assert_eq!(names(art_track, Knows(Some(("Made Up Video", "Made Up Fan Channel"))), false), boats);
+        assert_eq!(names(art_track, Some(("Made Up Video", "Made Up Fan Channel")), false), boats);
+        let no_artist = r#"{"filepath":"/made/up.m4a","title":"Made Up Clip | Juniper Row","uploader":"Made Up Fan Channel","track":"Paper Boats"}"#;
+        assert_eq!(names(no_artist, Some(("Paper Boats", "Juniper Row")), false), boats);
     }
 
     #[test]
