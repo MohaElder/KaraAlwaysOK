@@ -13,8 +13,7 @@ test("the queue shows what's up next, reorders by dragging and removes", async (
 
   await upNext.filter({ hasText: "Kettle Duet" }).locator(".grip").hover();
   await page.mouse.down();
-  const target = (await upNext.filter({ hasText: "Lemon Skies" }).boundingBox())!;
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 5 });
+  await upNext.filter({ hasText: "Lemon Skies" }).hover();
   await page.mouse.up();
   await expect.poll(() => calls(page, "queue_move")).toEqual([{ key: 3, to: 1 }]);
   await expect(upNext).toHaveText([/Kettle Duet/, /Lemon Skies/]);
