@@ -59,13 +59,7 @@ Friends don't need a mic: they scan a QR code and sing into their phones. Everyt
 
 Get the latest `.dmg` for **macOS on Apple Silicon** from the [Releases page](https://github.com/MohaElder/KaraAlwaysOK/releases/latest). Open it and drag KaraAlwaysOK into Applications.
 
-**The first time you open it, macOS will block it.** KaraAlwaysOK isn't signed with an Apple Developer ID yet, so macOS says it can't check the app. To open it anyway, do one of these once:
-
-- Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to KaraAlwaysOK. Or,
-- In Terminal, run:
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/KaraAlwaysOK.app
-  ```
+The app is signed and notarized by Apple, so it opens like any other Mac app.
 
 On first launch the app downloads its vocal-removal engine (about 90 MB). After that it works offline for songs you've already added.
 
