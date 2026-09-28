@@ -1,5 +1,6 @@
 //! Adding songs (one file or one link) and getting their audio onto disk.
 
+pub mod bilibili;
 pub mod link;
 pub mod preview;
 pub mod youtube;

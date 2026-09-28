@@ -1,8 +1,8 @@
 <script lang="ts">
   import { composing } from "$lib/keys";
   import { untrack } from "svelte";
-  import { linkPreview, search, youtubeSearch } from "$lib/api";
-  import { fromOutcome, previewFailed, withPreview, withYoutube } from "$lib/search";
+  import { linkPreview, search, WEB_SOURCES, webSearch, type WebSource } from "$lib/api";
+  import { fromOutcome, previewFailed, withPreview, withWeb } from "$lib/search";
   import { phrasesFor, SONG_SUGGESTIONS } from "$lib/suggest";
   import { ui } from "$lib/state/ui.svelte";
   import { library } from "$lib/state/library.svelte";
@@ -20,8 +20,8 @@
   let input: HTMLInputElement | undefined = $state();
   let seq = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let youtubeTimer: ReturnType<typeof setTimeout> | undefined;
-  let youtubeAsked: string | null = null;
+  let webTimer: ReturnType<typeof setTimeout> | undefined;
+  const webAsked: Partial<Record<WebSource, string>> = {};
   let phraseSeq = 0;
   let phrasesAsked: string | null = null;
   let phrases = $state<string[]>([]);
@@ -42,7 +42,7 @@
 
   function changed() {
     clearTimeout(timer);
-    clearTimeout(youtubeTimer);
+    clearTimeout(webTimer);
     timer = setTimeout(run, 120);
     suggesting = true;
     active = -1;
@@ -85,18 +85,29 @@
       const url = ui.search.url;
       linkPreview(url, (p) => (ui.search = withPreview(ui.search, url, p))).catch(() => (ui.search = previewFailed(ui.search, url)));
     }
-    if (ui.search.kind === "text" && ui.search.youtube === null && ui.search.query !== youtubeAsked) {
-      clearTimeout(youtubeTimer);
-      youtubeTimer = setTimeout(findOnYoutube, 280);
+    if (ui.search.kind === "text" && unasked(ui.search.query, ui.search.web).length) {
+      clearTimeout(webTimer);
+      webTimer = setTimeout(findOnWeb, 280);
     }
   }
 
-  async function findOnYoutube() {
+  /** The sites with no results yet for `query` that aren't already being asked. */
+  function unasked(query: string, web: Record<WebSource, unknown>): WebSource[] {
+    return WEB_SOURCES.filter((source) => web[source] === null && webAsked[source] !== query);
+  }
+
+  function findOnWeb() {
     if (ui.search.kind !== "text") return;
-    const query = (youtubeAsked = ui.search.query);
-    const hits = await youtubeSearch(query).catch(() => []);
-    if (youtubeAsked === query) youtubeAsked = null;
-    ui.search = withYoutube(ui.search, query, hits);
+    const query = ui.search.query;
+    for (const source of unasked(query, ui.search.web)) {
+      webAsked[source] = query;
+      webSearch(source, query)
+        .catch(() => [])
+        .then((hits) => {
+          if (webAsked[source] === query) delete webAsked[source];
+          ui.search = withWeb(ui.search, source, query, hits);
+        });
+    }
   }
 
   $effect(() => {
@@ -109,7 +120,7 @@
     phraseSeq++;
     phrasesAsked = null;
     clearTimeout(timer);
-    clearTimeout(youtubeTimer);
+    clearTimeout(webTimer);
     phrases = [];
     hideSuggestions();
     ui.clearSearch();

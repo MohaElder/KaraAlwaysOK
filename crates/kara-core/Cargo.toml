@@ -13,7 +13,8 @@ hex = "0.4"
 realfft = "3"
 ndarray = "0.17"
 dirs = "5"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "json", "rustls-tls"] }
+quick-xml = "0.42"
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { workspace = true }

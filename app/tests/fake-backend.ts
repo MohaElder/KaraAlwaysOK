@@ -170,6 +170,7 @@ const commands: Record<string, (a: any) => unknown> = {
   reduce_transparency: () => false,
   "plugin:app|version": () => "0.1.0",
   "plugin:updater|check": () => null,
+  "plugin:window|set_title": () => null,
   list_collections: ({ kind }) => collections(kind).map((c) => c.card),
   open_collection: ({ id }) => need(allCollections().find((c) => c.card.id === id)),
   get_track: ({ trackId }) => need(tracks.get(trackId)),
@@ -235,6 +236,8 @@ const commands: Record<string, (a: any) => unknown> = {
   link_preview: ({ onUpdate }) => onUpdate.onmessage({ title: "Made-up Clip", channel: "Someone Sings", durationMs: 185_000, thumbnail: null }),
   youtube_suggestions: ({ query }) => [`${query} karaoke`, `${query} live`],
   youtube_search: () => [{ url: "https://www.youtube.com/watch?v=madeup", title: "Made-up Clip", channel: "Someone Sings", durationMs: 185_000, thumbnail: null }],
+  bilibili_suggestions: ({ query }) => [`${query} karaoke`, `${query} cover`],
+  bilibili_search: () => [{ url: "https://www.bilibili.com/video/BV1madeup", title: "Made-up Cover", channel: "Someone Else", durationMs: 200_000, thumbnail: null }],
   add_file: ({ path }) => {
     if (!paths.has(path)) paths.set(path, addTrack(path.split("/").pop()!.replace(/\.\w+$/, "")).id);
     return tracks.get(paths.get(path)!);

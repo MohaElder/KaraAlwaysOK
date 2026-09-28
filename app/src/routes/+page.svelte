@@ -30,7 +30,7 @@
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SearchResults from "$lib/components/SearchResults.svelte";
   import LinkResult from "$lib/components/LinkResult.svelte";
-  import { onLibraryChanged, reduceTransparency, type Kind } from "$lib/api";
+  import { onLibraryChanged, reduceTransparency, setWindowTitle, type Kind } from "$lib/api";
   import { composing } from "$lib/keys";
 
   let searchBar: SearchBar | undefined = $state();
@@ -44,6 +44,12 @@
     ui.clearSearch();
     void adding.link(url, then, title);
   }
+
+  $effect(() => {
+    const name = t("app.name");
+    document.title = name;
+    setWindowTitle(name).catch(() => {});
+  });
 
   async function syncTransparency() {
     document.documentElement.toggleAttribute("data-reduce-transparency", await reduceTransparency());

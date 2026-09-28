@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type ProblemCode =
   | "newerLibrary" | "dataFolder" | "inUse" | "libraryOpen" | "engineDownload" | "engineStart" | "fileMoved" | "fileNotAllowed"
@@ -128,8 +129,12 @@ export async function linkPreview(url: string, onUpdate: (p: LinkPreview) => voi
   await invoke("link_preview", { url, onUpdate: channel });
 }
 
-export const youtubeSearch = (query: string) => invoke<SearchHit[]>("youtube_search", { query });
-export const youtubeSuggestions = (query: string) => invoke<string[]>("youtube_suggestions", { query });
+/** The video sites searched alongside the library, in the order their results show. */
+export const WEB_SOURCES = ["youtube", "bilibili"] as const;
+export type WebSource = (typeof WEB_SOURCES)[number];
+
+export const webSearch = (source: WebSource, query: string) => invoke<SearchHit[]>(`${source}_search`, { query });
+export const webSuggestions = (source: WebSource, query: string) => invoke<string[]>(`${source}_suggestions`, { query });
 
 export const addFile = (path: string) => invoke<Track>("add_file", { path });
 export const addLink = (url: string) => invoke<Track>("add_link", { url });
@@ -150,3 +155,4 @@ export const storageInfo = () => invoke<StorageInfo>("storage_info");
 export const setStorageLimit = (bytes: number) => invoke<void>("set_storage_limit", { bytes });
 export const clearStorage = () => invoke<StorageInfo>("clear_storage");
 export const reduceTransparency = () => invoke<boolean>("reduce_transparency");
+export const setWindowTitle = async (title: string) => getCurrentWindow().setTitle(title);

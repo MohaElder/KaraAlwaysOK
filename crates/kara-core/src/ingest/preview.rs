@@ -17,6 +17,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// How many videos `search` asks for.
 pub(crate) const SEARCH_RESULTS: usize = 8;
+/// How many phrases a site's search suggestions give.
+pub(crate) const SUGGESTIONS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,7 +93,10 @@ impl Dump {
             title: self.title.unwrap_or_else(|| "Unknown song".into()),
             channel: self.channel.or(self.uploader),
             duration_ms: self.duration.map(to_ms),
-            thumbnail: self.thumbnail.or_else(|| self.thumbnails.into_iter().next().map(|t| t.url)),
+            thumbnail: self.thumbnail.or_else(|| self.thumbnails.into_iter().next().map(|t| t.url)).map(|t| match t.strip_prefix("http://") {
+                Some(rest) => format!("https://{rest}"),
+                None => t,
+            }),
         }
     }
 }
@@ -189,7 +194,7 @@ mod tests {
         std::fs::write(
             &bin,
             "#!/bin/sh\ncd \"$(dirname \"$0\")\"\necho \"$@\" > args\n\
-             echo '{\"title\":\"Made Up Song\",\"channel\":\"Made Up Channel\",\"duration\":205.4,\"thumbnail\":\"https://i.example/t.jpg\"}'\n",
+             echo '{\"title\":\"Made Up Song\",\"channel\":\"Made Up Channel\",\"duration\":205.4,\"thumbnail\":\"http://i.example/t.jpg\"}'\n",
         )
         .unwrap();
         use std::os::unix::fs::PermissionsExt;

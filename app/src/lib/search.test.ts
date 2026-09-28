@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { LinkPreview, SearchHit, SearchOutcome } from "./api";
-import { fromOutcome, previewFailed, withPreview, withYoutube } from "./search";
+import { fromOutcome, previewFailed, withPreview, withWeb } from "./search";
 
 const link = (url: string): SearchOutcome => ({ kind: "link", url, host: "youtu.be" });
 const text: SearchOutcome = { kind: "text", tracks: [], collections: [] };
@@ -24,13 +24,13 @@ it("a preview replaces an earlier failure, stays while the link is retyped, fill
   expect(fromOutcome(v, "  ", text)).toEqual({ kind: "none" });
 });
 
-it("youtube results fill only the words they were found for, stay while those are retyped, and are skipped for one letter", () => {
+it("each site's results fill only the words they were found for, stay while those are retyped, and are skipped for one letter", () => {
   const hits: SearchHit[] = [{ url: "https://www.youtube.com/watch?v=a", ...preview("Made Up Song") }];
   let v = fromOutcome({ kind: "none" }, "paper", text);
-  expect(v).toMatchObject({ youtube: null });
-  expect(withYoutube(v, "pape", hits)).toEqual(v);
-  v = withYoutube(v, "paper", hits);
-  expect(fromOutcome(v, " paper ", text)).toMatchObject({ youtube: hits });
-  expect(fromOutcome(v, "papers", text)).toMatchObject({ youtube: null });
-  expect(fromOutcome(v, "p", text)).toMatchObject({ youtube: [] });
+  expect(v).toMatchObject({ web: { youtube: null, bilibili: null } });
+  expect(withWeb(v, "youtube", "pape", hits)).toEqual(v);
+  v = withWeb(v, "youtube", "paper", hits);
+  expect(fromOutcome(v, " paper ", text)).toMatchObject({ web: { youtube: hits, bilibili: null } });
+  expect(fromOutcome(v, "papers", text)).toMatchObject({ web: { youtube: null, bilibili: null } });
+  expect(fromOutcome(v, "p", text)).toMatchObject({ web: { youtube: [], bilibili: [] } });
 });

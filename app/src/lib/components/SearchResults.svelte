@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Kind } from "$lib/api";
+  import { WEB_SOURCES, type Kind, type WebSource } from "$lib/api";
   import type { Icon } from "$lib/icons";
   import { t, type Key } from "$lib/i18n/index.svelte";
   import { ui } from "$lib/state/ui.svelte";
@@ -17,6 +17,7 @@
   import UserIcon from "phosphor-svelte/lib/UserIcon";
   import MagnifyingGlassMinusIcon from "phosphor-svelte/lib/MagnifyingGlassMinusIcon";
   import YoutubeLogoIcon from "phosphor-svelte/lib/YoutubeLogoIcon";
+  import TelevisionSimpleIcon from "phosphor-svelte/lib/TelevisionSimpleIcon";
 
   let { onOpen, onAdd }: { onOpen: (kind: Kind, id: number) => void; onAdd: (url: string, then: Then, title: string) => void } = $props();
   const GROUPS: { kind: Kind; label: Key; icon: Icon }[] = [
@@ -24,6 +25,7 @@
     { kind: "album", label: "kind.albums", icon: VinylRecordIcon },
     { kind: "artist", label: "kind.artists", icon: UserIcon },
   ];
+  const SITE_ICONS: Record<WebSource, Icon> = { youtube: YoutubeLogoIcon, bilibili: TelevisionSimpleIcon };
   const view = $derived(ui.search.kind === "text" ? ui.search : null);
   const tracks = $derived(view ? view.tracks.filter((x) => !library.hidden.has(`track:${x.id}`)) : []);
   const groups = $derived(view ? GROUPS.map((g) => ({ ...g, cards: view.collections.filter((c) => c.kind === g.kind) })).filter((g) => g.cards.length) : []);
@@ -32,7 +34,7 @@
 {#if view}
   {#key view.query}
   <div in:fade|global out:fadeAway|global>
-  {#if !tracks.length && !groups.length && view.youtube?.length === 0}
+  {#if !tracks.length && !groups.length && WEB_SOURCES.every((s) => view.web[s]?.length === 0)}
     <Empty icon={MagnifyingGlassMinusIcon} title={t("search.noMatchTitle", { query: view.query })}><p>{t("search.noMatchBody")}</p></Empty>
   {:else}
     {#if tracks.length}
@@ -53,14 +55,17 @@
       </div>
     {/each}
   {/if}
-  {#if view.youtube?.length !== 0}
-    <section transition:fade>
-      <h2 class="sec"><YoutubeLogoIcon size={18} />{t("search.youtube")}</h2>
-      {#each view.youtube ?? [null, null, null] as hit, i (hit?.url ?? i)}
-        <LinkRow preview={hit} onAdd={(then) => hit && onAdd(hit.url, then, hit.title)} />
-      {/each}
-    </section>
-  {/if}
+  {#each WEB_SOURCES as source (source)}
+    {@const Site = SITE_ICONS[source]}
+    {#if view.web[source]?.length !== 0}
+      <section transition:fade>
+        <h2 class="sec"><Site size={18} />{t(`search.${source}`)}</h2>
+        {#each view.web[source] ?? [null, null, null] as hit, i (hit?.url ?? i)}
+          <LinkRow preview={hit} onAdd={(then) => hit && onAdd(hit.url, then, hit.title)} />
+        {/each}
+      </section>
+    {/if}
+  {/each}
   </div>
   {/key}
 {/if}

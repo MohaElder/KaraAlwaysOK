@@ -1,7 +1,7 @@
-import { youtubeSuggestions } from "./api";
+import { WEB_SOURCES, webSuggestions } from "./api";
 
 /** Where search phrases come from while typing; streaming providers add theirs here. */
-export const PHRASE_SOURCES: ((query: string) => Promise<string[]>)[] = [youtubeSuggestions];
+export const PHRASE_SOURCES: ((query: string) => Promise<string[]>)[] = WEB_SOURCES.map((source) => (query: string) => webSuggestions(source, query));
 
 /** How many of your songs the suggestions show. */
 export const SONG_SUGGESTIONS = 3;

@@ -27,7 +27,14 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
+    "macOS": {
+      "files": {
+        "Resources/ja.lproj/InfoPlist.strings": "./macos/ja.lproj/InfoPlist.strings",
+        "Resources/zh-Hans.lproj/InfoPlist.strings": "./macos/zh-Hans.lproj/InfoPlist.strings",
+        "Resources/zh-Hant.lproj/InfoPlist.strings": "./macos/zh-Hant.lproj/InfoPlist.strings"
+      }
+    }
   },
   "plugins": {
     "updater": {

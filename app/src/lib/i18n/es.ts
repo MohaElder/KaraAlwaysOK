@@ -66,6 +66,7 @@ const es: Record<Key, string> = {
   "search.noMatchBody": "Revisa la ortografía o pega el enlace de una canción.",
   "search.fromLink": "De este enlace",
   "search.youtube": "YouTube",
+  "search.bilibili": "Bilibili",
   "search.suggestions": "Sugerencias",
   "search.addToLibraryLabel": "Añadir {title} a tu biblioteca",
   "search.streamingTitle": "Los enlaces de {host} no se pueden descargar",

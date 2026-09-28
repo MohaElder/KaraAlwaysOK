@@ -11,9 +11,10 @@ test("typing shows matching songs, also by part of a CJK title", async ({ page }
   await expect(page.locator(".row")).toHaveText([/東京の夜空/]);
 });
 
-test("typing also shows YouTube videos after the library's songs, and tapping one adds it without playing", async ({ page }) => {
+test("typing also shows YouTube, then Bilibili videos after the library's songs, and tapping one adds it without playing", async ({ page }) => {
   await box(page).fill("lemon");
-  await expect(page.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Songs", "YouTube"]);
+  await expect(page.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Songs", "YouTube", "Bilibili"]);
+  await expect(page.getByRole("button", { name: "Add Made-up Cover to your library" })).toContainText("Someone Else · 3:20");
   await page.getByRole("button", { name: "Add Made-up Clip to your library" }).click();
   expect(await calls(page, "youtube_search")).toEqual([{ query: "lemon" }]);
   await expect(page.locator(".toasts")).toContainText("Adding “Made-up Clip”");
@@ -22,10 +23,10 @@ test("typing also shows YouTube videos after the library's songs, and tapping on
   await expect(page.getByRole("region", { name: "Player" })).toBeHidden();
 });
 
-test("typing suggests your songs, then YouTube's phrases, and ↓ + Enter runs a phrase's search", async ({ page }) => {
+test("typing suggests your songs, then YouTube's and Bilibili's phrases once each, and ↓ + Enter runs a phrase's search", async ({ page }) => {
   await box(page).pressSequentially("lemon");
   const suggestions = page.getByRole("listbox", { name: "Suggestions" });
-  await expect(suggestions.getByRole("option")).toHaveText(["Lemon Skies", "lemon karaoke", "lemon live"]);
+  await expect(suggestions.getByRole("option")).toHaveText(["Lemon Skies", "lemon karaoke", "lemon live", "lemon cover"]);
   await box(page).press("ArrowDown");
   await box(page).press("ArrowDown");
   await box(page).press("Enter");
