@@ -1,132 +1,181 @@
+<div align="center">
+
+<img src="app/src-tauri/icons/128x128@2x.png" width="96" alt="KaraAlwaysOK icon" />
+
 # KaraAlwaysOK
 
-A desktop karaoke app. Pick a song and sing over it: it strips the vocals out
-(fully, or partly with a slider) and shows synced lyrics. Songs come from your
-own files, pasted links, and later your Spotify / Apple Music library.
-Local-only — audio, stems and lyrics stay on your computer.
+**Turn any song into karaoke on your Mac, and let your friends sing into their phones.**
 
-The repo holds the engine — a Rust library (`kara-core`) and a CLI (`kara-cli`) for adding
-songs, preparing them (download, convert, look up lyrics, take the vocals out) and exporting
-the result — and the desktop app in `app/` (Tauri 2 + Svelte 5), which plays prepared songs
-live with the singer slider, key and synced lyrics. The app speaks English, Japanese, Korean,
-Simplified Chinese, Traditional Chinese and Spanish, following the system language.
+[![License: MIT](https://img.shields.io/badge/License-MIT-e8641b.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/MohaElder/KaraAlwaysOK?color=e8641b)](https://github.com/MohaElder/KaraAlwaysOK/releases/latest)
+![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-555)
+[![CI](https://github.com/MohaElder/KaraAlwaysOK/actions/workflows/ci.yml/badge.svg)](https://github.com/MohaElder/KaraAlwaysOK/actions/workflows/ci.yml)
 
-## Build
+[Download](https://github.com/MohaElder/KaraAlwaysOK/releases/latest) · [Features](#features) · [Privacy](#privacy) · [How it works](#how-it-works)
 
-```
-source "$HOME/.cargo/env"   # if cargo isn't already on PATH
-cargo build --release
-```
+</div>
 
-The binary is `target/release/kara`.
+![KaraAlwaysOK library](docs/screenshots/library.png)
 
-## Run the app
+## What is KaraAlwaysOK?
 
-```
-cd app
-npm install
-npm run tauri:dev
-```
+KaraAlwaysOK (卡拉永远OK / 卡拉永遠OK / カラ永遠OK) is a free, open-source karaoke app for the Mac. Pick a song, and it takes the singer's voice out and shows the lyrics word by word as the music plays. Bring songs from your own files, paste a link, or search YouTube and Bilibili right from the app.
 
-`tauri:dev` hot-reloads the interface only; after changing Rust code, stop it and run it again.
-The first launch downloads the singing engine (about 90 MB). The app and the CLI share the
-same library in `~/Library/Application Support/kara-always-oki`, and only one of them can
-use it at a time.
+Friends don't need a mic: they scan a QR code and sing into their phones. Everything happens on your Mac and your own Wi-Fi.
 
-To try things without touching your library, point the app (or the CLI) at a scratch folder:
-`KARA_DATA=/tmp/kara-scratch npm run tauri:dev`. Copy `runtime/` and `models/` into it from
-the real folder to skip the download.
+![Singing Paper Boats with word-by-word lyrics](docs/screenshots/karaoke.png)
 
-Debug builds optimize dependencies fully and our own crates lightly (see `[profile.dev]` in
-`Cargo.toml`), so separation runs at usable speed in `tauri:dev` without a release build.
+## Features
 
-## Phone mics
+- **Vocals removed on your Mac** — take the singer out completely, or leave a little in with the singer slider
+- **Key shift** — move any song up or down to fit your voice
+- **Word-by-word lyrics** — lyrics light up as they're sung, line up with the song on their own, and can be nudged by hand if they're early or late
+- **Search that forgives typos** — in every language, with suggestions as you type
+- **Songs from anywhere** — your own audio files, a pasted link, or a YouTube or Bilibili search
+- **Tidy song names** — messy video titles are turned into a proper song name and artist
+- **Phone mics** — up to 4 phones become mics over your Wi-Fi: scan a QR code, no app to install
+- **No howling** — a phone that starts to feed back through the speakers is turned down on its own
+- **Voice effects for each guest** — Karaoke mix or Auto-tune, with a strength slider
+- **Guests can run the show** — search, queue songs, play, pause, skip and read the lyrics from their phone
+- **6 languages** — English, 日本語, 한국어, 简体中文, 繁體中文 and Español, following your Mac's language
+- **In-app updates** — new versions install from inside the app
 
-Guests sing into their phones. Click the mic button at the top right, then scan the QR code with a
-phone on the same Wi-Fi (or open the address shown and type the code). No app to install; voices
-stay on your network. The first time, the phone warns that the page isn't trusted: on iPhone tap
-Show Details, then visit this website; on Android tap Advanced, then Proceed. macOS may ask once to
-allow incoming connections for KaraAlwaysOK. Keep phones away from the speakers; a mic that starts
-to howl is turned down on its own. Up to four phones at once. Each guest can add an effect to their
-own voice (Karaoke mix or Auto-tune) with a strength slider, and play, pause or skip songs from
-their phone. Mics play through the Mac's current
-speakers; Bluetooth speakers and headphones add a noticeable delay.
+<table>
+  <tr>
+    <td><img src="docs/screenshots/phone-mics.png" alt="The Sing into your phone window with a QR code and two phones joined" /></td>
+    <td width="220"><img src="docs/screenshots/phone.png" alt="The phone's Mic tab with the song, lyrics and a big mic button" /></td>
+  </tr>
+</table>
 
-For development (debug builds): `KARA_PHONE_CODE=1234` starts a phone session at launch with that
-code and `KARA_PHONE_PORT=8543` serves phones on that port only (leaving 443 and 80 alone);
-`NODE_TLS_REJECT_UNAUTHORIZED=0 KARA_PHONE_CODE=1234 KARA_PHONE_PORT=8543 node app/scripts/phone-check.ts`
-then talks to that app like a few phones and prints `phone check OK`. `app/scripts/isolated-check.sh`
-builds and runs a separate copy of the app on a scratch library with both set (it never stops your
-running app or uses port 1420). `KARA_MIC_BUFFER_MS` (10–60, default 10) sets the shortest mic delay
-buffer. Auto-tune adds about 6 ms to most voices, up to about 15 ms for the lowest.
+## Architecture
 
-## Use
+| Component | Path | Responsibility |
+|---|---|---|
+| `kara-core` | `crates/kara-core` | The Rust engine: library, adding songs from files and links, lyrics lookup and sync, vocal removal, search. No UI. |
+| `kara-cli` | `crates/kara-cli` | The `kara` command line over `kara-core`, for adding, preparing and exporting songs. |
+| App | `app/` | The desktop app (Tauri 2 + Svelte 5): player, singer slider, key, lyrics, and the phone mic page and server. |
 
-```
-kara add <path-or-link>              # add a file or a link to the library
-kara prepare <track-id> [--cpu]       # download/convert, find lyrics, remove vocals
-kara search <query>                   # search the library
-kara export <track-id> <out-dir>      # write vocals.wav and instrumental.wav
-kara bench <song> --model <onnx>      # measure separation speed and memory
-```
+## Download
 
-`kara add` accepts a local audio file, a direct link to an audio file, or a
-link to a page yt-dlp can pull audio from (YouTube, SoundCloud, Bandcamp,
-etc.). Links to streaming services (Spotify, Apple Music, Tidal, Deezer)
-can't be downloaded and are refused with a plain message.
+Get the latest `.dmg` for **macOS on Apple Silicon** from the [Releases page](https://github.com/MohaElder/KaraAlwaysOK/releases/latest). Open it and drag KaraAlwaysOK into Applications.
 
-`kara prepare` downloads the ONNX Runtime and the vocal-removal model on
-first use (both are cached under the data folder afterward), then separates
-the song's vocals from its instrumental in 10-second chunks. Preparing the
-same song again is instant. Use `--cpu` to force CPU instead of CoreML.
+**The first time you open it, macOS will block it.** KaraAlwaysOK isn't signed with an Apple Developer ID yet, so macOS says it can't check the app. To open it anyway, do one of these once:
 
-All data lives under `~/Library/Application Support/kara-always-oki` by
-default, or pass `--data <dir>` to use a different folder.
+- Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to KaraAlwaysOK. Or,
+- In Terminal, run:
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/KaraAlwaysOK.app
+  ```
 
-## Recommended specs
+On first launch the app downloads its vocal-removal engine (about 90 MB). After that it works offline for songs you've already added.
 
-Measured with `kara bench` on Apple Silicon (see
-`docs/superpowers/spikes/2026-09-26-model-choice.md` for the full
-benchmark). These are recommendations, not enforced limits — there's no
-hardware check in the code.
+### Recommended specs
+
+Measured on Apple Silicon. These are guides, not hard limits; the app doesn't check your hardware.
 
 | Setup | Song length | Peak memory | Speed |
 |---|---|---|---|
 | Apple Silicon, CoreML | 3–5 min | ~1.4–1.6 GB | ~45x real time |
 | Apple Silicon, CoreML | 18 min | ~2.2 GB | ~45x real time |
 
-CPU-only: not recommended; it used more than 11 GB in testing, for no speed
-benefit over CoreML. Windows support is planned; there are no measurements
-for it yet.
+Running on the CPU only isn't recommended: it used more than 11 GB in testing and wasn't any faster. Windows isn't supported yet.
 
-## Development
+## Build from source
 
+**Prerequisites:** [Rust](https://rustup.rs) (stable), [Node.js](https://nodejs.org) 22, and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for macOS.
+
+```bash
+# Run the desktop app in dev mode
+cd app
+npm install
+npm run tauri:dev
+
+# Build the app (.app and .dmg)
+npm run tauri build
 ```
+
+Scratch libraries, debug settings for phone mics, and the scripts that check the real app are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+## Releases
+
+Push a plain `vX.Y.Z` tag:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The Release workflow runs CI first, then builds a **draft** GitHub release with the `.dmg` and `latest.json`. Publish the draft; only then does the app's update check see it.
+
+The build needs the update signing secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the repo. They're already set.
+
+## CLI usage
+
+The engine also runs from the command line. From the repo root:
+
+```bash
+cargo run -p kara-cli -- add <path-or-link>          # add a file or a link to the library
+cargo run -p kara-cli -- prepare <track-id> [--cpu]  # download/convert, find lyrics, remove vocals
+cargo run -p kara-cli -- search <query>              # search the library
+cargo run -p kara-cli -- export <track-id> <out-dir> # write vocals.wav and instrumental.wav
+cargo run -p kara-cli -- bench <song> --model <onnx> # measure vocal-removal speed and memory
+```
+
+`add` takes a local audio file, a direct link to an audio file, or a page link yt-dlp can pull audio from (YouTube, Bilibili, SoundCloud, Bandcamp and more). Streaming services (Spotify, Apple Music, Tidal, Deezer) can't be downloaded and are refused with a plain message.
+
+`prepare` downloads the vocal-removal engine on first use, then splits the song into vocals and music. Preparing the same song again is instant. `--cpu` skips CoreML.
+
+The CLI and the app share the same library in `~/Library/Application Support/kara-always-oki` (only one can use it at a time); pass `--data <dir>` to use another folder. Run `cargo run -p kara-cli -- --help` for everything.
+
+## How it works
+
+1. **Adding a song.** Files are read from where they already are. Links are downloaded with [yt-dlp](https://github.com/yt-dlp/yt-dlp), which the app fetches the first time you need it.
+2. **Taking the vocals out.** An AI model splits the song into the singer's voice and the music, on your Mac, using Apple's CoreML. The two parts are kept, so the singer slider can mix any amount of voice back in, and key shift works as you play.
+3. **Lyrics.** The app uses lyrics built into the file, or looks them up on [LRCLIB](https://lrclib.net). Then it listens to where the singer is actually singing and slides the lyrics to match. If they're still a little off, nudge them by hand.
+4. **Phone mics.** The Mac serves a small web page on your Wi-Fi. Phones open it from the QR code and send their voice straight to the Mac, which mixes it into the song and plays it through the Mac's speakers.
+
+A few tips for phone mics:
+
+- The first time, the phone warns that the page isn't trusted. That's expected: the page comes from your own Mac. On iPhone, tap **Show Details**, then **visit this website**. On Android, tap **Advanced**, then **Proceed**.
+- macOS may ask once to allow incoming connections for KaraAlwaysOK. Allow them.
+- Keep phones away from the speakers.
+- Mics play through the Mac's current speakers. Bluetooth speakers and headphones add a noticeable delay.
+
+## Privacy
+
+KaraAlwaysOK has **no telemetry**: no analytics, no accounts, no tracking. Here's exactly what goes where:
+
+- **Your songs, their vocal and music parts, and your lyrics stay on your Mac.** Nothing is uploaded.
+- **Links and online searches** go to YouTube or Bilibili (downloads go through yt-dlp). What you type in the search box is also sent to them for suggestions. Pasting a link asks that site for its title and picture.
+- **Lyrics lookups** send the song name and artist to LRCLIB.
+- **Song-name checks** send guessed names to LRCLIB and MusicBrainz.
+- **Phone mics stay on your Wi-Fi.** Voices go from the phones to your Mac and nowhere else.
+- **Downloads from GitHub:** the vocal-removal engine, yt-dlp, and app updates.
+
+## Roadmap
+
+- **Apple Music library** — sing songs from your Apple Music library (planned)
+- **Windows** — a Windows version
+- **Smarter song names on your Mac** — tidy up song names without asking an online service
+
+[Open an issue](https://github.com/MohaElder/KaraAlwaysOK/issues/new) to shape what's next.
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR, run the same checks CI does:
+
+```bash
 cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cd app
+npm run check
+npm run check:i18n
+npm test
+npx playwright test
 ```
 
-Some tests build small audio files with `ffmpeg` (embedded lyrics, MP3) and
-macOS's `afconvert` (AAC), so running the tests needs `ffmpeg` installed. The app itself never
-needs `ffmpeg` — it only downloads `yt-dlp` on its own, the first time you add
-a link that needs it.
-
-## Checks
-
-Every push to `main` and every pull request runs the CI workflow: the Rust tests and clippy, the
-type check, the language check, the unit tests and the browser tests. A release runs it first and
-stops if anything fails.
-
-## Before the first release
-
-Do these once, after the app is built and the GitHub repo exists:
-
-1. Make the update signing key: run `npx tauri signer generate -w ~/.tauri/kara-always-oki.key`
-   and keep the private key and its password safe (never commit them).
-2. Add GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` (the private key's contents) and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-3. Push a `v*` tag. The Release workflow builds a draft release with the `.dmg` and
-   `latest.json`; publish it so the app's update check can find it.
+The Rust tests need `ffmpeg` installed (`brew install ffmpeg`). More in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE) © 2026 mohaelder
