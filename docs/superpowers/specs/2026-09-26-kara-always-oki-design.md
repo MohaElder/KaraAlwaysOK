@@ -313,6 +313,7 @@ Each phase gets its own implementation plan.
 ## 9. Out of scope (for now)
 
 - **Per-app AirPlay** (send only KaraAlwaysOK's audio to an AirPlay speaker, with lyrics shifted for AirPlay's ~2 s delay; phone mics stay on the Mac's speakers). Parked 2026-09-27: needs either the web view's media AirPlay (untested for a live mix) or moving output to Apple's native player. System-wide AirPlay from Control Center already works.
+- **Jev picks the song name and singer** (to explore, added 2026-09-27): let Jev read a video's title, channel and description and pull out the real song name and singer, instead of today's title cleaning and title/artist swap retry. Should help most with messy YouTube and Bilibili titles (e.g. 【4K60FPS】…現場版) and with lyric lookups.
 
 - Lyric timing from audio (Whisper) when no synced lyrics exist.
 - Recording or exporting performances.
