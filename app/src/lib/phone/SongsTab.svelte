@@ -34,8 +34,10 @@
     if (words) webTimer = setTimeout(() => link.searchWeb(query.trim()), 280);
   }
 
-  /** Queues a link: at the end for "" or "queue", next for "next". */
-  const addLink = (url: string) => (then: Then) => link.addLink(url, then === "next");
+  /** Queues a link through `queued`: at the end for "" or "queue", next for "next". */
+  const addLink = (url: string) => (then: Then) => queued(`link:${url}:${then === "next" ? "next" : "end"}`, () => link.addLink(url, then === "next"));
+  /** The link row button showing a check, if any. */
+  const linkDone = (url: string) => (done === `link:${url}:next` ? "next" : done === `link:${url}:end` ? "queue" : null);
 
   /** Queues with `add`, showing a check on the tapped button for a moment; taps while it shows are ignored. */
   function queued(key: string, add: () => void) {
@@ -80,7 +82,7 @@
         {#if web?.[source]?.length !== 0}
           <p class="cap hstack"><Site size={14} />{t(`search.${source}`)}</p>
           {#each web?.[source] ?? [null, null, null] as hit, i (hit?.url ?? i)}
-            <LinkRow preview={hit} onAdd={(then) => hit && addLink(hit.url)(then)} />
+            <LinkRow preview={hit} label="song.addToQueueLabel" done={hit && linkDone(hit.url)} onAdd={(then) => hit && addLink(hit.url)(then)} />
           {/each}
         {/if}
       {/each}
@@ -95,7 +97,7 @@
         {@render buttons(`link:${url}`, found.host, (next) => link.addLink(url, next))}
       </div>
     {:else}
-      <LinkRow preview={link.pasted.preview} host={found.host} onAdd={addLink(url)} />
+      <LinkRow preview={link.pasted.preview} host={found.host} label="song.addToQueueLabel" done={linkDone(url)} onAdd={addLink(url)} />
     {/if}
   {:else if found?.kind === "rejected"}
     <div class="pempty">
@@ -121,7 +123,8 @@
   .pib { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--raised); }
   .pib.done { color: var(--ready); }
   .plist :global(.lthumb) { width: 96px; }
-  .plist :global(.lrow .ib) { width: 44px; height: 44px; }
+  .plist :global(.lrow .ib) { width: 44px; height: 44px; border-radius: 50%; background: var(--raised); color: var(--text); }
+  .plist :global(.lrow .ib.done) { color: var(--ready); }
   .pempty { display: grid; justify-items: center; gap: var(--s2); padding: var(--s7) 0; text-align: center; color: var(--muted); }
   .pempty b { color: var(--text); font-size: 16px; }
 </style>

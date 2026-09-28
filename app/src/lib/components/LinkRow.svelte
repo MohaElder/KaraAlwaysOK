@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { LinkPreview } from "$lib/api";
   import type { Then } from "$lib/state/adding.svelte";
-  import { t } from "$lib/i18n/index.svelte";
+  import { t, type Key } from "$lib/i18n/index.svelte";
   import { duration } from "$lib/format";
   import { fade } from "$lib/motion";
   import { tip } from "$lib/tooltip.svelte";
   import PlusIcon from "phosphor-svelte/lib/PlusIcon";
+  import CheckIcon from "phosphor-svelte/lib/CheckIcon";
   import ListPlusIcon from "phosphor-svelte/lib/ListPlusIcon";
   import ArrowBendDownRightIcon from "phosphor-svelte/lib/ArrowBendDownRightIcon";
   import YoutubeLogoIcon from "phosphor-svelte/lib/YoutubeLogoIcon";
@@ -13,7 +14,13 @@
   import TelevisionSimpleIcon from "phosphor-svelte/lib/TelevisionSimpleIcon";
   import GlobeIcon from "phosphor-svelte/lib/GlobeIcon";
 
-  let { preview, host, onAdd }: { preview: LinkPreview | null; host?: string; onAdd: (then: Then) => void } = $props();
+  let {
+    preview,
+    host,
+    label = "search.addToLibraryLabel",
+    done = null,
+    onAdd,
+  }: { preview: LinkPreview | null; host?: string; label?: Key; done?: "queue" | "next" | null; onAdd: (then: Then) => void } = $props();
   const Site = $derived(
     host?.includes("youtu") ? YoutubeLogoIcon : host?.includes("soundcloud") ? SoundcloudLogoIcon : host?.includes("bilibili") || host?.includes("b23") ? TelevisionSimpleIcon : GlobeIcon,
   );
@@ -22,7 +29,7 @@
 {#if !preview}
   <div class="lrow" in:fade><span class="lthumb"><i class="bone"></i></span><span class="grow"><i class="bone" style="width:55%"></i><i class="bone" style="width:30%"></i></span></div>
 {:else}
-  <div class="lrow" role="button" tabindex="0" aria-label={t("search.addToLibraryLabel", { title: preview.title })} in:fade onclick={() => onAdd("")} onkeydown={(e) => e.key === "Enter" && onAdd("")}>
+  <div class="lrow" role="button" tabindex="0" aria-label={t(label, { title: preview.title })} in:fade onclick={() => onAdd("")} onkeydown={(e) => e.key === "Enter" && onAdd("")}>
     <span class="lthumb">
       {#if preview.thumbnail}<img src={preview.thumbnail} alt="" referrerpolicy="no-referrer" />{/if}
       <span class="lplus"><PlusIcon size={18} /></span>
@@ -32,8 +39,12 @@
       <b class="ell">{preview.title}</b>
       <span class="hstack muted">{#if host}<span use:tip={host}><Site /></span>{/if}<span class="ell">{[preview.channel, duration(preview.durationMs)].filter(Boolean).join(" · ")}</span></span>
     </span>
-    <button class="ib" use:tip={t("song.addToQueue")} onclick={(e) => { e.stopPropagation(); onAdd("queue"); }}><ListPlusIcon size={18} /></button>
-    <button class="ib" use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); onAdd("next"); }}><ArrowBendDownRightIcon size={18} /></button>
+    <button class="ib" class:done={done === "queue"} use:tip={t("song.addToQueue")} onclick={(e) => { e.stopPropagation(); onAdd("queue"); }}>
+      {#if done === "queue"}<CheckIcon size={18} />{:else}<ListPlusIcon size={18} />{/if}
+    </button>
+    <button class="ib" class:done={done === "next"} use:tip={t("song.playNext")} onclick={(e) => { e.stopPropagation(); onAdd("next"); }}>
+      {#if done === "next"}<CheckIcon size={18} />{:else}<ArrowBendDownRightIcon size={18} />{/if}
+    </button>
   </div>
 {/if}
 

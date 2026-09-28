@@ -32,6 +32,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 const MAX_QUERY: usize = 200;
+const MAX_URL: usize = 2048;
 const MAX_LINKS: usize = 3;
 const MAX_LOOKUPS: usize = 6;
 
@@ -344,6 +345,7 @@ pub(crate) fn handle(app: &AppHandle, id: &str, msg: FromPhone) {
             Ok(None)
         }
         FromPhone::Preview { url } => {
+            let url: String = url.chars().take(MAX_URL).collect();
             let none = encode(&ToPhone::Preview { url: &url, preview: None });
             later(app, id, none.clone(), move |bin_dir, answer| {
                 if adding::preview_link(bin_dir, &url, |p| answer(encode(&ToPhone::Preview { url: &url, preview: Some(&p) }))).is_err() {
@@ -469,12 +471,15 @@ fn queue_for(app: &AppHandle, track_id: i64, next: bool, name: &str) -> Result<(
 }
 
 /// Adds a guest's link like the Mac does: queued once it's downloaded, or right away when it needs nothing more. A guest waits
-/// while three of their links are still being added.
+/// while three of their links are still being added; a link the guest is already adding is ignored.
 fn add_link(app: &AppHandle, id: &str, name: &str, url: String, next: bool) -> Result<(), AppError> {
     if with(app, |s| s.links.iter().filter(|l| l.guest == id).count()).unwrap_or(0) >= MAX_LINKS {
         return Err(anyhow::Error::new(Problem::TooManyLinks).into());
     }
     let added = adding::ingest_link(&app.state::<AppState>().lib.lock().unwrap(), &url)?;
+    if with(app, |s| s.links.iter().any(|l| l.guest == id && l.track_id == added.track_id)) == Some(true) {
+        return Ok(());
+    }
     let _ = app.emit("library", ());
     if !adding::start_adding(app.state(), added.track_id)? {
         return queue_for(app, added.track_id, next, name);

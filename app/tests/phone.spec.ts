@@ -207,9 +207,11 @@ test("Songs also finds videos on YouTube and Bilibili, which queue like a pasted
   await expect(page.getByText("Someone Sings · 3:05")).toBeVisible();
   await expect(page.getByText("Made-up Cover")).toBeVisible();
   await expect(page.getByText("Nothing matches “clip”")).toBeHidden();
-  await page.locator(".lrow", { hasText: "Made-up Clip" }).getByRole("button", { name: "Play next" }).click();
+  await expect(page.getByRole("button", { name: "Add Made-up Clip to the queue" })).toBeVisible();
+  await page.locator(".lrow", { hasText: "Made-up Clip" }).getByRole("button", { name: "Play next" }).dblclick();
   expect(await sent(page)).toEqual(expect.arrayContaining([{ t: "web", source: "youtube", q: "clip" }, { t: "web", source: "bilibili", q: "clip" }]));
-  expect(await sent(page)).toContainEqual({ t: "addLink", url: "https://www.youtube.com/watch?v=made-up", next: true });
+  expect((await sent(page)).filter((m) => m.t === "addLink")).toEqual([{ t: "addLink", url: "https://www.youtube.com/watch?v=made-up", next: true }]);
+  await expect(page.locator(".lrow .ib.done")).toHaveCount(1);
   await box.fill("zzqx");
   await expect(page.getByText("Nothing matches “zzqx”")).toBeVisible();
 });
